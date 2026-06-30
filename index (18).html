@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a1f2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="حضور">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-193.png">
+<title>حضور — Baby Class</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0f1319; --surface:#1a2035; --surface2:#212a40;
+  --accent:#4f8ef7; --accent2:#7c5cbf;
+  --success:#2ecc71; --danger:#e74c3c; --warning:#f39c12;
+  --text:#e8eaf0; --text-dim:#8892a4;
+  --border:rgba(79,142,247,0.15);
+  --radius:16px; --radius-sm:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;}
+
+#auth-screen{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at 50% 0%,rgba(79,142,247,0.12),transparent 65%);}
+.auth-title{font-size:26px;font-weight:900;margin-bottom:6px;}
+.auth-sub{color:var(--text-dim);font-size:14px;margin-bottom:32px;}
+.auth-card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;}
+.field-label{font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:6px;display:block;}
+.field-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;padding:11px 13px;outline:none;margin-bottom:14px;transition:border-color .2s;}
+.field-input:focus{border-color:var(--accent);}
+.field-select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;padding:11px 13px;outline:none;margin-bottom:14px;appearance:none;}
+.field-select:focus{border-color:var(--accent);}
+.btn-primary{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:var(--radius-sm);color:#fff;font-family:'Cairo',sans-serif;font-size:16px;font-weight:700;padding:13px;cursor:pointer;transition:opacity .2s;}
+.btn-primary:active{opacity:.85;}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+
+#app-screen{display:none;min-height:100dvh;flex-direction:column;}
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:100;}
+.top-bar-title{font-size:17px;font-weight:700;}
+.top-bar-sub{font-size:11px;color:var(--text-dim);margin-top:2px;}
+.icon-btn{background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:17px;width:38px;height:38px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.app-content{flex:1;padding:18px;overflow-y:auto;}
+
+.tabs{display:flex;gap:6px;margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;}
+.tab{flex:1;padding:10px;border:none;border-radius:8px;background:transparent;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;}
+.tab.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;}
+
+.stats-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;text-align:center;}
+.stat-num{font-size:22px;font-weight:900;}
+.stat-label{font-size:11px;color:var(--text-dim);margin-top:2px;}
+.stat-card.p .stat-num{color:var(--success);}
+.stat-card.a .stat-num{color:var(--danger);}
+.stat-card.t .stat-num{color:var(--accent);}
+
+.scan-zone{background:var(--surface);border:2px dashed var(--border);border-radius:var(--radius);padding:22px;text-align:center;margin-bottom:14px;cursor:pointer;transition:border-color .3s;}
+.scan-zone.active{border-color:var(--accent);border-style:solid;}
+#video-container{display:none;position:relative;border-radius:12px;overflow:hidden;background:#000;}
+#video-container video{width:100%;display:block;max-height:260px;object-fit:cover;}
+.scan-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+.scan-frame{width:160px;height:160px;border:3px solid var(--accent);border-radius:14px;position:relative;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);}
+.scan-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:scan 2s ease-in-out infinite;}
+@keyframes scan{0%{top:0}50%{top:calc(100% - 2px)}100%{top:0}}
+.scan-placeholder{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.stop-btn{width:100%;margin-top:10px;background:rgba(231,76,60,0.12);border:1px solid rgba(231,76,60,0.3);border-radius:var(--radius-sm);color:var(--danger);font-family:'Cairo',sans-serif;font-size:14px;font-weight:600;padding:10px;cursor:pointer;}
+
+.manual-wrap{margin-bottom:18px;}
+.search-box input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'Cairo',sans-serif;font-size:14px;padding:11px 13px;outline:none;}
+.search-box input:focus{border-color:var(--accent);}
+#manual-results{margin-top:6px;}
+.result-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:6px;display:flex;align-items:center;gap:10px;cursor:pointer;}
+.result-item.done{opacity:.6;cursor:default;}
+.result-avatar{width:36px;height:36px;border-radius:10px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--accent);flex-shrink:0;}
+
+.list-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;}
+.section-title{font-size:12px;font-weight:700;color:var(--text-dim);letter-spacing:.8px;}
+.export-btn{background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);border-radius:8px;color:var(--success);font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;padding:7px 12px;cursor:pointer;}
+.student-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:7px;display:flex;align-items:center;gap:12px;transition:border-color .3s;}
+.student-item.present{border-color:rgba(46,204,113,0.35);}
+.s-avatar{width:40px;height:40px;border-radius:11px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:var(--accent);flex-shrink:0;}
+.student-item.present .s-avatar{background:rgba(46,204,113,0.12);color:var(--success);}
+.s-info{flex:1;min-width:0;}
+.s-name{font-size:14px;font-weight:700;}
+.s-sub{font-size:11px;color:var(--text-dim);margin-top:2px;}
+.present-badge{background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:var(--success);border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700;flex-shrink:0;}
+.remove-att-btn{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:7px;color:var(--danger);font-size:11px;padding:3px 8px;cursor:pointer;font-family:'Cairo',sans-serif;font-weight:700;flex-shrink:0;}
+
+.add-form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px;}
+.form-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.form-2col .field-input,.form-2col .field-select{margin-bottom:0;}
+.del-btn{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:7px;color:var(--danger);font-family:'Cairo',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;flex-shrink:0;}
+.qr-wrap{width:52px;height:52px;background:#fff;border-radius:8px;padding:3px;flex-shrink:0;}
+.qr-wrap img{width:100%;height:100%;}
+.action-btn{background:rgba(79,142,247,0.1);border:1px solid rgba(79,142,247,0.2);border-radius:7px;color:var(--accent);font-family:'Cairo',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;flex-shrink:0;}
+
+
+/* EDIT MODAL */
+.edit-phones-wrap{margin-bottom:14px;}
+.edit-phone-row{display:flex;gap:8px;margin-bottom:8px;align-items:center;}
+.edit-phone-row .field-input{margin-bottom:0;flex:1;}
+/* PHONE INPUTS */
+.phones-wrap{margin-bottom:14px;}
+.phone-row{display:flex;gap:8px;margin-bottom:8px;align-items:center;}
+.phone-row .field-input{margin-bottom:0;flex:1;}
+.add-phone-btn{background:rgba(79,142,247,0.1);border:1px solid rgba(79,142,247,0.2);border-radius:7px;color:var(--accent);font-size:18px;width:36px;height:36px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.rem-phone-btn{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.2);border-radius:7px;color:var(--danger);font-size:16px;width:36px;height:36px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+
+/* FILTERS */
+.filter-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px;}
+.filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.filter-chip{background:var(--surface2);border:1px solid var(--border);border-radius:20px;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:12px;font-weight:600;padding:6px 14px;cursor:pointer;white-space:nowrap;}
+.filter-chip.active{background:rgba(79,142,247,0.15);border-color:var(--accent);color:var(--accent);}
+
+/* PROFILE MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;overflow-y:auto;padding:16px;}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);max-width:480px;margin:0 auto;overflow:hidden;}
+.modal-header{background:linear-gradient(135deg,rgba(79,142,247,0.15),rgba(124,92,191,0.15));padding:18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);}
+.modal-avatar{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;flex-shrink:0;}
+.modal-close{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text-dim);font-size:18px;width:34px;height:34px;cursor:pointer;flex-shrink:0;}
+.modal-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);}
+.modal-stat{background:var(--surface);padding:14px;text-align:center;}
+.modal-stat-num{font-size:26px;font-weight:900;}
+.modal-stat-label{font-size:11px;color:var(--text-dim);margin-top:2px;}
+.prof-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+.prof-row:last-child{border-bottom:none;}
+.prof-key{font-size:11px;color:var(--text-dim);margin-bottom:2px;}
+.prof-val{font-size:14px;font-weight:600;}
+
+#toast{position:fixed;top:72px;left:50%;transform:translateX(-50%) translateY(-16px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 18px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;white-space:nowrap;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.4);}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+#toast.success{border-color:rgba(46,204,113,0.4);color:var(--success);}
+#toast.error{border-color:rgba(231,76,60,0.4);color:var(--danger);}
+#toast.info{border-color:rgba(79,142,247,0.4);color:var(--accent);}
+
+.empty-state{text-align:center;padding:36px 20px;color:var(--text-dim);font-size:14px;}
+.empty-icon{font-size:36px;margin-bottom:10px;}
+.loading{text-align:center;padding:28px;color:var(--text-dim);}
+.spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+#install-banner{display:none;position:fixed;bottom:0;left:0;right:0;z-index:300;padding:10px 14px 24px;pointer-events:none;}
+.install-inner{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,0.5);pointer-events:all;}
+
+@media print{
+  body>*:not(#print-area){display:none!important;}
+  #print-area{display:grid!important;grid-template-columns:repeat(3,1fr);gap:14px;padding:14px;}
+  .print-card{border:1px solid #ccc;border-radius:10px;padding:10px;text-align:center;page-break-inside:avoid;}
+  .print-card img{width:100px;height:100px;}
+  .pname{font-family:Arial;font-size:13px;font-weight:bold;margin-top:6px;}
+}
+#print-area{display:none;}
+
+/* VERSE */
+.verse-badge{background:rgba(124,92,191,0.12);border:1px solid rgba(124,92,191,0.3);color:#a07de0;border-radius:7px;padding:2px 7px;font-size:10px;font-weight:700;flex-shrink:0;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.student-item.verse-only{border-color:rgba(124,92,191,0.3);}
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <img src="icon-193.png" style="width:100px;height:100px;border-radius:20px;object-fit:cover;margin-bottom:14px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+  <div class="auth-title">حضور</div>
+  <div class="auth-sub">نظام تسجيل الحضور</div>
+  <div class="auth-card">
+    <label class="field-label">البريد الإلكتروني</label>
+    <input type="email" id="login-email" class="field-input" placeholder="example@gmail.com" dir="ltr">
+    <label class="field-label">كلمة المرور</label>
+    <input type="password" id="login-pass" class="field-input" placeholder="••••••••" dir="ltr">
+    <button class="btn-primary" id="login-btn" onclick="doLogin()">دخول</button>
+    <div id="login-error" style="color:var(--danger);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app-screen">
+  <div class="top-bar">
+    <div>
+      <div class="top-bar-title" style="display:flex;align-items:center;gap:8px">
+        <img src="icon-193.png" style="width:26px;height:26px;border-radius:6px;object-fit:cover">حضور
+      </div>
+      <div class="top-bar-sub" id="today-date-top"></div>
+    </div>
+    <button class="icon-btn" onclick="doLogout()">🚪</button>
+  </div>
+
+  <div class="app-content">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('attendance',this)">الحضور</button>
+      <button class="tab" onclick="switchTab('students',this)">المخدومين</button>
+      <button class="tab" onclick="switchTab('filters',this)">افتقاد</button>
+    </div>
+
+    <!-- ATTENDANCE TAB -->
+    <div id="tab-attendance">
+      <div class="stats-row">
+        <div class="stat-card t"><div class="stat-num" id="stat-total">0</div><div class="stat-label">إجمالي</div></div>
+        <div class="stat-card p"><div class="stat-num" id="stat-present">0</div><div class="stat-label">حاضر</div></div>
+        <div class="stat-card a"><div class="stat-num" id="stat-absent">0</div><div class="stat-label">غائب</div></div>
+      </div>
+      <div class="scan-zone" id="scan-zone" onclick="startScan()">
+        <div id="scan-placeholder" class="scan-placeholder">
+          <div style="font-size:38px">📷</div>
+          <div style="font-size:15px;font-weight:600;color:var(--accent)">افتح الكاميرا</div>
+          <div style="font-size:13px;color:var(--text-dim)">اسكن QR المخدوم</div>
+        </div>
+        <div id="video-container">
+          <video id="scanner-video" autoplay playsinline muted></video>
+          <div class="scan-overlay"><div class="scan-frame"><div class="scan-line"></div></div></div>
+        </div>
+      </div>
+      <button class="stop-btn" id="stop-btn" onclick="stopScan()" style="display:none">⏹ إيقاف الكاميرا</button>
+      <div class="manual-wrap" style="margin-top:14px">
+        <div class="search-box">
+          <input type="text" id="manual-input" placeholder="🔍 أو اكتب اسم المخدوم…" oninput="onManualSearch()" autocomplete="off">
+        </div>
+        <div id="manual-results"></div>
+      </div>
+      <div class="list-header">
+        <span class="section-title">قائمة اليوم</span>
+        <button class="export-btn" onclick="exportExcel()">📥 Excel</button>
+      </div>
+      <div id="today-list"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
+    </div>
+
+    <!-- STUDENTS TAB -->
+    <div id="tab-students" style="display:none">
+      <div class="add-form">
+        <p class="section-title" style="margin-bottom:14px">إضافة مخدوم جديد</p>
+        <label class="field-label">الاسم *</label>
+        <input type="text" id="new-name" class="field-input" placeholder="اسم المخدوم بالكامل">
+        <div class="form-2col" style="margin-bottom:14px">
+          <div>
+            <label class="field-label">تاريخ الميلاد</label>
+            <input type="date" id="new-dob" class="field-input" style="margin-bottom:0">
+          </div>
+          <div>
+            <label class="field-label">العنوان</label>
+            <input type="text" id="new-address" class="field-input" style="margin-bottom:0" placeholder="العنوان">
+          </div>
+        </div>
+        <label class="field-label">أرقام التليفون</label>
+        <div class="phones-wrap" id="phones-wrap">
+          <div class="phone-row">
+            <input type="tel" class="field-input phone-input" placeholder="رقم التليفون" dir="ltr">
+            <button class="add-phone-btn" onclick="addPhoneField()">+</button>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="addStudent()">➕ إضافة</button>
+      </div>
+      <div class="list-header">
+        <span class="section-title">المخدومين (<span id="stu-count">0</span>)</span>
+        <button class="export-btn" onclick="printAllQR()">🖨 QR</button>
+      </div>
+      <div class="search-box" style="margin-bottom:12px">
+        <input type="text" id="students-search-input" placeholder="🔍 ابحث عن مخدوم بالاسم…" oninput="renderStudentsList()" autocomplete="off">
+      </div>
+      <div id="students-list"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
+    </div>
+
+    <!-- FILTERS TAB -->
+    <div id="tab-filters" style="display:none">
+      <div class="filter-bar" style="margin-bottom:16px">
+        <p class="section-title" style="margin-bottom:12px">🎂 أعياد الميلاد</p>
+        <div class="filter-row" id="month-chips">
+          <button class="filter-chip active" onclick="setBdayMonth(0,this)">كل الشهور</button>
+          <button class="filter-chip" onclick="setBdayMonth(1,this)">يناير</button>
+          <button class="filter-chip" onclick="setBdayMonth(2,this)">فبراير</button>
+          <button class="filter-chip" onclick="setBdayMonth(3,this)">مارس</button>
+          <button class="filter-chip" onclick="setBdayMonth(4,this)">أبريل</button>
+          <button class="filter-chip" onclick="setBdayMonth(5,this)">مايو</button>
+          <button class="filter-chip" onclick="setBdayMonth(6,this)">يونيو</button>
+          <button class="filter-chip" onclick="setBdayMonth(7,this)">يوليو</button>
+          <button class="filter-chip" onclick="setBdayMonth(8,this)">أغسطس</button>
+          <button class="filter-chip" onclick="setBdayMonth(9,this)">سبتمبر</button>
+          <button class="filter-chip" onclick="setBdayMonth(10,this)">أكتوبر</button>
+          <button class="filter-chip" onclick="setBdayMonth(11,this)">نوفمبر</button>
+          <button class="filter-chip" onclick="setBdayMonth(12,this)">ديسمبر</button>
+        </div>
+      </div>
+
+      <div class="filter-bar" style="margin-bottom:16px">
+        <p class="section-title" style="margin-bottom:12px">😔 الغياب</p>
+        <div class="filter-row" style="margin-bottom:10px">
+          <button class="filter-chip active" onclick="setAbsenceFilter('all',this)">الكل</button>
+          <button class="filter-chip" onclick="setAbsenceFilter(1,this)">غاب آخر مرة</button>
+          <button class="filter-chip" onclick="setAbsenceFilter(2,this)">غاب آخر مرتين</button>
+          <button class="filter-chip" onclick="setAbsenceFilter(3,this)">غاب آخر 3 مرات</button>
+        </div>
+      </div>
+
+      <div class="list-header">
+        <span class="section-title">النتائج</span>
+        <span id="filter-count" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      <div id="filter-list"><div class="empty-state"><div class="empty-icon">🔍</div>اختر فلتر لعرض النتائج</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- PROFILE MODAL -->
+<div id="profile-modal" class="modal-overlay" style="display:none" onclick="closeProfileOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-avatar" id="prof-avatar"></div>
+      <div style="flex:1;min-width:0">
+        <div id="prof-name" style="font-size:18px;font-weight:900"></div>
+        <div id="prof-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
+      </div>
+      <button class="modal-close" onclick="closeProfile()">✕</button>
+    </div>
+    <div class="modal-stats">
+      <div class="modal-stat"><div class="modal-stat-num" id="prof-count" style="color:var(--success)">0</div><div class="modal-stat-label">مرات الحضور</div></div>
+      <div class="modal-stat"><div class="modal-stat-num" id="prof-last" style="color:var(--accent);font-size:14px">—</div><div class="modal-stat-label">آخر حضور</div></div>
+    </div>
+    <div id="prof-details" style="padding:16px"></div>
+  </div>
+</div>
+
+
+<!-- EDIT MODAL -->
+<div id="edit-modal" class="modal-overlay" style="display:none" onclick="closeEditOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-avatar" id="edit-avatar"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:900">تعديل بيانات المخدوم</div>
+        <div id="edit-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
+      </div>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div style="padding:18px">
+      <input type="hidden" id="edit-id">
+      <label class="field-label">الاسم *</label>
+      <input type="text" id="edit-name" class="field-input" placeholder="اسم المخدوم بالكامل">
+      <div class="form-2col" style="margin-bottom:14px">
+        <div>
+          <label class="field-label">تاريخ الميلاد</label>
+          <input type="date" id="edit-dob" class="field-input" style="margin-bottom:0">
+        </div>
+        <div>
+          <label class="field-label">العنوان</label>
+          <input type="text" id="edit-address" class="field-input" style="margin-bottom:0" placeholder="العنوان">
+        </div>
+      </div>
+      <label class="field-label">أرقام التليفون</label>
+      <div class="edit-phones-wrap" id="edit-phones-wrap"></div>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="btn-primary" onclick="saveEditStudent()" style="flex:1">💾 حفظ التعديلات</button>
+        <button onclick="closeEditModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:15px;font-weight:700;padding:13px 18px;cursor:pointer">إلغاء</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="install-banner">
+  <div class="install-inner">
+    <img src="icon-193.png" style="width:44px;height:44px;border-radius:11px;flex-shrink:0">
+    <div style="flex:1"><div style="font-size:14px;font-weight:700">نزّل التطبيق</div><div style="font-size:12px;color:var(--text-dim)">أضفه على الشاشة الرئيسية</div></div>
+    <button id="install-btn" style="background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:9px;color:#fff;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:9px 14px;cursor:pointer">تثبيت</button>
+    <button onclick="document.getElementById('install-banner').style.display='none'" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text-dim);font-size:16px;width:30px;height:30px;cursor:pointer">✕</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="print-area"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ===== FIREBASE CONFIG (Hdour) =====
+const firebaseConfig = {
+  apiKey: "AIzaSyBWK4y1GjEBXMrzgKu3Hm3sSG5sd2ympEI",
+  authDomain: "hdour-d66d8.firebaseapp.com",
+  projectId: "hdour-d66d8",
+  storageBucket: "hdour-d66d8.firebasestorage.app",
+  messagingSenderId: "877333539513",
+  appId: "1:877333539513:web:5e36ff0a09a2924ae64968",
+  measurementId: "G-C1ST5XBLKQ"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+let allStudents = [], todayAttendance = {}, allAttendance = {};
+let todayVerses = {}, allVerses = {};  // { studentId: { id, verse } } keyed by date→studentId
+let scanning = false, stream = null, scanInterval = null;
+let scanPaused = false, lastScanned = null, lastScannedTime = 0;
+let bdayMonth = 0, absenceFilter = 'all';
+
+// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع (الأسبوع بيبدأ خميس ويخلص أربع)
+const todayKey = () => {
+  const d = new Date();
+  const day = d.getDay(); // 0=أحد,1=اثنين,2=ثلاثاء,3=أربعاء,4=خميس,5=جمعة,6=سبت
+  const diff = (day - 4 + 7) % 7; // عدد الأيام من آخر خميس
+  d.setDate(d.getDate() - diff);
+  return d.toISOString().slice(0,10);
+};
+
+// ===== AUTH =====
+window.doLogin = async () => {
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  btn.disabled = true; btn.textContent = 'جاري الدخول…'; err.style.display = 'none';
+  try {
+    await signInWithEmailAndPassword(auth,
+      document.getElementById('login-email').value.trim(),
+      document.getElementById('login-pass').value);
+  } catch {
+    err.textContent = 'بيانات خاطئة، حاول تاني';
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'دخول';
+  }
+};
+window.doLogout = async () => { stopScan(); await signOut(auth); };
+
+onAuthStateChanged(auth, user => {
+  if (user) {
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display  = 'flex';
+    initApp();
+  } else {
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('app-screen').style.display  = 'none';
+    const btn = document.getElementById('login-btn');
+    btn.disabled = false; btn.textContent = 'دخول';
+  }
+});
+
+// ===== INIT =====
+async function initApp() {
+  const now  = new Date();
+  const days = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  document.getElementById('today-date-top').textContent =
+    days[now.getDay()] + ' — ' + now.toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'});
+  await loadStudents();
+  await loadAllAttendance();
+  await loadAllVerses();
+  renderTodayList();
+}
+
+// ===== PHONE FIELDS =====
+window.addPhoneField = () => {
+  const wrap = document.getElementById('phones-wrap');
+  const row  = document.createElement('div');
+  row.className = 'phone-row';
+  row.innerHTML = `<input type="tel" class="field-input phone-input" placeholder="رقم التليفون" dir="ltr">
+    <button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`;
+  wrap.appendChild(row);
+};
+
+// ===== STUDENTS =====
+async function loadStudents() {
+  const snap = await getDocs(query(collection(db,'students'), orderBy('name')));
+  allStudents = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  document.getElementById('stu-count').textContent = allStudents.length;
+  renderStudentsList();
+}
+
+window.addStudent = async () => {
+  const name = document.getElementById('new-name').value.trim();
+  if (!name) { showToast('اكتب اسم المخدوم', 'error'); return; }
+  const phones = [...document.querySelectorAll('.phone-input')]
+    .map(i => i.value.trim()).filter(Boolean);
+  const data = {
+    name,
+    dob:     document.getElementById('new-dob').value || '',
+    address: document.getElementById('new-address').value.trim() || '',
+    phones,
+    createdAt: serverTimestamp()
+  };
+  await addDoc(collection(db,'students'), data);
+  document.getElementById('new-name').value = '';
+  document.getElementById('new-dob').value  = '';
+  document.getElementById('new-address').value = '';
+  document.getElementById('phones-wrap').innerHTML = `<div class="phone-row">
+    <input type="tel" class="field-input phone-input" placeholder="رقم التليفون" dir="ltr">
+    <button class="add-phone-btn" onclick="addPhoneField()">+</button>
+  </div>`;
+  showToast('تمت الإضافة ✓', 'success');
+  await loadStudents();
+};
+
+window.deleteStudent = async (id, name) => {
+  if (!confirm(`هتحذف "${name}"؟`)) return;
+  await deleteDoc(doc(db,'students',id));
+  allStudents = allStudents.filter(s => s.id !== id);
+  delete todayAttendance[id];
+  updateStats(); renderTodayList(); renderStudentsList();
+  showToast('تم الحذف', 'success');
+};
+
+function renderStudentsList() {
+  const cont = document.getElementById('students-list');
+  document.getElementById('stu-count').textContent = allStudents.length;
+  if (!allStudents.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>لا يوجد مخدومين بعد</div>`;
+    return;
+  }
+  const q = (document.getElementById('students-search-input')?.value || '').trim();
+  const list = q ? allStudents.filter(s => s.name.includes(q)) : allStudents;
+  if (!list.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>مفيش نتايج للبحث</div>`;
+    return;
+  }
+  cont.innerHTML = list.map(s => {
+    const dob = s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) : '';
+    return `<div class="student-item">
+      <div class="qr-wrap"><img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(s.id)}" loading="lazy"></div>
+      <div class="s-info">
+        <div class="s-name">${s.name}</div>
+        ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
+      </div>
+      <button class="action-btn" onclick="openProfile('${s.id}')">👤</button>
+      <button class="action-btn" onclick="openEditModal('${s.id}')">✏️</button>
+      <button class="action-btn" onclick="downloadQR('${s.id}','${s.name}')">⬇</button>
+      <button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+window.downloadQR = async (id, name) => {
+  const res  = await fetch(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(id)}`);
+  const blob = await res.blob();
+  const a    = Object.assign(document.createElement('a'), { href:URL.createObjectURL(blob), download:`QR-${name}.png` });
+  a.click(); URL.revokeObjectURL(a.href);
+};
+
+// ===== ATTENDANCE =====
+async function loadAllAttendance() {
+  const snap = await getDocs(collection(db,'attendance'));
+  allAttendance = {}; todayAttendance = {};
+  const today = todayKey();
+  snap.docs.forEach(d => {
+    const data = d.data();
+    if (!allAttendance[data.date]) allAttendance[data.date] = {};
+    allAttendance[data.date][data.studentId] = d.id;
+    if (data.date === today) todayAttendance[data.studentId] = d.id;
+  });
+  updateStats();
+}
+
+// ===== أداة تصحيح لمرة واحدة: تنقل أي حضور/تسميع متسجل بتاريخ غلط لتاريخ الخميس الصح =====
+// استخدام: افتح الكونسول (F12) واكتب: fixWeekDate('2026-06-30','2026-06-25')
+window.fixWeekDate = async (wrongDate, correctDate) => {
+  if (!confirm(`هتنقل كل تسجيلات الحضور والتسميع من ${wrongDate} إلى ${correctDate}؟`)) return;
+  let n = 0;
+  const attSnap = await getDocs(collection(db,'attendance'));
+  for (const d of attSnap.docs) {
+    if (d.data().date === wrongDate) {
+      await updateDoc(doc(db,'attendance',d.id), { date: correctDate });
+      n++;
+    }
+  }
+  let m = 0;
+  const verSnap = await getDocs(collection(db,'verses'));
+  for (const d of verSnap.docs) {
+    if (d.data().date === wrongDate) {
+      await updateDoc(doc(db,'verses',d.id), { date: correctDate });
+      m++;
+    }
+  }
+  await loadAllAttendance();
+  await loadAllVerses();
+  renderTodayList();
+  showToast(`تم تصحيح ${n} حضور و${m} تسميع`, 'success');
+  alert(`تم تصحيح ${n} تسجيل حضور و${m} تسجيل تسميع من ${wrongDate} إلى ${correctDate}`);
+};
+
+async function loadAllVerses() {
+  const snap = await getDocs(collection(db,'verses'));
+  allVerses = {}; todayVerses = {};
+  const today = todayKey();
+  snap.docs.forEach(d => {
+    const data = d.data();
+    if (!allVerses[data.date]) allVerses[data.date] = {};
+    allVerses[data.date][data.studentId] = { id: d.id, verse: data.verse || '' };
+    if (data.date === today) todayVerses[data.studentId] = { id: d.id, verse: data.verse || '' };
+  });
+}
+
+async function markPresent(studentId) {
+  if (todayAttendance[studentId]) return false;
+  const ref = await addDoc(collection(db,'attendance'), { studentId, date:todayKey(), timestamp:serverTimestamp() });
+  todayAttendance[studentId] = ref.id;
+  if (!allAttendance[todayKey()]) allAttendance[todayKey()] = {};
+  allAttendance[todayKey()][studentId] = ref.id;
+  updateStats(); renderTodayList();
+  return true;
+}
+
+// ===== VERSE (independent from attendance) =====
+window.showVerseModal = async function(studentId) {
+  const today = todayKey();
+  if (todayVerses[studentId]) return; // already marked
+  try {
+    const ref = await addDoc(collection(db,'verses'), { studentId, date: today, verse: '', timestamp: serverTimestamp() });
+    todayVerses[studentId] = { id: ref.id, verse: '' };
+    if (!allVerses[today]) allVerses[today] = {};
+    allVerses[today][studentId] = { id: ref.id, verse: '' };
+    renderTodayList();
+    onManualSearch();
+    showToast('✅ تم تسجيل السماع', 'success');
+    navigator.vibrate?.([60,30,60]);
+  } catch(e) {
+    showToast('خطأ في الحفظ', 'error');
+  }
+};
+
+window.removeVerse = async (studentId) => {
+  const entry = todayVerses[studentId];
+  if (!entry) return;
+  if (!confirm('هتشيل السماع؟')) return;
+  await deleteDoc(doc(db,'verses',entry.id));
+  delete todayVerses[studentId];
+  const today = todayKey();
+  if (allVerses[today]) delete allVerses[today][studentId];
+  renderTodayList();
+  onManualSearch();
+  showToast('تم حذف السماع', 'success');
+};
+
+
+window.removeAttendance = async (studentId) => {
+  const s = allStudents.find(x => x.id === studentId);
+  if (!confirm(`هتشيل حضور "${s?.name}" من النهارده؟`)) return;
+  const docId = todayAttendance[studentId];
+  if (docId) await deleteDoc(doc(db,'attendance',docId));
+  delete todayAttendance[studentId];
+  updateStats(); renderTodayList();
+  showToast('تم حذف الحضور', 'success');
+};
+
+function renderTodayList() {
+  const cont = document.getElementById('today-list');
+  if (!allStudents.length) { cont.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div>أضف مخدومين أولاً</div>`; return; }
+  const sorted = [...allStudents].sort((a,b) => {
+    const aScore = (!!todayAttendance[b.id] ? 2 : 0) + (!!todayVerses[b.id] ? 1 : 0);
+    const bScore = (!!todayAttendance[a.id] ? 2 : 0) + (!!todayVerses[a.id] ? 1 : 0);
+    return aScore - bScore;
+  });
+  cont.innerHTML = sorted.map(s => {
+    const present = !!todayAttendance[s.id];
+    const verseEntry = todayVerses[s.id];
+    const hasVerse = !!verseEntry;
+    return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}">
+      <div class="s-avatar">${s.name.trim()[0]||'؟'}</div>
+      <div class="s-info">
+        <div class="s-name">${s.name}</div>
+        ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        ${present
+          ? `<span class="present-badge">✓ حاضر</span>
+             <button class="remove-att-btn" onclick="removeAttendance('${s.id}')">✕</button>`
+          : ''}
+        ${hasVerse
+          ? `<span class="verse-badge" title="${verseEntry.verse}">📖 سمع</span>
+             <button class="remove-att-btn" onclick="removeVerse('${s.id}')" title="شيل الآية">✕📖</button>`
+          : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateStats() {
+  const present = allStudents.filter(s => !!todayAttendance[s.id]).length;
+  const heardVerse = allStudents.filter(s => !!todayVerses[s.id]).length;
+  document.getElementById('stat-total').textContent   = allStudents.length;
+  document.getElementById('stat-present').textContent = present;
+  document.getElementById('stat-absent').textContent  = allStudents.length - present;
+}
+
+// ===== MANUAL SEARCH =====
+window.onManualSearch = () => {
+  const q    = document.getElementById('manual-input').value.trim();
+  const cont = document.getElementById('manual-results');
+  if (!q) { cont.innerHTML=''; return; }
+  const list = allStudents.filter(s => s.name.includes(q)).slice(0,5);
+  if (!list.length) { cont.innerHTML=`<div style="color:var(--text-dim);font-size:13px;padding:8px 4px">لا يوجد مخدوم بهذا الاسم</div>`; return; }
+  cont.innerHTML = list.map(s => {
+    const isPresent = !!todayAttendance[s.id];
+    const hasVerse  = !!todayVerses[s.id];
+    const verseText = todayVerses[s.id]?.verse || '';
+    return `<div class="result-item" style="flex-direction:column;align-items:stretch;gap:8px;cursor:default">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="result-avatar">${s.name.trim()[0]||'؟'}</div>
+        <div style="flex:1;font-size:14px;font-weight:700">${s.name}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        ${isPresent
+          ? `<span class="present-badge" style="padding:7px 12px;font-size:12px">✓ حاضر</span>`
+          : `<button onclick="manualMark('${s.id}')" style="flex:1;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.3);border-radius:8px;color:var(--success);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:8px;cursor:pointer">✓ تسجيل حضور</button>`}
+        ${hasVerse
+          ? `<button onclick="showVerseModal('${s.id}')" style="flex:1;background:rgba(124,92,191,0.12);border:1px solid rgba(124,92,191,0.3);border-radius:8px;color:#a07de0;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:8px;cursor:pointer" title="${verseText}">📖 ${verseText.length>15?verseText.slice(0,15)+'…':verseText}</button>`
+          : `<button onclick="showVerseModal('${s.id}')" style="flex:1;background:rgba(124,92,191,0.08);border:1px solid rgba(124,92,191,0.2);border-radius:8px;color:#a07de0;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:8px;cursor:pointer">📖 تسجيل آية</button>`}
+      </div>
+    </div>`;
+  }).join('');
+};
+
+window.manualMark = async (id) => {
+  const ok = await markPresent(id);
+  if (ok) {
+    const s = allStudents.find(x => x.id === id);
+    showToast(`✅ ${s.name} — تم التسجيل`, 'success');
+    navigator.vibrate?.([60,30,60]);
+    onManualSearch();
+  }
+};
+
+// ===== FILTERS =====
+window.setBdayMonth = (m, btn) => {
+  bdayMonth = m;
+  document.querySelectorAll('#month-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderFilterList();
+};
+
+window.setAbsenceFilter = (v, btn) => {
+  absenceFilter = v;
+  document.querySelectorAll('#tab-filters .filter-bar:nth-child(2) .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderFilterList();
+};
+
+function renderFilterList() {
+  const cont = document.getElementById('filter-list');
+  const dates = Object.keys(allAttendance).sort();
+  let list = [...allStudents];
+  if (bdayMonth > 0) {
+    list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === bdayMonth);
+  }
+  if (absenceFilter !== 'all' && dates.length > 0) {
+    const n = parseInt(absenceFilter);
+    const lastDates = dates.slice(-n);
+    list = list.filter(s => lastDates.every(d => !allAttendance[d]?.[s.id]));
+  }
+  document.getElementById('filter-count').textContent = `${list.length} مخدوم`;
+  if (!list.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>لا يوجد نتائج</div>`;
+    return;
+  }
+  cont.innerHTML = list.map(s => {
+    let attCount = 0;
+    dates.forEach(d => { if (allAttendance[d]?.[s.id]) attCount++; });
+    const dob = s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long'}) : '';
+    return `<div class="student-item">
+      <div class="s-avatar">${s.name.trim()[0]||'؟'}</div>
+      <div class="s-info">
+        <div class="s-name">${s.name}</div>
+        <div class="s-sub">${dob ? '🎂 '+dob+' · ' : ''}حضر ${attCount} مرة</div>
+      </div>
+      <button class="action-btn" onclick="openProfile('${s.id}')">👤 ملف</button>
+    </div>`;
+  }).join('');
+}
+
+// ===== PROFILE =====
+window.openProfile = (id) => {
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('prof-avatar').textContent = s.name.trim()[0]||'؟';
+  document.getElementById('prof-name').textContent   = s.name;
+  const dates   = Object.keys(allAttendance).sort();
+  let count = 0, lastDate = null;
+  dates.forEach(d => { if (allAttendance[d]?.[id]) { count++; lastDate = d; } });
+  document.getElementById('prof-count').textContent = count;
+  if (lastDate) {
+    const p = lastDate.split('-');
+    document.getElementById('prof-last').textContent = `${p[2]}/${p[1]}/${p[0]}`;
+    document.getElementById('prof-sub').textContent  = `آخر حضور: ${p[2]}/${p[1]}`;
+  } else {
+    document.getElementById('prof-last').textContent = 'لم يحضر بعد';
+    document.getElementById('prof-sub').textContent  = '';
+  }
+  const fields = [];
+  if (s.dob) fields.push({ icon:'🎂', key:'تاريخ الميلاد', val: new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) });
+  if (s.address) fields.push({ icon:'📍', key:'العنوان', val: s.address });
+  if (s.phones?.length) {
+    s.phones.forEach((p,i) => {
+      if (p) fields.push({ icon:'📞', key:`تليفون ${i===0?'':'('+(i+1)+')'}`, val: p, phone: true });
+    });
+  }
+  // attendance + verse history combined
+  const allDatesProfile = [...new Set([
+    ...Object.keys(allAttendance),
+    ...Object.keys(allVerses)
+  ])].sort().reverse().slice(0,20);
+  const relevantDates = allDatesProfile.filter(d => allAttendance[d]?.[id] || allVerses[d]?.[id]);
+  const histHTML = relevantDates.length ? `
+    <div style="padding:0 16px 16px">
+      <div class="section-title" style="margin-bottom:10px">📅 سجل الحضور والتسميع</div>
+      ${relevantDates.map(d => {
+        const p = d.split('-');
+        const att   = !!allAttendance[d]?.[id];
+        const verse = allVerses[d]?.[id]?.verse || '';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:600;color:var(--text-dim)">${p[2]}/${p[1]}/${p[0]}</span>
+          ${att ? `<span style="font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</span>` : ''}
+          ${verse ? `<span style="font-size:11px;color:#a07de0;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);border-radius:5px;padding:2px 7px">📖 ${verse}</span>` : ''}
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  document.getElementById('prof-details').innerHTML = (fields.length
+    ? `<div style="padding:16px">${fields.map(f => `<div class="prof-row">
+        <div style="font-size:18px;flex-shrink:0">${f.icon}</div>
+        <div style="flex:1">
+          <div class="prof-key">${f.key}</div>
+          ${f.phone
+            ? `<a href="tel:${f.val}" style="font-size:14px;font-weight:600;color:var(--text);text-decoration:none">${f.val}</a>`
+            : `<div class="prof-val">${f.val}</div>`}
+        </div>
+        ${f.phone ? `<a href="tel:${f.val}" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);border-radius:9px;color:var(--success);padding:7px 12px;font-size:12px;font-weight:700;text-decoration:none">📲 اتصل</a>` : ''}
+      </div>`).join('')}</div>` : '') + histHTML;
+  document.getElementById('profile-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+};
+
+window.closeProfile = () => {
+  document.getElementById('profile-modal').style.display = 'none';
+  document.body.style.overflow = '';
+};
+window.closeProfileOutside = (e) => { if (e.target.id === 'profile-modal') closeProfile(); };
+
+// ===== QR SCANNER =====
+async function getCameraStream() {
+  const tries = [
+    { video:{ facingMode:{exact:'environment'}, width:{ideal:1280} } },
+    { video:{ facingMode:'environment' } },
+    { video:true }
+  ];
+  for (const c of tries) {
+    try { return await navigator.mediaDevices.getUserMedia(c); } catch {}
+  }
+  throw new Error('no camera');
+}
+
+window.startScan = async () => {
+  if (scanning) return;
+  if (!navigator.mediaDevices?.getUserMedia) { showToast('جرّب Chrome', 'error'); return; }
+  try {
+    stream = await getCameraStream();
+    const video = document.getElementById('scanner-video');
+    video.srcObject = stream;
+    await new Promise(res => { video.onloadedmetadata = res; setTimeout(res,4000); });
+    await video.play().catch(()=>{});
+    document.getElementById('scan-placeholder').style.display = 'none';
+    document.getElementById('video-container').style.display  = 'block';
+    document.getElementById('stop-btn').style.display = 'block';
+    document.getElementById('scan-zone').classList.add('active');
+    document.getElementById('scan-zone').onclick = null;
+    scanning = true;
+    if ('BarcodeDetector' in window) {
+      const det = new BarcodeDetector({ formats:['qr_code'] });
+      const cvs = document.createElement('canvas');
+      const ctx = cvs.getContext('2d');
+      scanInterval = setInterval(async () => {
+        if (!scanning || video.readyState < 2) return;
+        cvs.width=video.videoWidth; cvs.height=video.videoHeight;
+        ctx.drawImage(video,0,0);
+        try { const c = await det.detect(cvs); if (c.length) handleQR(c[0].rawValue); } catch {}
+      }, 350);
+    } else {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+      s.onload = () => {
+        const cvs = document.createElement('canvas'), ctx = cvs.getContext('2d');
+        scanInterval = setInterval(() => {
+          if (!scanning || video.readyState < 2) return;
+          cvs.width=video.videoWidth; cvs.height=video.videoHeight;
+          ctx.drawImage(video,0,0);
+          const img = ctx.getImageData(0,0,cvs.width,cvs.height);
+          const c   = jsQR(img.data,img.width,img.height);
+          if (c) handleQR(c.data);
+        }, 350);
+      };
+      document.head.appendChild(s);
+    }
+  } catch(e) {
+    let msg = 'تعذّر فتح الكاميرا';
+    if (e?.name==='NotAllowedError')  msg = '🔒 اسمح للتطبيق بالكاميرا';
+    if (e?.name==='NotFoundError')    msg = '📷 مفيش كاميرا';
+    if (e?.name==='NotReadableError') msg = '⚠️ الكاميرا مستخدمة';
+    showToast(msg, 'error');
+  }
+};
+
+window.stopScan = () => {
+  scanning = false; clearInterval(scanInterval);
+  stream?.getTracks().forEach(t => t.stop()); stream = null;
+  document.getElementById('scan-placeholder').style.display = 'flex';
+  document.getElementById('video-container').style.display  = 'none';
+  document.getElementById('stop-btn').style.display = 'none';
+  document.getElementById('scan-zone').classList.remove('active');
+  document.getElementById('scan-zone').onclick = () => window.startScan();
+};
+
+async function handleQR(value) {
+  if (scanPaused) return;
+  const now = Date.now();
+  if (value === lastScanned && now - lastScannedTime < 1500) return;
+  lastScanned = value; lastScannedTime = now;
+  const s = allStudents.find(x => x.id === value);
+  if (!s) { showToast('QR غير معروف', 'error'); return; }
+  if (todayAttendance[s.id]) { showToast(`${s.name} — مسجّل مسبقاً ✓`, 'info'); return; }
+  scanPaused = true;
+  await markPresent(s.id);
+  showToast(`✅ ${s.name} — تم التسجيل`, 'success');
+  navigator.vibrate?.([60,30,60]);
+  setTimeout(() => { scanPaused = false; lastScanned = null; }, 1500);
+}
+
+// ===== EXPORT =====
+window.exportExcel = () => {
+  const attDates = Object.keys(allAttendance).sort();
+  const verDates = Object.keys(allVerses).sort();
+  const allDates = [...new Set([...attDates, ...verDates])].sort();
+  const header = ['الاسم', ...allDates.flatMap(d => {
+    const p = d.split('-');
+    return [`حضور ${p[2]}/${p[1]}`, `آية ${p[2]}/${p[1]}`];
+  })];
+  const rows = allStudents.map(s => [
+    s.name,
+    ...allDates.flatMap(d => {
+      const att   = allAttendance[d]?.[s.id] ? '✓' : '';
+      const verse = allVerses[d]?.[s.id] ? '✓' : '';
+      return [att, verse];
+    })
+  ]);
+  const bom = '\uFEFF';
+  const csv = bom + [header,...rows].map(r => r.map(c=>`"${c}"`).join(',')).join('\n');
+  const a   = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})),
+    download: `حضور-${todayKey()}.csv`
+  });
+  a.click(); URL.revokeObjectURL(a.href);
+};
+
+window.printAllQR = () => {
+  document.getElementById('print-area').innerHTML = allStudents.map(s => `
+    <div class="print-card">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(s.id)}">
+      <div class="pname">${s.name}</div>
+    </div>`).join('');
+  window.print();
+};
+
+// ===== TABS =====
+window.switchTab = (tab, btn) => {
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-attendance').style.display = tab==='attendance' ? 'block' : 'none';
+  document.getElementById('tab-students').style.display   = tab==='students'   ? 'block' : 'none';
+  document.getElementById('tab-filters').style.display    = tab==='filters'    ? 'block' : 'none';
+  if (tab==='filters') renderFilterList();
+};
+
+
+// ===== EDIT STUDENT =====
+window.openEditModal = (id) => {
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('edit-id').value      = s.id;
+  document.getElementById('edit-name').value    = s.name;
+  document.getElementById('edit-dob').value     = s.dob || '';
+  document.getElementById('edit-address').value = s.address || '';
+  document.getElementById('edit-avatar').textContent = s.name.trim()[0] || '؟';
+  document.getElementById('edit-sub').textContent    = s.name;
+
+  const wrap = document.getElementById('edit-phones-wrap');
+  const phones = (s.phones && s.phones.length) ? s.phones : [''];
+  wrap.innerHTML = phones.map((p, i) => `
+    <div class="edit-phone-row">
+      <input type="tel" class="field-input edit-phone-input" placeholder="رقم التليفون" dir="ltr" value="${p}">
+      ${i === 0
+        ? `<button class="add-phone-btn" onclick="addEditPhoneField()">+</button>`
+        : `<button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`}
+    </div>`).join('');
+
+  document.getElementById('edit-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+};
+
+window.addEditPhoneField = () => {
+  const wrap = document.getElementById('edit-phones-wrap');
+  const row  = document.createElement('div');
+  row.className = 'edit-phone-row';
+  row.innerHTML = `<input type="tel" class="field-input edit-phone-input" placeholder="رقم التليفون" dir="ltr">
+    <button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`;
+  wrap.appendChild(row);
+};
+
+window.closeEditModal = () => {
+  document.getElementById('edit-modal').style.display = 'none';
+  document.body.style.overflow = '';
+};
+
+window.closeEditOutside = (e) => { if (e.target.id === 'edit-modal') closeEditModal(); };
+
+window.saveEditStudent = async () => {
+  const id   = document.getElementById('edit-id').value;
+  const name = document.getElementById('edit-name').value.trim();
+  if (!name) { showToast('اكتب اسم المخدوم', 'error'); return; }
+  const phones = [...document.querySelectorAll('.edit-phone-input')]
+    .map(i => i.value.trim()).filter(Boolean);
+  const data = {
+    name,
+    dob:     document.getElementById('edit-dob').value || '',
+    address: document.getElementById('edit-address').value.trim() || '',
+    phones
+  };
+  try {
+    await updateDoc(doc(db,'students',id), data);
+    const idx = allStudents.findIndex(s => s.id === id);
+    if (idx !== -1) allStudents[idx] = { ...allStudents[idx], ...data };
+    renderStudentsList();
+    renderTodayList();
+    closeEditModal();
+    showToast('تم حفظ التعديلات ✓', 'success');
+  } catch(e) {
+    showToast('حصل خطأ أثناء الحفظ', 'error');
+    console.error(e);
+  }
+};
+
+// ===== TOAST =====
+let toastTimer;
+window.showToast = (msg, type='info') => {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', 2800);
+};
+</script>
+
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+let deferredPrompt;
+function checkShowBanner() {
+  if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+    document.getElementById('install-banner').style.display = 'none';
+    return;
+  }
+  setTimeout(() => {
+    if (!window.matchMedia('(display-mode: standalone)').matches)
+      document.getElementById('install-banner').style.display = 'block';
+  }, 1000);
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; checkShowBanner(); });
+document.getElementById('install-btn').addEventListener('click', async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    document.getElementById('install-banner').style.display = 'none';
+  } else {
+    alert('لتثبيت التطبيق:\n1. اضغط ⋮ (النقط التلاتة)\n2. اختر "Add to Home screen"');
+  }
+});
+window.addEventListener('appinstalled', () => { document.getElementById('install-banner').style.display = 'none'; });
+checkShowBanner();
+</script>
+</body>
+</html>
