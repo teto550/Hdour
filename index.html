@@ -2102,6 +2102,10 @@ function startTodayListeners() {
   if (!todayAttendanceUnsub) listenTodayAttendance();
   if (!todayVersesUnsub) migrateLegacyVerses().then(() => { if (!todayVersesUnsub) listenTodayVerses(); });
 }
+function stopTodayListeners() {
+  if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
+  if (todayVersesUnsub)     { todayVersesUnsub();     todayVersesUnsub     = null; }
+}
 function listenTodayAttendance() {
   if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
   const today = todayKey();
@@ -3076,6 +3080,7 @@ window.applyMonitorVisibility = () => {
 };
 window.goHome = () => {
   stopScan(); stopVoice();
+  stopTodayListeners();
   ['attendance','students','filters','messages','monitor'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
@@ -3083,7 +3088,7 @@ window.goHome = () => {
   applyMonitorVisibility();
 };
 window.switchTab = async (tab) => {
-  if (tab !== 'attendance') { stopScan(); stopVoice(); }
+  if (tab !== 'attendance') { stopScan(); stopVoice(); stopTodayListeners(); }
   if (tab === 'monitor' && currentRole !== 'admin') return;
   document.getElementById('tab-home').style.display = 'none';
   document.getElementById('main-tabs').style.display = 'flex';
