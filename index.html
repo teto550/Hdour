@@ -774,7 +774,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment }
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
@@ -802,7 +802,9 @@ initializeAppCheck(app, {
 });
 
 const auth = getAuth(app);
-const db   = getFirestore(app);
+const db   = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() })
+});
 
 // توحيد النصوص العربية للبحث: يشيل التشكيل، الحروف الخفية (من إكسل)، ويوحّد أشكال الحروف المتشابهة
 function normalizeArabic(str) {
