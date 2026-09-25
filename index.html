@@ -128,8 +128,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 
 .class-tabs{display:flex;gap:6px;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;}
 .class-tab{flex:1;padding:11px 4px;border:none;border-radius:8px;background:transparent;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;}
-.class-tab.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;}
-.class-tab.active.tab-kg{background:linear-gradient(135deg,var(--success),#27ae60);}
+.class-tab.active{background:var(--tab-grad,linear-gradient(135deg,var(--accent),var(--accent2)));color:#fff;}
 .present-badge{background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:var(--success);border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700;flex-shrink:0;}
 .remove-att-btn{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:7px;color:var(--danger);font-size:11px;padding:3px 8px;cursor:pointer;font-family:'Cairo',sans-serif;font-weight:700;flex-shrink:0;}
 
@@ -259,6 +258,14 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <input type="email" id="reg-email" class="field-input" placeholder="example@gmail.com" dir="ltr">
       <label class="field-label">كلمة المرور</label>
       <input type="password" id="reg-pass" class="field-input" placeholder="••••••••  (6 حروف على الأقل)" dir="ltr">
+      <label class="field-label">رقم التليفون</label>
+      <input type="tel" id="reg-phone" class="field-input" placeholder="رقم تليفونك" dir="ltr">
+      <label class="field-label">العنوان</label>
+      <input type="text" id="reg-address" class="field-input" placeholder="عنوانك">
+      <label class="field-label">الفصل</label>
+      <select class="field-select" id="reg-class">
+        <option value="">جاري تحميل الفصول…</option>
+      </select>
       <button class="btn-primary" id="register-btn" onclick="doRegister()">تسجيل</button>
     </div>
     <div id="login-error" style="color:var(--danger);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
@@ -288,11 +295,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
   <div class="app-content">
     <!-- GLOBAL CLASS TABS — فوق كل التابات التانية، وبيتحكم في الفصل المعروض في كل الشاشة -->
-    <div class="class-tabs" id="global-class-tabs">
-      <button class="class-tab active" id="class-tab-a" onclick="switchClassTab('a',this)">🅰️ فصل أ</button>
-      <button class="class-tab" id="class-tab-b" onclick="switchClassTab('b',this)">🅱️ فصل ب</button>
-      <button class="class-tab tab-kg" id="class-tab-kg" onclick="switchClassTab('kg',this)">👶 كي جي ١</button>
-    </div>
+    <div class="class-tabs" id="global-class-tabs"></div>
     <div id="tab-home" style="display:none">
       <div class="home-grid">
         <button class="home-card" onclick="switchTab('attendance')"><span>✅</span>الحضور</button>
@@ -404,13 +407,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="filter-chip" onclick="setSiblingsFilter('siblings',this)">👨‍👩‍👧‍👦 الإخوات بس</button>
         <button class="filter-chip" onclick="setSiblingsFilter('nonSiblings',this)">بدون إخوات</button>
       </div>
-      <div class="filter-row" id="class-chips" style="margin-bottom:12px">
-        <button class="filter-chip active" onclick="setClassFilter('all',this)">كل الفصول</button>
-        <button class="filter-chip" onclick="setClassFilter('a',this)">🅰️ فصل أ</button>
-        <button class="filter-chip" onclick="setClassFilter('b',this)">🅱️ فصل ب</button>
-        <button class="filter-chip" onclick="setClassFilter('kg',this)">👶 كي جي ١</button>
-        <button class="filter-chip" onclick="setClassFilter('none',this)">؟ لسه متقسمش</button>
-      </div>
+      <div class="filter-row" id="class-chips" style="margin-bottom:12px"></div>
       <div id="students-list"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
     </div>
 
@@ -645,6 +642,12 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <!-- MONITOR TAB (ADMIN ONLY) -->
     <div id="tab-monitor" style="display:none">
       <div class="list-header">
+        <span class="section-title">الفصول</span>
+        <button class="export-btn" onclick="addClassPrompt()">➕ فصل جديد</button>
+      </div>
+      <div id="classes-admin-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px"></div>
+
+      <div class="list-header">
         <span class="section-title">طلبات الانضمام (<span id="pending-count">0</span>)</span>
       </div>
       <div id="pending-list" style="margin-bottom:22px"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
@@ -683,12 +686,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     </div>
     <div style="padding:0 16px">
       <div class="section-title" style="margin-bottom:8px">الفصل</div>
-      <div class="filter-row" id="prof-class-chips" style="margin-bottom:2px">
-        <button class="filter-chip" id="prof-class-none" onclick="setStudentClassFromProfile('')">بدون فصل</button>
-        <button class="filter-chip" id="prof-class-a" onclick="setStudentClassFromProfile('a')">🅰️ فصل أ</button>
-        <button class="filter-chip" id="prof-class-b" onclick="setStudentClassFromProfile('b')">🅱️ فصل ب</button>
-        <button class="filter-chip" id="prof-class-kg" onclick="setStudentClassFromProfile('kg')">👶 كي جي ١</button>
-      </div>
+      <div class="filter-row" id="prof-class-chips" style="margin-bottom:2px"></div>
     </div>
     <div id="prof-details" style="padding:16px"></div>
   </div>
@@ -727,12 +725,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <option value="female">بنت</option>
       </select>
       <label class="field-label">الفصل</label>
-      <select class="field-select" id="edit-class">
-        <option value="">— لسه متقسمش —</option>
-        <option value="a">🅰️ فصل أ</option>
-        <option value="b">🅱️ فصل ب</option>
-        <option value="kg">👶 كي جي ١</option>
-      </select>
+      <select class="field-select" id="edit-class"></select>
       <label class="field-label">أرقام التليفون</label>
       <div class="edit-phones-wrap" id="edit-phones-wrap"></div>
       <label class="field-label">ملحوظات الافتقاد</label>
@@ -1081,10 +1074,154 @@ let scanning = false, stream = null, scanInterval = null;
 let scanPaused = false, lastScanned = null, lastScannedTime = 0;
 let bdayMonth = 0, absenceFilter = 'all', attendanceFilter = 'all', noteFilter = 'all';
 let siblingsFilter = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب المخدومين)
-let classFilter = 'all'; // 'all' | 'a' | 'b' | 'kg' (فلتر الفصل — تبويب المخدومين)
-let currentClassTab = localStorage.getItem('attendanceClassTab') || 'a'; // 'a' | 'b' | 'kg' — التاب المختار فوق في شاشة الحضور
-function classLabel(sec) { return sec==='a' ? 'فصل أ' : sec==='b' ? 'فصل ب' : sec==='kg' ? 'كي جي ١' : 'بدون فصل'; }
-function classEmoji(sec) { return sec==='a' ? '🅰️' : sec==='b' ? '🅱️' : sec==='kg' ? '👶' : '؟'; }
+let classFilter = 'all'; // 'all' | <classId> | 'none' (فلتر الفصل — تبويب المخدومين)
+let currentClassTab = localStorage.getItem('attendanceClassTab') || ''; // <classId> — التاب المختار فوق في شاشة الحضور، بيتحدد أول فصل موجود لما الفصول توصل
+
+// ===== الفصول (ديناميكي) =====
+// الفصول بقت متخزنة في مجموعة 'classes' على فايرستور بدل ما تكون ثابتة (a/b/kg) في الكود،
+// عشان تقدر تضيف/تعدّل/تمسح فصول من جوه التطبيق نفسه من غير ما تحتاج تعديل كود
+let allClasses = []; // [{id,name,emoji,order}]
+let classesUnsub = null;
+const CLASS_PALETTE = [
+  {bg:'rgba(79,142,247,0.12)',  border:'rgba(79,142,247,0.3)',  text:'#4f8ef7'},
+  {bg:'rgba(124,92,191,0.12)',  border:'rgba(124,92,191,0.3)',  text:'#a07de0'},
+  {bg:'rgba(46,204,113,0.12)',  border:'rgba(46,204,113,0.3)',  text:'#2ecc71'},
+  {bg:'rgba(243,156,18,0.12)',  border:'rgba(243,156,18,0.3)',  text:'#f39c12'},
+  {bg:'rgba(231,76,60,0.12)',   border:'rgba(231,76,60,0.3)',   text:'#e74c3c'},
+  {bg:'rgba(26,188,156,0.12)',  border:'rgba(26,188,156,0.3)',  text:'#1abc9c'},
+  {bg:'rgba(230,126,34,0.12)',  border:'rgba(230,126,34,0.3)',  text:'#e67e22'},
+  {bg:'rgba(52,152,219,0.12)',  border:'rgba(52,152,219,0.3)',  text:'#3498db'},
+];
+function classById(id) { return allClasses.find(c => c.id === id); }
+function classLabel(sec) { if (!sec) return 'بدون فصل'; const c = classById(sec); return c ? c.name : sec; }
+function classEmoji(sec) { if (!sec) return '؟'; const c = classById(sec); return c ? (c.emoji || '📘') : '❔'; }
+function classPalette(sec) {
+  const idx = allClasses.findIndex(c => c.id === sec);
+  return CLASS_PALETTE[(idx < 0 ? 0 : idx) % CLASS_PALETTE.length];
+}
+function classBadgeHTML(sec, forceLabel) {
+  if (!sec) return `<span class="class-badge class-none">؟ لسه متقسمش</span>`;
+  const p = classPalette(sec);
+  const label = forceLabel === false ? '' : classLabel(sec);
+  return `<span class="class-badge" style="background:${p.bg};border:1px solid ${p.border};color:${p.text}">${classEmoji(sec)} ${label}</span>`;
+}
+// شرايط فصول (chips) عامة — بتتبني من allClasses مباشرة، فبتشتغل مع أي عدد فصول
+function classChipsHTML(activeId, onClickFn, opts = {}) {
+  let html = '';
+  if (opts.includeAll) html += `<button class="filter-chip ${activeId==='all'?'active':''}" onclick="${onClickFn}('all',this)">كل الفصول</button>`;
+  allClasses.forEach(c => {
+    html += `<button class="filter-chip ${activeId===c.id?'active':''}" onclick="${onClickFn}('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
+  });
+  if (opts.includeNone) html += `<button class="filter-chip ${activeId==='none'?'active':''}" onclick="${onClickFn}('none',this)">؟ لسه متقسمش</button>`;
+  return html;
+}
+function classPickButtonsHTML(studentId) {
+  return allClasses.map(c => {
+    const p = classPalette(c.id);
+    return `<button class="class-pick-btn" style="border-color:${p.border};color:${p.text}" onclick="event.stopPropagation();assignClassSection('${studentId}','${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('');
+}
+function classSelectOptionsHTML(includeEmpty) {
+  let html = includeEmpty ? `<option value="">— لسه متقسمش —</option>` : '';
+  html += allClasses.map(c => `<option value="${c.id}">${c.emoji||'📘'} ${c.name}</option>`).join('');
+  return html;
+}
+async function ensureClassesSeeded() {
+  try {
+    const snap = await getDocs(collection(db,'classes'));
+    if (!snap.empty) return;
+    const defaults = [ {id:'a',name:'فصل أ',emoji:'🅰️',order:0}, {id:'b',name:'فصل ب',emoji:'🅱️',order:1}, {id:'kg',name:'كي جي ١',emoji:'👶',order:2} ];
+    for (const c of defaults) await setDoc(doc(db,'classes',c.id), { name:c.name, emoji:c.emoji, order:c.order, createdAt: serverTimestamp() });
+  } catch(e) { console.error('تعذّر تجهيز الفصول الافتراضية:', e); }
+}
+function startClassesListener() {
+  if (classesUnsub) return;
+  classesUnsub = onSnapshot(collection(db,'classes'), snap => {
+    allClasses = snap.docs
+      .map(d => ({ id:d.id, ...d.data() }))
+      .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
+    if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('attendanceClassTab')) ? localStorage.getItem('attendanceClassTab') : allClasses[0].id;
+    onClassesUpdated();
+  }, err => console.error('classes listener error:', err));
+}
+function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; }
+// بيتنادى كل مرة قايمة الفصول تتغير (إضافة/تعديل/حذف فصل) — بيعيد بناء كل حتة في الواجهة معتمدة على الفصول
+function onClassesUpdated() {
+  renderGlobalClassTabs();
+  renderClassChips();
+  renderProfClassChips();
+  renderRegClassOptions();
+  const editSel = document.getElementById('edit-class');
+  if (editSel) { const cur = editSel.value; editSel.innerHTML = classSelectOptionsHTML(true); editSel.value = cur; }
+  if (currentRole === 'admin') { renderClassesAdminList(); loadServantsOnce(); }
+  if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
+  if (document.getElementById('tab-attendance')?.style.display === 'block') { updateStats(); renderTodayList(); }
+}
+// شريط الفصول العلوي في شاشة الحضور — بيتبني من allClasses بالكامل
+function renderGlobalClassTabs() {
+  const bar = document.getElementById('global-class-tabs');
+  if (!bar) return;
+  bar.innerHTML = allClasses.map(c => {
+    const p = classPalette(c.id);
+    return `<button class="class-tab" id="class-tab-${c.id}" style="--tab-grad:linear-gradient(135deg,${p.text},${p.text}cc)" onclick="switchClassTab('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('');
+  applyClassRestrictionUI();
+}
+function renderClassChips() {
+  const cont = document.getElementById('class-chips');
+  if (!cont) return;
+  cont.innerHTML = classChipsHTML(classFilter, 'setClassFilter', { includeAll:true, includeNone:true });
+}
+function renderProfClassChips(activeId) {
+  const cont = document.getElementById('prof-class-chips');
+  if (!cont) return;
+  const active = activeId !== undefined ? activeId : (allStudents.find(x => x.id === currentProfileId)?.classSection || '');
+  let html = `<button class="filter-chip ${!active?'active':''}" onclick="setStudentClassFromProfile('')">بدون فصل</button>`;
+  html += allClasses.map(c => `<button class="filter-chip ${active===c.id?'active':''}" onclick="setStudentClassFromProfile('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`).join('');
+  cont.innerHTML = html;
+}
+function renderRegClassOptions() {
+  const sel = document.getElementById('reg-class');
+  if (sel && allClasses.length) sel.innerHTML = classSelectOptionsHTML(false);
+}
+// ===== إدارة الفصول (أدمن فقط) — إضافة/تعديل/حذف فصول من جوه التطبيق نفسه =====
+function renderClassesAdminList() {
+  const cont = document.getElementById('classes-admin-list');
+  if (!cont) return;
+  if (!allClasses.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لا يوجد فصول بعد</div>`; return; }
+  cont.innerHTML = allClasses.map(c => `
+    <div class="tpl-chip">
+      <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name}</span>
+      <button class="tpl-chip-del" onclick="editClassPrompt('${c.id}')" title="تعديل" style="margin-left:4px">✏️</button>
+      <button class="tpl-chip-del" onclick="deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">✕</button>
+    </div>`).join('');
+}
+window.addClassPrompt = async () => {
+  const name = (prompt('اسم الفصل الجديد؟ (مثلاً: فصل ج)') || '').trim();
+  if (!name) return;
+  const emoji = (prompt('إيموجي للفصل؟ (اختياري، سيب فاضي لو مش عايز)') || '').trim();
+  try {
+    await addDoc(collection(db,'classes'), { name, emoji, order: allClasses.length, createdAt: serverTimestamp() });
+    showToast(`تم إضافة "${name}" ✓`, 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الإضافة', 'error'); }
+};
+window.editClassPrompt = async (id) => {
+  const c = classById(id); if (!c) return;
+  const name = (prompt('اسم الفصل:', c.name) || '').trim();
+  if (!name) return;
+  const emoji = (prompt('إيموجي الفصل:', c.emoji||'') || '').trim();
+  try {
+    await updateDoc(doc(db,'classes',id), { name, emoji });
+    showToast('تم تعديل الفصل ✓', 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء التعديل', 'error'); }
+};
+window.deleteClass = async (id, name) => {
+  if (!confirm(`هتحذف "${name}"؟ المخدومين والخدام اللي متسجلين في الفصل ده هيفضلوا متسجلين بيه بس هيبان "غير معروف" لحد ما تحددلهم فصل تاني`)) return;
+  try {
+    await deleteDoc(doc(db,'classes',id));
+    showToast('تم حذف الفصل', 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحذف', 'error'); }
+};
 let filterSiblings = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب الافتقاد)
 const NOTE_LABELS = {
   traveling:   { emoji:'🧳', text:'مسافر' },
@@ -1124,7 +1261,26 @@ window.switchAuthTab = (which) => {
   document.getElementById('auth-login-form').style.display    = which === 'login'    ? 'block' : 'none';
   document.getElementById('auth-register-form').style.display = which === 'register' ? 'block' : 'none';
   document.getElementById('login-error').style.display = 'none';
+  if (which === 'register') loadRegisterClassOptions();
 };
+
+// بيتحمّل قايمة الفصول لفورم التسجيل — بيتنادى قبل ما الخادم الجديد يعمل حساب أصلاً،
+// فلو ده أول مرة يفتح فيها التاب ده، بيجيب الفصول من فايرستور مباشرة (لازم قاعدة فايرستور تسمح بقراءة مجموعة 'classes' حتى من غير تسجيل دخول)
+async function loadRegisterClassOptions() {
+  const sel = document.getElementById('reg-class');
+  if (!sel) return;
+  if (allClasses.length) { sel.innerHTML = classSelectOptionsHTML(false); return; }
+  sel.innerHTML = `<option value="">جاري تحميل الفصول…</option>`;
+  try {
+    const snap = await getDocs(collection(db,'classes'));
+    allClasses = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+      .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
+    sel.innerHTML = allClasses.length ? classSelectOptionsHTML(false) : `<option value="">لا يوجد فصول متاحة، كلم الأدمن</option>`;
+  } catch(e) {
+    console.error('تعذّر تحميل الفصول:', e);
+    sel.innerHTML = `<option value="">تعذّر تحميل الفصول</option>`;
+  }
+}
 
 window.doLogin = async () => {
   const btn = document.getElementById('login-btn');
@@ -1149,16 +1305,22 @@ window.doRegister = async () => {
   const name = document.getElementById('reg-name').value.trim();
   const email = document.getElementById('reg-email').value.trim();
   const pass  = document.getElementById('reg-pass').value;
+  const phone = document.getElementById('reg-phone').value.trim();
+  const address = document.getElementById('reg-address').value.trim();
+  const regClass = document.getElementById('reg-class').value;
   err.style.display = 'none';
   if (!name)        { err.textContent = 'اكتب اسمك الأول';        err.style.display = 'block'; return; }
   if (!email||!pass){ err.textContent = 'اكتب الإيميل وكلمة المرور'; err.style.display = 'block'; return; }
+  if (!phone)       { err.textContent = 'اكتب رقم تليفونك';       err.style.display = 'block'; return; }
+  if (!regClass)    { err.textContent = 'اختار فصلك';             err.style.display = 'block'; return; }
   btn.disabled = true; btn.textContent = 'جاري التسجيل…';
   explicitAuthAction = true;
   try {
     const cred    = await createUserWithEmailAndPassword(auth, email, pass);
     const isAdmin = ADMIN_EMAILS.map(e=>e.toLowerCase()).includes(email.toLowerCase());
     await setDoc(doc(db,'servants',cred.user.uid), {
-      name, email,
+      name, email, phone, address,
+      assignedClass: isAdmin ? '' : regClass,
       status: isAdmin ? 'approved' : 'pending',
       role:   isAdmin ? 'admin'    : 'servant',
       createdAt: serverTimestamp(),
@@ -1228,6 +1390,7 @@ onAuthStateChanged(auth, async user => {
     if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
     if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
     if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
+    stopClassesListener();
     localStorage.removeItem('stu_cache_v1'); studentsLoaded = false;
     showAuthScreen();
     const btn = document.getElementById('login-btn');
@@ -1290,6 +1453,8 @@ onAuthStateChanged(auth, async user => {
     applyMonitorVisibility();
     startHeartbeat();
     listenOwnServantDoc(user.uid);
+    if (currentRole === 'admin') await ensureClassesSeeded();
+    startClassesListener();
     initApp();
   } catch(e) {
     console.error(e);
@@ -1569,10 +1734,9 @@ window.setSiblingsFilter = (val, btn) => {
   renderStudentsList();
 };
 
-window.setClassFilter = (val, btn) => {
+window.setClassFilter = (val) => {
   classFilter = val;
-  document.querySelectorAll('#class-chips .filter-chip').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+  renderClassChips();
   renderStudentsList();
 };
 
@@ -1595,10 +1759,8 @@ function renderStudentsList() {
     list = list.filter(s => { const k = familyKey(s.name); return !k || siblingCounts[k] <= 1; });
   }
 
-  if (classFilter === 'a') list = list.filter(s => s.classSection === 'a');
-  else if (classFilter === 'b') list = list.filter(s => s.classSection === 'b');
-  else if (classFilter === 'kg') list = list.filter(s => s.classSection === 'kg');
-  else if (classFilter === 'none') list = list.filter(s => !s.classSection);
+  if (classFilter === 'none') list = list.filter(s => !s.classSection);
+  else if (classFilter && classFilter !== 'all') list = list.filter(s => s.classSection === classFilter);
 
   // ترتيب اللستة عشان كل الإخوات (نفس الاسم بالظبط من اسم الأب لحد آخر اسم) يظهروا ورا بعض مجموعين — دايمًا، حتى وقت البحث
   list = [...list].sort((a, b) => {
@@ -1618,9 +1780,7 @@ function renderStudentsList() {
     const isSibling = k && siblingCounts[k] > 1;
     const siblingBadge = isSibling ? `<div class="s-sub">👨‍👩‍👧‍👦 ${siblingCounts[k]} إخوات مسجلين</div>` : '';
     const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
-    const classBadge = s.classSection
-                      ? `<span class="class-badge class-${s.classSection}">${classEmoji(s.classSection)} ${classLabel(s.classSection)}</span>`
-                      : `<span class="class-badge class-none">؟ لسه متقسمش</span>`;
+    const classBadge = classBadgeHTML(s.classSection);
     return `<div class="student-item">
       <div class="qr-wrap"><img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(s.id)}" loading="lazy"></div>
       <div class="s-info">
@@ -2327,16 +2487,14 @@ window.onManualSearch = () => {
       return `<div class="result-item" style="cursor:default;flex-wrap:wrap">
         <div class="result-avatar">${s.name.trim()[0]||'؟'}</div>
         <div style="flex:1;font-size:14px;font-weight:700;min-width:100%">${s.name} <span style="color:var(--text-dim);font-weight:600;font-size:11px">— هو في فصل إيه؟</span></div>
-        <button class="class-pick-btn pick-a" onclick="event.stopPropagation();assignClassSection('${s.id}','a')">🅰️ فصل أ</button>
-        <button class="class-pick-btn pick-b" onclick="event.stopPropagation();assignClassSection('${s.id}','b')">🅱️ فصل ب</button>
-        <button class="class-pick-btn pick-kg" onclick="event.stopPropagation();assignClassSection('${s.id}','kg')">👶 كي جي ١</button>
+        ${classPickButtonsHTML(s.id)}
       </div>`;
     }
     const isPresent = !!todayAttendance[s.id];
     const hasVerse  = !!todayVerses[s.id];
     const verseText = todayVerses[s.id]?.verse || '';
     const otherClass = !visibleClasses.includes(s.classSection);
-    const classBadge = `<span class="class-badge class-${s.classSection}">${classEmoji(s.classSection)} ${otherClass ? classLabel(s.classSection) : ''}</span>`;
+    const classBadge = classBadgeHTML(s.classSection, otherClass);
     return `<div class="result-item" style="cursor:default">
       <div class="result-avatar">${s.name.trim()[0]||'؟'}</div>
       <div style="flex:1;font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>
@@ -2538,11 +2696,7 @@ window.openProfile = (id) => {
   if (!s) return;
   document.getElementById('prof-avatar').textContent = s.name.trim()[0]||'؟';
   document.getElementById('prof-name').textContent   = s.name;
-  document.querySelectorAll('#prof-class-chips .filter-chip').forEach(b => b.classList.remove('active'));
-  const activeClassBtn = document.getElementById(
-    s.classSection === 'a' ? 'prof-class-a' : s.classSection === 'b' ? 'prof-class-b' : s.classSection === 'kg' ? 'prof-class-kg' : 'prof-class-none'
-  );
-  activeClassBtn?.classList.add('active');
+  renderProfClassChips(s.classSection || '');
   const H = (studentHist[id] && Date.now() - studentHist[id].ts < 300000) ? studentHist[id] : null;
   const dates   = H ? Object.keys(H.att).sort() : [];
   let count = 0, lastDate = null;
@@ -2617,9 +2771,7 @@ window.setStudentClassFromProfile = async (section) => {
     await updateDoc(doc(db,'students',id), { classSection: section }); bumpStudentsRev();
     const idx = allStudents.findIndex(x => x.id === id);
     if (idx !== -1) allStudents[idx].classSection = section;
-    document.querySelectorAll('#prof-class-chips .filter-chip').forEach(b => b.classList.remove('active'));
-    const activeClassBtn = document.getElementById(section === 'a' ? 'prof-class-a' : section === 'b' ? 'prof-class-b' : section === 'kg' ? 'prof-class-kg' : 'prof-class-none');
-    activeClassBtn?.classList.add('active');
+    renderProfClassChips(section);
     renderStudentsList();
     onManualSearch();
     updateStats();
@@ -3126,8 +3278,9 @@ function applyClassRestrictionUI() {
   const restricted = currentRole !== 'admin' && allowed.length > 0;
   if (restricted) {
     if (!allowed.includes(currentClassTab)) currentClassTab = allowed[0];
-  } else if (!currentClassTab) {
-    currentClassTab = localStorage.getItem('attendanceClassTab') || 'a';
+  } else if (!currentClassTab && allClasses.length) {
+    const saved = localStorage.getItem('attendanceClassTab');
+    currentClassTab = (saved && allClasses.some(c => c.id === saved)) ? saved : allClasses[0].id;
   }
   const bar = document.getElementById('global-class-tabs');
   if (bar) {
@@ -3171,11 +3324,12 @@ function renderPendingList(list) {
   const cont = document.getElementById('pending-list');
   if (!list.length) { cont.innerHTML = `<div class="empty-state">لا يوجد طلبات انضمام جديدة</div>`; return; }
   cont.innerHTML = list.map(s => `
-    <div class="servant-item">
+    <div class="servant-item" style="flex-wrap:wrap">
       <div class="s-avatar">${(s.name||'؟').trim()[0]||'؟'}</div>
       <div class="s-info">
-        <div class="s-name">${s.name||'—'}</div>
-        <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}</div>
+        <div class="s-name">${s.name||'—'} ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
+        <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}${s.phone ? ' · '+s.phone : ''}</div>
+        ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
       </div>
       <button class="export-btn" onclick="approveServant('${s.id}')">✓ قبول</button>
       <button class="del-btn" onclick="rejectServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}')">✕ رفض</button>
@@ -3208,22 +3362,30 @@ function renderServantsList(list) {
         actions = `<button class="action-btn" onclick="promoteServant('${s.id}','${nameEsc}')">👑 خليه أدمن</button>
                    <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}')">🗑 حذف</button>`;
       }
+      const subParts = [s.email||'']; if (s.phone) subParts.push(s.phone);
       return `<div class="servant-item" style="flex-wrap:wrap">
         
         <div class="s-info">
           <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''}</div>
-          <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}</div>
+          <div class="s-sub" dir="ltr" style="text-align:right">${subParts.join(' · ')}</div>
+          ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
         </div>
         ${actions}
         <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-          <button class="filter-chip ${!s.assignedClass?'active':''}" onclick="setServantClass('${s.id}','')">🔓 كل الفصول</button>
-          <button class="filter-chip ${assigned.join(',')==='a,b'?'active':''}" onclick="setServantClass('${s.id}','a,b')">🅰️ + 🅱️ فصل أ/ب</button>
-          <button class="filter-chip ${assigned.includes('a') && !assigned.includes('b') && assigned.length===1?'active':''}" onclick="setServantClass('${s.id}','a')">🅰️ فصل أ</button>
-          <button class="filter-chip ${assigned.includes('b') && !assigned.includes('a') && assigned.length===1?'active':''}" onclick="setServantClass('${s.id}','b')">🅱️ فصل ب</button>
-          <button class="filter-chip ${assigned.includes('kg') && assigned.length===1?'active':''}" onclick="setServantClass('${s.id}','kg')">👶 كي جي ١</button>
+          ${servantClassChipsHTML(s, assigned)}
         </div>
       </div>`;
     }).join('');
+}
+// شرايط الفصول اللي الخادم مسموحله بيها — toggle متعدد: كل ضغطة تضيف/تشيل فصل من قايمة assignedClass بتاعته
+function servantClassChipsHTML(s, assigned) {
+  let html = `<button class="filter-chip ${!s.assignedClass?'active':''}" onclick="setServantClass('${s.id}','')">🔓 كل الفصول</button>`;
+  html += allClasses.map(c => {
+    const active = assigned.includes(c.id);
+    const newList = active ? assigned.filter(x => x !== c.id) : [...assigned, c.id];
+    return `<button class="filter-chip ${active?'active':''}" onclick="setServantClass('${s.id}','${newList.join(',')}')">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('');
+  return html;
 }
 
 // تحديد الفصول المسموح للخادم من تبويب "متابعة" — ممكن يختار فصل واحد أو أكثر (مثلاً "a,b")
@@ -3291,6 +3453,7 @@ window.openEditModal = (id) => {
   document.getElementById('edit-dob').value     = s.dob || '';
   document.getElementById('edit-address').value = s.address || '';
   document.getElementById('edit-gender').value  = s.gender || '';
+  document.getElementById('edit-class').innerHTML = classSelectOptionsHTML(true);
   document.getElementById('edit-class').value   = s.classSection || '';
   document.getElementById('edit-avatar').textContent = s.name.trim()[0] || '؟';
   document.getElementById('edit-sub').textContent    = s.name;
