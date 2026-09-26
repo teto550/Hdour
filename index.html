@@ -45,6 +45,12 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .top-bar-title{font-size:17px;font-weight:700;}
 .top-bar-sub{font-size:11px;color:var(--text-dim);margin-top:2px;}
 .icon-btn{background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:17px;width:38px;height:38px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.settings-menu-wrap{position:relative;}
+.settings-dropdown{position:absolute;top:calc(100% + 8px);left:0;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 10px 30px rgba(0,0,0,0.4);min-width:220px;overflow:hidden;z-index:200;}
+.settings-dropdown-item{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;color:var(--text);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;padding:13px 16px;cursor:pointer;text-align:right;}
+.settings-dropdown-item:hover{background:var(--surface);}
+.settings-dropdown-item.danger{color:var(--danger);}
+.settings-dropdown-divider{border-top:1px solid var(--border);margin:4px 0;}
 .app-content{flex:1;padding:18px;padding-bottom:calc(18px + env(safe-area-inset-bottom));overflow-y:auto;max-width:100%;}
 
 .tabs{display:flex;gap:6px;margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;}
@@ -294,7 +300,15 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="top-bar-sub" id="today-date-top"></div>
     </div>
-    <button class="icon-btn" onclick="openSettingsModal()">⚙️</button>
+    <div class="settings-menu-wrap">
+      <button class="icon-btn" onclick="toggleSettingsMenu(event)">⚙️</button>
+      <div id="settings-dropdown" class="settings-dropdown" style="display:none">
+        <button class="settings-dropdown-item" onclick="openMyProfileModal()">👤 ملفي</button>
+        <button class="settings-dropdown-item" id="settings-dropdown-roles" style="display:none" onclick="openUsersRolesModal()">👥 المستخدمين والأدوار</button>
+        <div class="settings-dropdown-divider"></div>
+        <button class="settings-dropdown-item danger" onclick="closeSettingsMenu();doLogout()">🚪 تسجيل الخروج</button>
+      </div>
+    </div>
   </div>
 
   <div class="app-content">
@@ -655,9 +669,13 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <div class="filter-row" id="serv-att-activity-chips" style="margin-bottom:12px">
           <button class="filter-chip active" onclick="setServAttActivity('mass',this)">⛪ القداس</button>
           <button class="filter-chip" onclick="setServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
-          <button class="filter-chip" onclick="setServAttActivity('meeting',this)">🤝 اجتماع الخدام والتحضير</button>
+          <button class="filter-chip" onclick="setServAttActivity('meeting',this)">🤝 اجتماع الخدام</button>
+          <button class="filter-chip" onclick="setServAttActivity('preparation',this)">📝 التحضير</button>
         </div>
         <input type="date" id="serv-att-date" class="field-input" onchange="renderServAttList()">
+        <div class="search-box" style="margin:10px 0">
+          <input type="text" id="serv-att-search-input" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="renderServAttList()" autocomplete="off">
+        </div>
         <div id="serv-att-list"></div>
       </div>
 
@@ -679,7 +697,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <span class="section-title">الخدام (<span id="servants-count">0</span>)</span>
           <button class="export-btn" onclick="loadMonitorTab()">🔄 تحديث</button>
         </div>
-        <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px">دوس على فصل تحت اسم أي خادم عشان تقفله عليه — يفتح التطبيق يلاقي فصله ومخدوميه بس علطول. الرقمين جنب الاسم: 📖 مرات حضور مدارس الأحد، 🤝 مرات حضور اجتماع الخدام</p>
+        <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px">دوس على فصل تحت اسم أي خادم عشان تقفله عليه — يفتح التطبيق يلاقي فصله ومخدوميه بس علطول. الأرقام جنب الاسم: 📖 مرات حضور مدارس الأحد، 🤝 مرات حضور اجتماع الخدام، 📝 مرات حضور التحضير</p>
         <div id="servants-list" style="margin-bottom:22px"></div>
 
         <div class="list-header">
@@ -787,40 +805,22 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <button class="modal-close" onclick="closeSettingsModal()">✕</button>
     </div>
     <div style="padding:16px">
-      <div class="section-title" style="margin-bottom:8px">ملفي</div>
-      <div id="settings-class-badge" style="margin-bottom:12px"></div>
-      <label class="field-label">رقم التليفون</label>
-      <input type="tel" id="settings-phone" class="field-input" dir="ltr">
-      <label class="field-label">العنوان</label>
-      <input type="text" id="settings-address" class="field-input">
-      <button class="export-btn" onclick="saveOwnSettings()" style="width:100%;margin-bottom:20px">💾 حفظ بياناتي</button>
-
-      <div id="settings-admin-section" style="display:none">
-        <div style="border-top:1px solid var(--border);margin-bottom:18px"></div>
-        <div class="section-title" style="margin-bottom:8px">الأدوار</div>
-        <div id="roles-admin-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
-        <div id="role-form" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
-          <input type="hidden" id="role-edit-id">
-          <label class="field-label">اسم الدور</label>
-          <input type="text" id="role-name" class="field-input" placeholder="مثلاً: مسؤول فصل أ">
-          <label class="field-label">الفصول</label>
-          <div id="role-class-checks" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px"></div>
-          <div style="display:flex;gap:8px">
-            <button class="btn-primary" style="flex:1" onclick="saveRole()">حفظ الدور</button>
-            <button onclick="closeRoleForm()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:14px;font-weight:700;padding:11px 16px;cursor:pointer">إلغاء</button>
-          </div>
-        </div>
-        <button class="export-btn" onclick="openRoleForm()" style="width:100%;margin-bottom:20px">➕ دور جديد</button>
-
-        <div class="section-title" style="margin-bottom:8px">الأشخاص</div>
-        <input type="text" id="settings-people-search" class="field-input" placeholder="دوّر على اسم…" oninput="renderSettingsPeopleList()">
-        <div id="settings-people-list" style="max-height:260px;overflow-y:auto;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
-        <label class="field-label">طبّق دور على المحددين</label>
-        <select class="field-select" id="bulk-role-select"><option value="">اختار دور…</option></select>
-        <button class="btn-primary" style="width:100%;margin-bottom:20px" onclick="applyRoleToSelected()">✓ تطبيق</button>
+      <div id="settings-profile-section">
+        <div class="section-title" style="margin-bottom:8px">ملفي</div>
+        <div id="settings-class-badge" style="margin-bottom:12px"></div>
+        <label class="field-label">رقم التليفون</label>
+        <input type="tel" id="settings-phone" class="field-input" dir="ltr">
+        <label class="field-label">العنوان</label>
+        <input type="text" id="settings-address" class="field-input">
+        <button class="export-btn" onclick="saveOwnSettings()" style="width:100%">💾 حفظ بياناتي</button>
       </div>
 
-      <button class="btn-primary" style="width:100%;background:linear-gradient(135deg,#e74c3c,#c0392b)" onclick="doLogout()">🚪 تسجيل خروج</button>
+      <div id="settings-admin-section" style="display:none">
+        <div class="section-title" style="margin-bottom:8px">الخدام</div>
+        <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px">دوّر باسم الخادم، وبعدين دوس على الفصول اللي عايزه يشوفها (تقدر تختار أكتر من فصل) أو خليه يشوف كل الفصول، وكمان تقدر تخليه أدمن أو تشيله من الأدمن من هنا على طول</p>
+        <input type="text" id="settings-people-search" class="field-input" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="renderSettingsPeopleList()" autocomplete="off">
+        <div id="settings-people-list" style="max-height:420px;overflow-y:auto;margin-top:10px"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -1189,18 +1189,6 @@ let currentClassTab = localStorage.getItem('attendanceClassTab') || ''; // <clas
 // عشان تقدر تضيف/تعدّل/تمسح فصول من جوه التطبيق نفسه من غير ما تحتاج تعديل كود
 let allClasses = []; // [{id,name,emoji,order}]
 let classesUnsub = null;
-let allRoles = []; // [{id,name,classIds}] — أدوار جاهزة (مجموعة فصول باسم واحد) عشان تتطبق على أكتر من خادم مرة واحدة
-let rolesUnsub = null;
-function startRolesListener() {
-  if (rolesUnsub || currentRole !== 'admin') return;
-  rolesUnsub = onSnapshot(collection(db,'roles'), snap => {
-    countSnapshotReads('roles (live)', snap);
-    allRoles = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
-    renderRolesAdminList();
-    renderBulkRoleSelect();
-  }, err => console.error('roles listener error:', err));
-}
-function stopRolesListener() { if (rolesUnsub) { rolesUnsub(); rolesUnsub = null; } allRoles = []; }
 const CLASS_PALETTE = [
   {bg:'rgba(79,142,247,0.12)',  border:'rgba(79,142,247,0.3)',  text:'#4f8ef7'},
   {bg:'rgba(124,92,191,0.12)',  border:'rgba(124,92,191,0.3)',  text:'#a07de0'},
@@ -1383,25 +1371,48 @@ window.deleteClass = async (id, name) => {
   } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحذف', 'error'); }
 };
 
-// ===== شاشة الإعدادات (ملفي + الأدوار للأدمن) =====
-window.openSettingsModal = () => {
+// ===== قايمة الإعدادات المنسدلة (⚙️) =====
+window.toggleSettingsMenu = (e) => {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('settings-dropdown');
+  const opening = dd.style.display === 'none';
+  document.getElementById('settings-dropdown-roles').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
+  dd.style.display = opening ? 'block' : 'none';
+  if (opening) document.addEventListener('click', closeSettingsMenuOutside);
+};
+window.closeSettingsMenu = () => { document.getElementById('settings-dropdown').style.display = 'none'; document.removeEventListener('click', closeSettingsMenuOutside); };
+function closeSettingsMenuOutside(e) { if (!e.target.closest('.settings-menu-wrap')) window.closeSettingsMenu(); }
+
+// ===== شاشة الإعدادات — الهيدر مشترك (ملفي + الأدمن) =====
+function fillSettingsHeader() {
   document.getElementById('settings-avatar').textContent = (currentName||'؟').trim()[0] || '؟';
   document.getElementById('settings-name').textContent = currentName || '—';
   document.getElementById('settings-email').textContent = currentEmail || '';
+}
+// "ملفي" — بيانات الخادم نفسه بس (اسمه، تليفونه، عنوانه) وتقدر تعدّلها — بيظهر لكل الخدام والأدمن
+window.openMyProfileModal = () => {
+  closeSettingsMenu();
+  fillSettingsHeader();
   document.getElementById('settings-class-badge').innerHTML = currentAssignedClass
     ? formatAssignedClasses(currentAssignedClass).split(' + ').map(l => `<span class="class-badge">${l}</span>`).join(' ')
     : `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
   document.getElementById('settings-phone').value = currentPhone || '';
   document.getElementById('settings-address').value = currentAddress || '';
-  document.getElementById('settings-admin-section').style.display = currentRole === 'admin' ? 'block' : 'none';
+  document.getElementById('settings-profile-section').style.display = 'block';
+  document.getElementById('settings-admin-section').style.display = 'none';
   document.getElementById('settings-modal').style.display = 'flex';
-  if (currentRole === 'admin') {
-    renderRolesAdminList();
-    renderBulkRoleSelect();
-    loadServantsOnce(); // من الكاش لو محمّل قبل كده، ومن غير قراءة زيادة
-  }
 };
-window.closeSettingsModal = () => { document.getElementById('settings-modal').style.display = 'none'; closeRoleForm(); };
+// "المستخدمين والأدوار" — الأدوار وقايمة الخدام كلهم، للأدمن بس
+window.openUsersRolesModal = () => {
+  closeSettingsMenu();
+  if (currentRole !== 'admin') return;
+  fillSettingsHeader();
+  document.getElementById('settings-profile-section').style.display = 'none';
+  document.getElementById('settings-admin-section').style.display = 'block';
+  document.getElementById('settings-modal').style.display = 'flex';
+  loadServantsOnce(); // من الكاش لو محمّل قبل كده، ومن غير قراءة زيادة
+};
+window.closeSettingsModal = () => { document.getElementById('settings-modal').style.display = 'none'; };
 window.closeSettingsOutside = (e) => { if (e.target.id === 'settings-modal') closeSettingsModal(); };
 window.saveOwnSettings = async () => {
   const phone = document.getElementById('settings-phone').value.trim();
@@ -1414,83 +1425,39 @@ window.saveOwnSettings = async () => {
 };
 
 // ---- الأدوار (بريسيتس فصول جاهزة تتطبق على أكتر من خادم مرة واحدة) ----
-function renderRolesAdminList() {
-  const cont = document.getElementById('roles-admin-list');
-  if (!cont) return;
-  if (!allRoles.length) { cont.innerHTML = `<div class="empty-state" style="padding:8px">لسه مفيش أدوار</div>`; return; }
-  cont.innerHTML = allRoles.map(r => `
-    <div class="tpl-chip">
-      <span class="tpl-chip-name">${(r.classIds||[]).map(c=>classEmoji(c)).join('')} ${r.name}</span>
-      <button class="tpl-chip-del" onclick="openRoleForm('${r.id}')" title="تعديل" style="margin-left:4px">✏️</button>
-      <button class="tpl-chip-del" onclick="deleteRole('${r.id}','${(r.name||'').replace(/'/g,"\\'")}')" title="حذف">✕</button>
-    </div>`).join('');
-}
-window.openRoleForm = (id) => {
-  const form = document.getElementById('role-form');
-  const r = id ? allRoles.find(x => x.id === id) : null;
-  document.getElementById('role-edit-id').value = id || '';
-  document.getElementById('role-name').value = r?.name || '';
-  const checked = new Set(r?.classIds || []);
-  document.getElementById('role-class-checks').innerHTML = allClasses.map(c => `
-    <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
-      <input type="checkbox" value="${c.id}" ${checked.has(c.id)?'checked':''} style="width:18px;height:18px;accent-color:var(--accent)">
-      ${c.emoji||'📘'} ${c.name}
-    </label>`).join('');
-  form.style.display = 'block';
-};
-window.closeRoleForm = () => { const f = document.getElementById('role-form'); if (f) f.style.display = 'none'; };
-window.saveRole = async () => {
-  const id = document.getElementById('role-edit-id').value;
-  const name = document.getElementById('role-name').value.trim();
-  const classIds = Array.from(document.querySelectorAll('#role-class-checks input:checked')).map(i => i.value);
-  if (!name) { showToast('اكتب اسم الدور', 'error'); return; }
-  if (!classIds.length) { showToast('اختار فصل واحد على الأقل', 'error'); return; }
-  try {
-    if (id) await updateDoc(doc(db,'roles',id), { name, classIds });
-    else await addDoc(collection(db,'roles'), { name, classIds, createdAt: serverTimestamp() });
-    closeRoleForm();
-    showToast('تم حفظ الدور ✓', 'success');
-  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
-};
-window.deleteRole = async (id, name) => {
-  if (!confirm(`هتحذف دور "${name}"؟ الخدام اللي متطبق عليهم مش هيتأثروا، بس مش هتقدر تطبقه تاني`)) return;
-  try { await deleteDoc(doc(db,'roles',id)); showToast('تم حذف الدور', 'success'); }
-  catch(e) { console.error(e); showToast('حصل خطأ أثناء الحذف', 'error'); }
-};
-function renderBulkRoleSelect() {
-  const sel = document.getElementById('bulk-role-select');
-  if (!sel) return;
-  const cur = sel.value;
-  sel.innerHTML = `<option value="">اختار دور…</option>` + allRoles.map(r => `<option value="${r.id}">${(r.classIds||[]).map(c=>classEmoji(c)).join('')} ${r.name}</option>`).join('');
-  sel.value = cur;
-}
-// ---- قايمة الأشخاص (لتطبيق دور بالجملة على أكتر من خادم مختار) ----
+// ---- قايمة الخدام (بحث بالاسم + تعديل مباشر: الفصول اللي يشوفها / أدمن ولا لأ) ----
 function renderSettingsPeopleList() {
   const cont = document.getElementById('settings-people-list');
   if (!cont) return;
   const q = normalizeArabic(document.getElementById('settings-people-search')?.value || '');
-  const list = cachedServants.filter(s => s.status === 'approved' && (!q || normalizeArabic(s.name||'').includes(q)));
-  if (!list.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">مفيش خدام</div>`; return; }
-  cont.innerHTML = list.map(s => `
-    <label style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">
-      <input type="checkbox" class="settings-person-check" value="${s.id}" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0">
-      <span style="flex:1">${s.name||'—'}${s.role==='admin'?' 👑':''}</span>
-      <span style="font-size:12px;color:var(--text-dim)">${s.assignedClass ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</span>
-    </label>`).join('');
+  const list = cachedServants.filter(s => s.status === 'approved' && (!q || normalizeArabic(s.name||'').includes(q)))
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  if (!list.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">مفيش خادم بالاسم ده</div>`; return; }
+  const viewerIsPrimary = isPrimaryAdmin(currentEmail);
+  cont.innerHTML = list.map(s => {
+    const assigned = normalizeAssignedClasses(s.assignedClass);
+    const nameEsc = (s.name||'').replace(/'/g,"\\'");
+    const sIsPrimary = isPrimaryAdmin(s.email);
+    let adminBtn = '';
+    if (s.role === 'admin') {
+      adminBtn = sIsPrimary
+        ? `<span class="s-sub" style="white-space:nowrap">👑 الأدمن الأساسي</span>`
+        : (viewerIsPrimary ? `<button class="action-btn" onclick="demoteServant('${s.id}','${nameEsc}')">🔻 شيله من الأدمن</button>` : `<span class="s-sub">👑 أدمن</span>`);
+    } else {
+      adminBtn = `<button class="action-btn" onclick="promoteServant('${s.id}','${nameEsc}')">👑 خليه أدمن</button>`;
+    }
+    return `<div class="servant-item" style="flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--border)">
+      <div class="s-info">
+        <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''}</div>
+        <div class="s-sub">${assigned.length ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
+      </div>
+      ${adminBtn}
+      <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+        ${servantClassChipsHTML(s, assigned)}
+      </div>
+    </div>`;
+  }).join('');
 }
-window.applyRoleToSelected = async () => {
-  const roleId = document.getElementById('bulk-role-select').value;
-  const role = allRoles.find(r => r.id === roleId);
-  const ids = Array.from(document.querySelectorAll('.settings-person-check:checked')).map(i => i.value);
-  if (!role) { showToast('اختار دور الأول', 'error'); return; }
-  if (!ids.length) { showToast('اختار خادم واحد على الأقل', 'error'); return; }
-  const value = role.classIds.join(',');
-  try {
-    await Promise.all(ids.map(id => updateDoc(doc(db,'servants',id), { assignedClass: value })));
-    showToast(`تم تطبيق "${role.name}" على ${ids.length} خادم ✓`, 'success');
-    loadServantsOnce(true);
-  } catch(e) { console.error(e); showToast('حصل خطأ أثناء التطبيق', 'error'); }
-};
 let filterSiblings = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب الافتقاد)
 const NOTE_LABELS = {
   traveling:   { emoji:'🧳', text:'مسافر' },
@@ -1681,7 +1648,6 @@ onAuthStateChanged(auth, async user => {
     if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
     if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
     stopClassesListener();
-    stopRolesListener();
     localStorage.removeItem('stu_cache_v1'); studentsLoaded = false;
     showAuthScreen();
     const btn = document.getElementById('login-btn');
@@ -1746,7 +1712,6 @@ onAuthStateChanged(auth, async user => {
     startHeartbeat();
     listenOwnServantDoc(user.uid);
     startClassesListener();
-    startRolesListener();
     initApp();
   } catch(e) {
     console.error(e);
@@ -1787,10 +1752,8 @@ function listenOwnServantDoc(uid) {
       applyMonitorVisibility();
       if (currentRole === 'admin') {
         showToast('مبروك! الأدمن الأساسي خلاك أدمن 👑', 'success');
-        startRolesListener();
       } else {
         showToast('الأدمن الأساسي شالك من الأدمن', 'info');
-        stopRolesListener();
         // لو كنت واقف في تبويب المتابعة ومعدش أدمن، نرجّعه لتبويب الحضور
         if (document.getElementById('tab-monitor').style.display === 'block') {
           goHome();
@@ -3607,9 +3570,9 @@ window.loadMonitorTab = async () => {
   renderServAttList();
 };
 
-// ===== حضور الخدام (القداس / مدارس الأحد / اجتماع الخدام والتحضير) =====
-let servAttActivity = 'mass'; // 'mass' | 'sunday_school' | 'meeting'
-const SERV_ATT_LABELS = { mass:'القداس', sunday_school:'مدارس الأحد', meeting:'اجتماع الخدام والتحضير' };
+// ===== حضور الخدام (القداس / مدارس الأحد / اجتماع الخدام / التحضير) =====
+let servAttActivity = 'mass'; // 'mass' | 'sunday_school' | 'meeting' | 'preparation'
+const SERV_ATT_LABELS = { mass:'القداس', sunday_school:'مدارس الأحد', meeting:'اجتماع الخدام', preparation:'التحضير' };
 window.switchMonitorSubTab = (which) => {
   document.getElementById('monitor-subtab-btn-attendance').classList.toggle('active', which === 'attendance');
   document.getElementById('monitor-subtab-btn-servants').classList.toggle('active', which === 'servants');
@@ -3630,8 +3593,11 @@ async function renderServAttList() {
   if (!cont) return;
   const date = document.getElementById('serv-att-date')?.value || toLocalDateKey(new Date());
   if (!servantsLoadedFlag) await loadServantsOnce();
-  const servants = cachedServants.filter(s => s.status === 'approved').sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  let servants = cachedServants.filter(s => s.status === 'approved').sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
   if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خدام متسجلين لسه</div>`; return; }
+  const searchQ = normalizeArabic(document.getElementById('serv-att-search-input')?.value || '');
+  if (searchQ) servants = servants.filter(s => normalizeArabic(s.name||'').includes(searchQ));
+  if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خادم بالاسم ده</div>`; return; }
   cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
   try {
     const snap = await countedGetDocs(query(collection(db,'servantAttendance'), where('date','==',date), where('activity','==',servAttActivity)), `servantAttendance (${SERV_ATT_LABELS[servAttActivity]})`);
@@ -3653,7 +3619,7 @@ async function renderServAttList() {
 // بتسجل/تشيل حضور خادم في نشاط معين — ولو النشاط "مدارس الأحد" أو "اجتماع الخدام"، بيتحدّث عداد الخادم فورًا (من غير أي قراءة إضافية، الرقم موجود جوه مستند الخادم نفسه)
 window.toggleServantAttendance = async (servantId, name, date) => {
   const id = servAttDocId(date, servAttActivity, servantId);
-  const countField = servAttActivity === 'sunday_school' ? 'sscCount' : servAttActivity === 'meeting' ? 'meetingCount' : null;
+  const countField = servAttActivity === 'sunday_school' ? 'sscCount' : servAttActivity === 'meeting' ? 'meetingCount' : servAttActivity === 'preparation' ? 'prepCount' : null;
   try {
     const alreadyPresent = document.querySelector(`[onclick*="toggleServantAttendance('${servantId}'"] .s-avatar`)?.textContent.trim() === '✓';
     if (alreadyPresent) {
@@ -3738,7 +3704,7 @@ function renderServantsList(list) {
       return `<div class="servant-item" style="flex-wrap:wrap">
         
         <div class="s-info">
-          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''} <span style="font-size:12px;font-weight:700;color:var(--text-dim)">📖 ${s.sscCount||0} · 🤝 ${s.meetingCount||0}</span></div>
+          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''} <span style="font-size:12px;font-weight:700;color:var(--text-dim)">📖 ${s.sscCount||0} · 🤝 ${s.meetingCount||0} · 📝 ${s.prepCount||0}</span></div>
           <div class="s-sub" dir="ltr" style="text-align:right">${subParts.join(' · ')}</div>
           ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
         </div>
