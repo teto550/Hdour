@@ -760,11 +760,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span class="section-title">الأعضاء (<span id="role-members-count">0</span>)</span>
-          <button class="export-btn" onclick="toggleRoleAddMembers()">➕ إضافة أشخاص</button>
-        </div>
-        <div id="role-add-members-box" style="display:none;margin-bottom:10px">
-          <input type="text" id="role-add-members-search" class="field-input" placeholder="🔍 دوّر على اسم خادم…" oninput="renderRoleAddMemberResults()" style="margin-bottom:6px">
-          <div id="role-add-members-results" style="max-height:200px;overflow-y:auto"></div>
+          <button class="export-btn" onclick="openRoleAddMembersModal()">➕ إضافة أشخاص</button>
         </div>
         <div id="role-members-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px"></div>
 
@@ -776,6 +772,24 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <button id="role-delete-btn" onclick="deleteRoleConfirm()" style="display:none;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:var(--radius-sm);color:var(--danger);font-family:Cairo,sans-serif;font-size:14px;font-weight:700;padding:12px 16px;cursor:pointer">🗑 حذف</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ROLE ADD MEMBERS MODAL (popup بحث واختيار خدام لإضافتهم للدور) -->
+<div id="role-add-members-modal" class="modal-overlay" style="display:none" onclick="closeRoleAddMembersOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:900">إضافة أشخاص للدور</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">دوّر بالاسم وضيف كذا خادم على طول</div>
+      </div>
+      <button class="modal-close" onclick="closeRoleAddMembersModal()">✕</button>
+    </div>
+    <div style="padding:16px">
+      <input type="text" id="role-add-members-search" class="field-input" placeholder="🔍 دوّر على اسم خادم…" oninput="renderRoleAddMemberResults()" style="margin-bottom:10px">
+      <div id="role-add-members-results" style="max-height:55vh;overflow-y:auto"></div>
+      <button class="btn-primary" onclick="closeRoleAddMembersModal()" style="width:100%;margin-top:14px">تم (<span id="role-add-members-selected-count">0</span> متحدد)</button>
     </div>
   </div>
 </div>
@@ -4053,8 +4067,7 @@ window.openRoleEditor = (roleId) => {
   editingRoleMemberIds = editingRoleId ? cachedServants.filter(s => s.roleId === editingRoleId).map(s => s.id) : [];
   document.getElementById('roles-modal-title').textContent = r ? 'تعديل دور' : 'دور جديد';
   document.getElementById('role-delete-btn').style.display = r ? 'block' : 'none';
-  document.getElementById('role-add-members-box').style.display = 'none';
-  const searchEl = document.getElementById('role-add-members-search'); if (searchEl) searchEl.value = '';
+  document.getElementById('role-add-members-modal').style.display = 'none';
   renderRoleTypeChips();
   renderRoleClassChips();
   renderRoleMembersChips();
@@ -4085,35 +4098,45 @@ window.toggleRoleClass = (classId) => {
   updateRoleEffectHint();
 };
 
-window.toggleRoleAddMembers = () => {
-  const box = document.getElementById('role-add-members-box');
-  const opening = box.style.display === 'none';
-  box.style.display = opening ? 'block' : 'none';
-  if (opening) { document.getElementById('role-add-members-search').value = ''; renderRoleAddMemberResults(); document.getElementById('role-add-members-search').focus(); }
+window.openRoleAddMembersModal = () => {
+  document.getElementById('role-add-members-search').value = '';
+  renderRoleAddMemberResults();
+  document.getElementById('role-add-members-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => document.getElementById('role-add-members-search').focus(), 50);
 };
+window.closeRoleAddMembersModal = () => {
+  document.getElementById('role-add-members-modal').style.display = 'none';
+  document.body.style.overflow = '';
+  renderRoleMembersChips();
+  updateRoleEffectHint();
+};
+window.closeRoleAddMembersOutside = (e) => { if (e.target.id === 'role-add-members-modal') closeRoleAddMembersModal(); };
 window.renderRoleAddMemberResults = () => {
   const q = normalizeArabic(document.getElementById('role-add-members-search')?.value || '');
   const cont = document.getElementById('role-add-members-results');
   const results = cachedServants
-    .filter(s => s.status === 'approved' && !editingRoleMemberIds.includes(s.id) && (!q || normalizeArabic(s.name||'').includes(q)))
-    .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
-    .slice(0, 30);
-  cont.innerHTML = results.length ? results.map(s => `
-    <div class="servant-item" onclick="addRoleMember('${s.id}')" style="cursor:pointer;padding:9px 12px">
-      <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}${s.roleId ? ' · في دور تاني حاليًا' : ''}</div></div>
-      <span style="color:var(--accent);font-size:18px;flex-shrink:0">+</span>
-    </div>`).join('') : `<div class="empty-state" style="padding:14px">مفيش نتايج</div>`;
+    .filter(s => s.status === 'approved' && (!q || normalizeArabic(s.name||'').includes(q)))
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  document.getElementById('role-add-members-selected-count').textContent = editingRoleMemberIds.length;
+  cont.innerHTML = results.length ? results.map(s => {
+    const selected = editingRoleMemberIds.includes(s.id);
+    return `<div class="servant-item" onclick="toggleRoleMemberSelection('${s.id}')" style="cursor:pointer;padding:9px 12px">
+      <input type="checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();toggleRoleMemberSelection('${s.id}')" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
+      <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}${(s.roleId && s.roleId !== editingRoleId) ? ' · في دور تاني حاليًا' : ''}</div></div>
+    </div>`;
+  }).join('') : `<div class="empty-state" style="padding:14px">مفيش نتايج</div>`;
 };
-window.addRoleMember = (id) => {
-  if (!editingRoleMemberIds.includes(id)) editingRoleMemberIds.push(id);
-  renderRoleMembersChips();
+window.toggleRoleMemberSelection = (id) => {
+  editingRoleMemberIds = editingRoleMemberIds.includes(id)
+    ? editingRoleMemberIds.filter(x => x !== id)
+    : [...editingRoleMemberIds, id];
+  document.getElementById('role-add-members-selected-count').textContent = editingRoleMemberIds.length;
   renderRoleAddMemberResults();
-  updateRoleEffectHint();
 };
 window.removeRoleMember = (id) => {
   editingRoleMemberIds = editingRoleMemberIds.filter(x => x !== id);
   renderRoleMembersChips();
-  if (document.getElementById('role-add-members-box').style.display !== 'none') renderRoleAddMemberResults();
   updateRoleEffectHint();
 };
 function renderRoleMembersChips() {
