@@ -686,15 +686,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <div id="serv-att-list"></div>
       </div>
 
-      <!-- إدارة الفصول والخدام وطلبات الانضمام وسجل الأنشطة -->
+      <!-- إدارة الخدام وطلبات الانضمام وسجل الأنشطة -->
       <div id="monitor-subtab-servants" style="display:none">
-        <div class="list-header">
-          <span class="section-title">الفصول</span>
-          <button class="export-btn" onclick="addClassPrompt()">➕ فصل جديد</button>
-        </div>
-        <div id="classes-admin-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
-        <div id="class-names-panel" style="display:none;background:var(--card,rgba(255,255,255,0.04));border-radius:12px;padding:12px;margin-bottom:22px"></div>
-
         <div class="list-header">
           <span class="section-title">طلبات الانضمام (<span id="pending-count">0</span>)</span>
         </div>
@@ -3688,11 +3681,11 @@ async function renderServAttList() {
     const presentIds = new Set(snap.docs.map(d => d.data().servantId));
     cont.innerHTML = servants.map(s => `
       <div class="servant-item" onclick="toggleServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')" style="cursor:pointer">
-        <div class="serv-att-check ${presentIds.has(s.id)?'checked':''}"></div>
         <div class="s-info">
           <div class="s-name">${s.name||'—'}</div>
           <div class="s-sub">${s.assignedClass ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
         </div>
+        <div class="serv-att-check ${presentIds.has(s.id)?'checked':''}"></div>
       </div>`).join('');
   } catch(e) {
     console.error(e);
