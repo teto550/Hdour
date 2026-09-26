@@ -2780,8 +2780,7 @@ function renderTodayList() {
   const cont = document.getElementById('today-list');
   if (!allStudents.length) { cont.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div>أضف مخدومين أولاً</div>`; return; }
 
-  const allowed = getAllowedAssignedClasses();
-  const visibleClasses = (currentRole !== 'admin' && allowed.length) ? allowed : [currentClassTab];
+  const visibleClasses = [currentClassTab];
   let filtered = allStudents.filter(s => visibleClasses.includes(s.classSection)).filter(s => {
     if (todayListFilter === 'attendance') return !!todayAttendance[s.id];
     if (todayListFilter === 'verse')      return !!todayVerses[s.id];
@@ -2819,8 +2818,7 @@ function renderTodayList() {
 }
 
 function updateStats() {
-  const allowed = getAllowedAssignedClasses();
-  const classesToCount = (currentRole !== 'admin' && allowed.length) ? allowed : [currentClassTab];
+  const classesToCount = [currentClassTab];
   const classStudents = allStudents.filter(s => classesToCount.includes(s.classSection));
   const present = classStudents.filter(s => !!todayAttendance[s.id]).length;
   const heardVerse = classStudents.filter(s => !!todayVerses[s.id]).length;
@@ -2835,8 +2833,7 @@ window.onManualSearch = () => {
   const cont = document.getElementById('manual-results');
   if (!qRaw) { cont.innerHTML=''; return; }
   const q = normalizeArabic(qRaw);
-  const allowed = getAllowedAssignedClasses();
-  const visibleClasses = (currentRole !== 'admin' && allowed.length) ? allowed : [currentClassTab];
+  const visibleClasses = [currentClassTab];
   // بنوري كل المخدومين اللي اسمهم مطابق من أي فصل (مش بس فصل الخادم)، وبنفضّل فصله فوق،
   // وبعدين اللي لسه معندوش فصل، وأخيرًا اللي في فصل تاني، عشان الخادم يقدر يسجل لأي حد يلاقيه
   const groupRank = s => visibleClasses.includes(s.classSection) ? 0 : (!s.classSection ? 1 : 2);
