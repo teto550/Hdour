@@ -3769,12 +3769,12 @@ function renderServantsList(list) {
     .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
     .map(s => `
       <div class="servant-item" onclick="openServantProfile('${s.id}')" style="cursor:pointer">
+        <div class="s-info">
+          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''}</div>
+        </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <div class="stat-badge"><div class="num ${s.sscCount?'has':''}">${s.sscCount||0}</div><div class="lbl">📖 مدارس أحد</div></div>
           <div class="stat-badge"><div class="num ${s.meetingCount?'has':''}">${s.meetingCount||0}</div><div class="lbl">🤝 اجتماع خدام</div></div>
-        </div>
-        <div class="s-info">
-          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''}</div>
         </div>
       </div>`).join('');
 }
