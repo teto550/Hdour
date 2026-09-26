@@ -799,6 +799,38 @@ const db   = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() })
 });
 
+// ===== عدّاد القراءات (reads) — لقياس تكلفة فايرستور فعليًا =====
+// كل مستند بييجي من السيرفر بيتحسب read واحد؛ اللي بييجي من الكاش المحلي (persistentLocalCache) مجاني ومش بيتحسب.
+// افتح الـ console واكتب __reads عشان تشوف الإجمالي وتفصيل كل مصدر، أو __reads.reset() تصفّره وتاخد قياس لسيناريو معين لوحده.
+window.__reads = {
+  total: 0,
+  byLabel: {},
+  reset() { this.total = 0; this.byLabel = {}; console.log('تم تصفير عداد القراءات'); }
+};
+function countReads(label, n) {
+  if (!n) return;
+  window.__reads.total += n;
+  window.__reads.byLabel[label] = (window.__reads.byLabel[label] || 0) + n;
+  console.debug(`📊 [reads] +${n} ${label} (إجمالي ${window.__reads.total})`);
+}
+// بديل getDocs بيحسب القراءة الفعلية بس لو جايه من السيرفر (مش من الكاش المحلي)
+async function countedGetDocs(q, label) {
+  const snap = await getDocs(q);
+  if (!(snap.metadata && snap.metadata.fromCache)) countReads(label, snap.docs.length);
+  return snap;
+}
+// بتتنادى جوه أي onSnapshot عشان تحسب أول نتيجة + أي تغيير جديد يوصل بعد كده (مش كل المستندات تاني كل مرة)
+function countSnapshotReads(label, snap) {
+  if (snap.metadata && snap.metadata.fromCache) return;
+  const n = snap.docChanges ? Math.max(snap.docChanges().length, snap.docs?.length ? 0 : 1) || snap.docChanges().length : (snap.docs?.length || 1);
+  countReads(label, n || 1);
+}
+// زي اللي فوق بس لمستند واحد (onSnapshot(doc(...))) مش استعلام على مجموعة كاملة
+function countDocSnapshotReads(label, snap) {
+  if (snap.metadata && snap.metadata.fromCache) return;
+  if (snap.exists && snap.exists()) countReads(label, 1);
+}
+
 // توحيد النصوص العربية للبحث: يشيل التشكيل، الحروف الخفية (من إكسل)، ويوحّد أشكال الحروف المتشابهة
 function normalizeArabic(str) {
   return (str || '')
@@ -1126,25 +1158,28 @@ function classSelectOptionsHTML(includeEmpty) {
   html += allClasses.map(c => `<option value="${c.id}">${c.emoji||'📘'} ${c.name}</option>`).join('');
   return html;
 }
-async function ensureClassesSeeded() {
+// بتجهّز الفصول الافتراضية بس أول مرة (لو المجموعة لسه فاضية) — بتتنادى من جوه أول snapshot
+// بتاع startClassesListener() عشان منقراش مجموعة classes مرتين على بعض عند كل دخول أدمن
+async function seedDefaultClassesIfEmpty() {
   try {
-    const snap = await getDocs(collection(db,'classes'));
-    if (!snap.empty) return;
     const defaults = [ {id:'a',name:'فصل أ',emoji:'🅰️',order:0}, {id:'b',name:'فصل ب',emoji:'🅱️',order:1}, {id:'kg',name:'كي جي ١',emoji:'👶',order:2} ];
     for (const c of defaults) await setDoc(doc(db,'classes',c.id), { name:c.name, emoji:c.emoji, order:c.order, createdAt: serverTimestamp() });
   } catch(e) { console.error('تعذّر تجهيز الفصول الافتراضية:', e); }
 }
+let classesSeedChecked = false;
 function startClassesListener() {
   if (classesUnsub) return;
   classesUnsub = onSnapshot(collection(db,'classes'), snap => {
+    countSnapshotReads('classes (live)', snap);
     allClasses = snap.docs
       .map(d => ({ id:d.id, ...d.data() }))
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
+    if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
     if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('attendanceClassTab')) ? localStorage.getItem('attendanceClassTab') : allClasses[0].id;
     onClassesUpdated();
   }, err => console.error('classes listener error:', err));
 }
-function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; }
+function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; classesSeedChecked = false; }
 // بيتنادى كل مرة قايمة الفصول تتغير (إضافة/تعديل/حذف فصل) — بيعيد بناء كل حتة في الواجهة معتمدة على الفصول
 function onClassesUpdated() {
   renderGlobalClassTabs();
@@ -1153,7 +1188,11 @@ function onClassesUpdated() {
   renderRegClassOptions();
   const editSel = document.getElementById('edit-class');
   if (editSel) { const cur = editSel.value; editSel.innerHTML = classSelectOptionsHTML(true); editSel.value = cur; }
-  if (currentRole === 'admin') { renderClassesAdminList(); loadServantsOnce(); }
+  if (currentRole === 'admin') {
+    renderClassesAdminList();
+    // بنقرا مجموعة الخدام تاني بس لو تبويب "متابعة" مفتوح فعلاً دلوقتي — مش عند كل تحديث للفصول
+    if (document.getElementById('tab-monitor')?.style.display === 'block') loadServantsOnce();
+  }
   if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
   if (document.getElementById('tab-attendance')?.style.display === 'block') { updateStats(); renderTodayList(); }
 }
@@ -1272,7 +1311,7 @@ async function loadRegisterClassOptions() {
   if (allClasses.length) { sel.innerHTML = classSelectOptionsHTML(false); return; }
   sel.innerHTML = `<option value="">جاري تحميل الفصول…</option>`;
   try {
-    const snap = await getDocs(collection(db,'classes'));
+    const snap = await countedGetDocs(collection(db,'classes'), 'classes (فورم التسجيل)');
     allClasses = snap.docs.map(d => ({ id:d.id, ...d.data() }))
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
     sel.innerHTML = allClasses.length ? classSelectOptionsHTML(false) : `<option value="">لا يوجد فصول متاحة، كلم الأدمن</option>`;
@@ -1453,7 +1492,6 @@ onAuthStateChanged(auth, async user => {
     applyMonitorVisibility();
     startHeartbeat();
     listenOwnServantDoc(user.uid);
-    if (currentRole === 'admin') await ensureClassesSeeded();
     startClassesListener();
     initApp();
   } catch(e) {
@@ -1476,6 +1514,7 @@ function isPrimaryAdmin(email) {
 function listenOwnServantDoc(uid) {
   if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
   ownServantUnsub = onSnapshot(doc(db,'servants',uid), snap => {
+    countDocSnapshotReads('servants (ملفي)', snap);
     if (!snap.exists()) {
       showToast('تم حذفك من التطبيق بواسطة الأدمن', 'error');
       forceLogout();
@@ -1598,7 +1637,7 @@ async function loadStudents(force = false) {
   const ok = cached && !force && (rev !== null ? cached.rev === rev : (Date.now() - cached.ts < 12*3600*1000));
   if (ok) { allStudents = cached.list; }
   else {
-    const snap = await getDocs(query(collection(db,'students'), orderBy('name')));
+    const snap = await countedGetDocs(query(collection(db,'students'), orderBy('name')), 'students');
     allStudents = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     try { localStorage.setItem(STU_KEY, JSON.stringify({ rev, ts: Date.now(), list: allStudents })); } catch(e) {}
   }
@@ -1874,7 +1913,7 @@ window.insertWaNamePlaceholder = () => {
 async function loadWaTemplates() {
   if (waTemplatesLoaded) return;
   try {
-    const snap = await getDocs(query(collection(db,'messageTemplates'), orderBy('name')));
+    const snap = await countedGetDocs(query(collection(db,'messageTemplates'), orderBy('name')), 'messageTemplates');
     waTemplates = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     waTemplatesLoaded = true;
   } catch(e) {
@@ -2201,22 +2240,22 @@ async function ensureRecentAttendance(weeks) {
   weeks = Math.max(weeks || 4, 4);
   if (recentAttWeeks >= weeks) return;
   const d = new Date(); d.setDate(d.getDate() - weeks*7);
-  const snap = await getDocs(query(collection(db,'attendance'), where('date','>=', toLocalDateKey(d))));
+  const snap = await countedGetDocs(query(collection(db,'attendance'), where('date','>=', toLocalDateKey(d))), 'attendance (نطاق زمني)');
   snap.docs.forEach(x => { const v = x.data(); if (!allAttendance[v.date]) allAttendance[v.date] = {}; allAttendance[v.date][v.studentId] = x.id; });
   recentAttWeeks = weeks;
 }
 const studentHist = {};
 async function loadStudentHist(id) {
   const [a, v] = await Promise.all([
-    getDocs(query(collection(db,'attendance'), where('studentId','==',id))),
-    getDocs(query(collection(db,'verses'), where('studentId','==',id)))]);
+    countedGetDocs(query(collection(db,'attendance'), where('studentId','==',id)), 'attendance (بروفايل مخدوم)'),
+    countedGetDocs(query(collection(db,'verses'), where('studentId','==',id)), 'verses (بروفايل مخدوم)')]);
   const H = { att:{}, ver:{}, ts: Date.now() };
   a.docs.forEach(x => { H.att[x.data().date] = x.id; });
   v.docs.forEach(x => { const y = x.data(); H.ver[y.date] = { id:x.id, verse:y.verse||'' }; });
   studentHist[id] = H;
 }
 async function loadAllAttendance() {
-  const snap = await getDocs(collection(db,'attendance'));
+  const snap = await countedGetDocs(collection(db,'attendance'), 'attendance (الكل - غير مستخدمة)');
   allAttendance = {}; todayAttendance = {}; todayAttendanceTime = {};
   const today = todayKey();
   snap.docs.forEach(d => {
@@ -2249,7 +2288,7 @@ function restartTodayListeners() {
 async function migrateLegacyVerses() {
   if (verseKey() !== '2026-09-23' || localStorage.getItem('vmig_0923')) return;
   try {
-    const snap = await getDocs(query(collection(db,'verses'), where('date','==','2026-09-17')));
+    const snap = await countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-17')), 'verses (نقل تاريخ قديم - مرة واحدة)');
     const since = new Date('2026-09-23T00:00:00').getTime();
     const docs = snap.docs.filter(d => tsToMillis(d.data().timestamp) >= since);
     for (let i = 0; i < docs.length; i += 400) {
@@ -2274,6 +2313,7 @@ function listenTodayAttendance() {
   todayAttendanceUnsub = onSnapshot(
     todayQuery('attendance', today),
     snap => {
+      countSnapshotReads('attendance (اليوم - live)', snap);
       const prevA = todayAttendance, prevAT = todayAttendanceTime;
       todayAttendance = {}; todayAttendanceTime = {};
       snap.docs.forEach(d => { todayAttendance[d.data().studentId] = d.id; todayAttendanceTime[d.data().studentId] = tsToMillis(d.data().timestamp); });
@@ -2296,6 +2336,7 @@ function listenTodayVerses() {
   todayVersesUnsub = onSnapshot(
     todayQuery('verses', today),
     snap => {
+      countSnapshotReads('verses (اليوم - live)', snap);
       const prevV = todayVerses, prevVT = todayVerseTime;
       todayVerses = {}; todayVerseTime = {};
       snap.docs.forEach(d => {
@@ -2314,7 +2355,7 @@ function listenTodayVerses() {
 }
 
 async function loadAllVerses() {
-  const snap = await getDocs(collection(db,'verses'));
+  const snap = await countedGetDocs(collection(db,'verses'), 'verses (الكل - غير مستخدمة)');
   allVerses = {}; todayVerses = {}; todayVerseTime = {};
   const today = todayKey();
   snap.docs.forEach(d => {
@@ -3147,7 +3188,7 @@ window.exportExcel = async () => {
   showToast('جاري تحميل السجل الكامل…','info');
   const expAtt = {}, expVer = {};
   try {
-    const [a, v] = await Promise.all([getDocs(collection(db,'attendance')), getDocs(collection(db,'verses'))]);
+    const [a, v] = await Promise.all([countedGetDocs(collection(db,'attendance'), 'attendance (تصدير إكسل)'), countedGetDocs(collection(db,'verses'), 'verses (تصدير إكسل)')]);
     a.docs.forEach(x => { const d = x.data(); (expAtt[d.date] ||= {})[d.studentId] = x.id; });
     v.docs.forEach(x => { const d = x.data(); (expVer[d.date] ||= {})[d.studentId] = { id:x.id, verse:d.verse||'' }; });
   } catch(e) { showToast('تعذّر تحميل السجل','error'); return; }
@@ -3309,7 +3350,7 @@ window.loadMonitorTab = async () => {
 async function loadServantsOnce() {
   document.getElementById('pending-list').innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
   try {
-    const snap = await getDocs(collection(db,'servants'));
+    const snap = await countedGetDocs(collection(db,'servants'), 'servants (متابعة)');
     const all = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     renderPendingList(all.filter(x => x.status === 'pending'));
     renderServantsList(all.filter(x => x.status === 'approved'));
@@ -3403,7 +3444,7 @@ window.renderActivityList = async function() {
   cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
   try {
     const start = new Date(v + 'T00:00:00'), end = new Date(start.getTime() + 86400000);
-    const snap = await getDocs(query(collection(db,'activityLog'), where('timestamp','>=',start), where('timestamp','<',end), orderBy('timestamp','desc'), limit(100)));
+    const snap = await countedGetDocs(query(collection(db,'activityLog'), where('timestamp','>=',start), where('timestamp','<',end), orderBy('timestamp','desc'), limit(100)), 'activityLog');
     if (snap.empty) { cont.innerHTML = `<div class="empty-state">لا يوجد أنشطة في اليوم ده</div>`; return; }
     cont.innerHTML = snap.docs.map(d => {
       const a = d.data();
