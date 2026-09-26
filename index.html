@@ -118,6 +118,13 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .student-item.present{border-color:rgba(46,204,113,0.35);}
 .s-avatar{width:40px;height:40px;border-radius:11px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:var(--accent);flex-shrink:0;}
 .student-item.present .s-avatar{background:rgba(46,204,113,0.12);color:var(--success);}
+.serv-att-check{width:26px;height:26px;border-radius:7px;border:2px solid var(--border);flex-shrink:0;position:relative;}
+.serv-att-check.checked{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;}
+.serv-att-check.checked::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:900;}
+.stat-badge{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:7px 9px;text-align:center;min-width:58px;flex-shrink:0;}
+.stat-badge .num{font-size:15px;font-weight:900;color:var(--text-dim);line-height:1.2;}
+.stat-badge .num.has{color:var(--success);}
+.stat-badge .lbl{font-size:9.5px;color:var(--text-dim);margin-top:2px;white-space:nowrap;}
 .s-info{flex:1;min-width:0;}
 .s-name{font-size:14px;font-weight:700;}
 .s-sub{font-size:11px;color:var(--text-dim);margin-top:2px;}
@@ -697,7 +704,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <span class="section-title">الخدام (<span id="servants-count">0</span>)</span>
           <button class="export-btn" onclick="loadMonitorTab()">🔄 تحديث</button>
         </div>
-        <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px">دوس على فصل تحت اسم أي خادم عشان تقفله عليه — يفتح التطبيق يلاقي فصله ومخدوميه بس علطول. الأرقام جنب الاسم: 📖 مرات حضور مدارس الأحد، 🤝 مرات حضور اجتماع الخدام، 📝 مرات حضور التحضير</p>
+        <input type="text" id="servants-list-search" class="field-input" placeholder="🔍 دوّر على اسم خادم…" oninput="renderServantsList()" autocomplete="off" style="margin-bottom:10px">
+        <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px">دوس على فصل تحت اسم أي خادم عشان تقفله عليه — يفتح التطبيق يلاقي فصله ومخدوميه بس علطول</p>
         <div id="servants-list" style="margin-bottom:22px"></div>
 
         <div class="list-header">
@@ -3604,12 +3612,11 @@ async function renderServAttList() {
     const presentIds = new Set(snap.docs.map(d => d.data().servantId));
     cont.innerHTML = servants.map(s => `
       <div class="servant-item" onclick="toggleServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')" style="cursor:pointer">
-        <div class="s-avatar" style="${presentIds.has(s.id)?'background:linear-gradient(135deg,var(--success),#27ae60)':''}">${presentIds.has(s.id)?'✓':((s.name||'؟').trim()[0]||'؟')}</div>
+        <div class="serv-att-check ${presentIds.has(s.id)?'checked':''}"></div>
         <div class="s-info">
           <div class="s-name">${s.name||'—'}</div>
           <div class="s-sub">${s.assignedClass ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
         </div>
-        <span style="font-size:12px;font-weight:700;color:${presentIds.has(s.id)?'var(--success)':'var(--text-dim)'}">${presentIds.has(s.id)?'حاضر ✓':'غايب'}</span>
       </div>`).join('');
   } catch(e) {
     console.error(e);
@@ -3621,7 +3628,7 @@ window.toggleServantAttendance = async (servantId, name, date) => {
   const id = servAttDocId(date, servAttActivity, servantId);
   const countField = servAttActivity === 'sunday_school' ? 'sscCount' : servAttActivity === 'meeting' ? 'meetingCount' : servAttActivity === 'preparation' ? 'prepCount' : null;
   try {
-    const alreadyPresent = document.querySelector(`[onclick*="toggleServantAttendance('${servantId}'"] .s-avatar`)?.textContent.trim() === '✓';
+    const alreadyPresent = document.querySelector(`[onclick*="toggleServantAttendance('${servantId}'"] .serv-att-check`)?.classList.contains('checked');
     if (alreadyPresent) {
       await deleteDoc(doc(db,'servantAttendance',id));
       if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(-1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = Math.max(0,(sv[countField]||0)-1); }
@@ -3675,16 +3682,16 @@ function renderPendingList(list) {
 }
 
 function renderServantsList(list) {
-  document.getElementById('servants-count').textContent = list.length;
+  const base = list || cachedServants.filter(x => x.status === 'approved');
+  document.getElementById('servants-count').textContent = base.length;
+  const q = normalizeArabic(document.getElementById('servants-list-search')?.value || '');
+  const filtered = q ? base.filter(s => normalizeArabic(s.name||'').includes(q)) : base;
   const cont = document.getElementById('servants-list');
-  if (!list.length) { cont.innerHTML = `<div class="empty-state">لا يوجد خدام معتمدين بعد</div>`; return; }
-  const now = Date.now();
+  if (!filtered.length) { cont.innerHTML = `<div class="empty-state">${q ? 'مفيش خادم بالاسم ده' : 'لا يوجد خدام معتمدين بعد'}</div>`; return; }
   const viewerIsPrimary = isPrimaryAdmin(currentEmail); // بس الأدمن الأساسي (اللي إيميله في ADMIN_EMAILS) يقدر يشيل أدمنز تانيين أو يحذفهم
-  cont.innerHTML = list
+  cont.innerHTML = filtered
     .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
     .map(s => {
-      const last   = s.lastActive?.toDate ? s.lastActive.toDate().getTime() : 0;
-      const online = (now - last) < 3*60*1000;
       const nameEsc = (s.name||'').replace(/'/g,"\\'");
       const sIsPrimary = isPrimaryAdmin(s.email);
       const assigned = normalizeAssignedClasses(s.assignedClass);
@@ -3700,13 +3707,16 @@ function renderServantsList(list) {
         actions = `<button class="action-btn" onclick="promoteServant('${s.id}','${nameEsc}')">👑 خليه أدمن</button>
                    <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}')">🗑 حذف</button>`;
       }
-      const subParts = [s.email||'']; if (s.phone) subParts.push(s.phone);
       return `<div class="servant-item" style="flex-wrap:wrap">
-        
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <div class="stat-badge"><div class="num ${s.prepCount?'has':''}">${s.prepCount||0}</div><div class="lbl">📝 تحضير</div></div>
+          <div class="stat-badge"><div class="num ${s.meetingCount?'has':''}">${s.meetingCount||0}</div><div class="lbl">🤝 اجتماع خدام</div></div>
+          <div class="stat-badge"><div class="num ${s.sscCount?'has':''}">${s.sscCount||0}</div><div class="lbl">📖 مدارس أحد</div></div>
+        </div>
+        <div class="s-avatar">${(s.name||'؟').trim()[0]||'؟'}</div>
         <div class="s-info">
-          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''} <span style="font-size:12px;font-weight:700;color:var(--text-dim)">📖 ${s.sscCount||0} · 🤝 ${s.meetingCount||0} · 📝 ${s.prepCount||0}</span></div>
-          <div class="s-sub" dir="ltr" style="text-align:right">${subParts.join(' · ')}</div>
-          ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
+          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''}</div>
+          <div class="s-sub">${assigned.length ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
         </div>
         ${actions}
         <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
