@@ -742,8 +742,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <!-- LIST VIEW -->
       <div id="roles-list-view">
         <button class="export-btn" onclick="openRoleEditor('')" style="width:100%;margin-bottom:14px;padding:11px;text-align:center">➕ دور جديد</button>
-        <div id="roles-list"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
-        <div class="section-title" style="margin:20px 0 8px">باقي الخدام (حسب الفصل تلقائيًا)</div>
+        <button class="export-btn" onclick="toggleRolesClassFilter()" style="width:100%;margin-bottom:10px;padding:11px;text-align:center">🔍 تحديد فصل</button>
+        <div id="roles-class-filter-chips" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
         <div id="roles-unassigned-list"></div>
       </div>
 
@@ -4009,7 +4009,7 @@ async function loadRolesOnce(force) {
     allRoles = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     rolesLoadedFlag = true;
     renderRolesList();
-  } catch(e) { console.error(e); document.getElementById('roles-list').innerHTML = `<div class="empty-state">تعذّر تحميل الأدوار</div>`; }
+  } catch(e) { console.error(e); document.getElementById('roles-unassigned-list').innerHTML = `<div class="empty-state">تعذّر تحميل الأدوار</div>`; }
 }
 
 function showRolesListView() {
@@ -4018,45 +4018,59 @@ function showRolesListView() {
   document.getElementById('roles-modal-title').textContent = 'المستخدمين والأدوار';
 }
 
-function renderRolesList() {
-  const cont = document.getElementById('roles-list');
-  if (!allRoles.length) {
-    cont.innerHTML = `<div class="empty-state">لسه مفيش أدوار. اعمل أول دور بزرار "دور جديد" فوق</div>`;
-  } else {
-    cont.innerHTML = allRoles.slice().sort((a,b) => (a.name||'').localeCompare(b.name||'','ar')).map(r => {
-      const memberCount = cachedServants.filter(s => s.roleId === r.id && s.status === 'approved').length;
-      const classes = Array.isArray(r.classes) ? r.classes : [];
-      const classesLabel = r.isAdmin ? 'كل الفصول (أدمن)' : (classes.length ? classes.map(c => classLabel(c)).join(' + ') : 'بدون فصول');
-      const typeEmoji = r.isAdmin ? '👑' : (r.isSupervisor ? '🗝️' : '🧑‍🏫');
-      return `<div class="servant-item" onclick="openRoleEditor('${r.id}')" style="cursor:pointer">
-        <div class="s-avatar">${typeEmoji}</div>
-        <div class="s-info">
-          <div class="s-name">${r.name||'—'}</div>
-          <div class="s-sub">${classesLabel} · ${memberCount} عضو</div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-  // خدام معندهمش دور صريح لكن متوزعين على فصل: بيتحسبوا تلقائيًا "خدام فصل" في فصلهم — مش "بدون دور"
-  const unassigned = cachedServants.filter(s => s.status === 'approved' && !s.roleId && s.role !== 'admin');
-  const withClass = unassigned.filter(s => s.assignedClass);
-  const withoutClass = unassigned.filter(s => !s.assignedClass);
-  const groups = {};
-  withClass.forEach(s => { const key = s.assignedClass; (groups[key] = groups[key] || []).push(s); });
-  const groupsHTML = Object.keys(groups).map(key => {
-    const members = groups[key].sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
-    return `<div class="section-title" style="margin:14px 0 6px">🧑‍🏫 خادم فصل — ${formatAssignedClasses(key)} (${members.length})</div>` +
-      members.map(s => `<div class="servant-item" onclick="closeRolesModal();openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
-        <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
-      </div>`).join('');
+// فلتر الفصول فوق شاشة "المستخدمين والأدوار" — تدوس "تحديد فصل" فتظهر شرايط الفصول،
+// تختار فصل أو أكتر، ويظهرلك تحت بس خدام الفصول اللي اخترتها (مع دور كل واحد جنب اسمه)
+let rolesClassFilter = []; // [classId,...]
+window.toggleRolesClassFilter = () => {
+  const box = document.getElementById('roles-class-filter-chips');
+  box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+  if (box.style.display === 'flex') renderRolesClassFilterChips();
+};
+function renderRolesClassFilterChips() {
+  const box = document.getElementById('roles-class-filter-chips');
+  box.innerHTML = allClasses.map(c => {
+    const active = rolesClassFilter.includes(c.id);
+    return `<button type="button" class="filter-chip ${active?'active':''}" onclick="toggleRolesClassFilterChip('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
   }).join('');
-  const withoutClassHTML = withoutClass.length
-    ? `<div class="section-title" style="margin:14px 0 6px">بدون فصل ولا دور (${withoutClass.length})</div>` +
-      withoutClass.sort((a,b) => (a.name||'').localeCompare(b.name||'','ar')).map(s => `<div class="servant-item" onclick="closeRolesModal();openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
-        <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
-      </div>`).join('')
-    : '';
-  document.getElementById('roles-unassigned-list').innerHTML = (groupsHTML + withoutClassHTML) || `<div class="empty-state" style="padding:16px">مفيش خدام تانيين</div>`;
+}
+window.toggleRolesClassFilterChip = (classId) => {
+  rolesClassFilter = rolesClassFilter.includes(classId) ? rolesClassFilter.filter(x => x !== classId) : [...rolesClassFilter, classId];
+  renderRolesClassFilterChips();
+  renderRolesList();
+};
+
+// دوس على تعديل دور خادم فورمالي (عنده roleId) من جوه القايمة على طول
+window.openRoleEditorFromList = (roleId, e) => {
+  if (e) e.stopPropagation();
+  openRoleEditor(roleId);
+};
+
+function renderRolesList() {
+  // مفيش قايمة أدوار منفصلة فوق ولا رسالة "لسه مفيش أدوار" — أي دور بيتوزع بيظهر على طول
+  // في قايمة الفصول تحت، وتقدر تعدّله من هناك على طول (زرار ✏️ جنب اسم أي خادم عنده دور فورمالي)
+  if (!rolesClassFilter.length) {
+    document.getElementById('roles-unassigned-list').innerHTML = `<div class="empty-state" style="padding:16px">دوس "🔍 تحديد فصل" فوق واختار فصل أو أكتر عشان تشوف الخدام</div>`;
+    return;
+  }
+  const approved = cachedServants.filter(s => s.status === 'approved' && s.role !== 'admin');
+  const roleRowHTML = (s) => {
+    const label = s.role === 'supervisor' ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل';
+    const editBtn = s.roleId ? `<span onclick="openRoleEditorFromList('${s.roleId}',event)" style="cursor:pointer;padding:2px 4px" title="تعديل الدور">✏️</span>` : '';
+    return `<div class="servant-item" onclick="closeRolesModal();openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
+      <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
+      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap;display:flex;align-items:center;gap:6px">${label}${editBtn}</span>
+    </div>`;
+  };
+  const html = rolesClassFilter.map(cid => {
+    const c = classById(cid);
+    // خادم بيظهر في الفصل ده لو الفصل ده من ضمن فصوله، أو لو مقيدش بفصول معينة أصلاً (شايف كل الفصول)
+    const members = approved
+      .filter(s => { const list = normalizeAssignedClasses(s.assignedClass); return !list.length || list.includes(cid); })
+      .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+    if (!members.length) return `<div class="section-title" style="margin:14px 0 6px">${c?c.emoji||'📘':'📘'} ${c?c.name:cid} (0)</div><div class="empty-state" style="padding:10px">مفيش خدام في الفصل ده</div>`;
+    return `<div class="section-title" style="margin:14px 0 6px">${c?c.emoji||'📘':'📘'} ${c?c.name:cid} (${members.length})</div>` + members.map(roleRowHTML).join('');
+  }).join('');
+  document.getElementById('roles-unassigned-list').innerHTML = html;
 }
 
 window.openRoleEditor = (roleId) => {
