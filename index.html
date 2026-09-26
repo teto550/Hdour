@@ -328,6 +328,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="home-card" onclick="switchTab('filters')"><span>📞</span>افتقاد</button>
         <button class="home-card" onclick="switchTab('messages')"><span>📨</span>رسائل</button>
         <button class="home-card" id="home-card-monitor" style="display:none" onclick="switchTab('monitor')"><span>🛡️</span>متابعة</button>
+        <button class="home-card" id="home-card-classservants" style="display:none" onclick="switchTab('classservants')"><span>👥</span>خدام الفصل</button>
       </div>
       <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
     </div>
@@ -338,6 +339,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <button class="tab" data-tab="filters" onclick="switchTab('filters')">افتقاد</button>
       <button class="tab" data-tab="messages" onclick="switchTab('messages')">📨 رسائل</button>
       <button class="tab" id="tab-btn-monitor" style="display:none" data-tab="monitor" onclick="switchTab('monitor')">متابعة</button>
+      <button class="tab" id="tab-btn-classservants" style="display:none" data-tab="classservants" onclick="switchTab('classservants')">👥 خدام الفصل</button>
     </div>
 
     <!-- ATTENDANCE TAB -->
@@ -698,7 +700,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <button class="export-btn" onclick="loadMonitorTab()">🔄 تحديث</button>
         </div>
         <input type="text" id="servants-list-search" class="field-input" placeholder="🔍 دوّر على اسم خادم…" oninput="renderServantsList()" autocomplete="off" style="margin-bottom:10px">
-        <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px">دوس على فصل تحت اسم أي خادم عشان تقفله عليه — يفتح التطبيق يلاقي فصله ومخدوميه بس علطول</p>
+        <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px">دوس على اسم أي خادم يفتحلك ملفه بكل التفاصيل — تحديد الفصل والدور بيتعمل من هناك أو من "المستخدمين والأدوار"</p>
         <div id="servants-list" style="margin-bottom:22px"></div>
 
         <div class="list-header">
@@ -707,6 +709,21 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         </div>
         <div id="activity-list"></div>
       </div>
+    </div>
+
+    <!-- CLASS SERVANTS TAB (مسؤول الفصل بس) — حضور خدام فصله هو بس -->
+    <div id="tab-classservants" style="display:none">
+      <div class="filter-row" id="class-serv-att-activity-chips" style="margin-bottom:12px">
+        <button class="filter-chip active" onclick="setClassServAttActivity('mass',this)">⛪ القداس</button>
+        <button class="filter-chip" onclick="setClassServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
+        <button class="filter-chip" onclick="setClassServAttActivity('meeting',this)">🤝 اجتماع الخدام</button>
+        <button class="filter-chip" onclick="setClassServAttActivity('preparation',this)">📝 التحضير</button>
+      </div>
+      <input type="date" id="class-serv-att-date" class="field-input" onchange="renderClassServAttList()">
+      <div class="search-box" style="margin:10px 0">
+        <input type="text" id="class-serv-att-search-input" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="renderClassServAttList()" autocomplete="off">
+      </div>
+      <div id="class-serv-att-list"></div>
     </div>
   </div>
 </div>
@@ -832,7 +849,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div class="modal-header">
       <div style="flex:1;min-width:0">
         <div id="roles-modal-title" style="font-size:18px;font-weight:900">المستخدمين والأدوار</div>
-        <div id="roles-modal-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px">الدور بيحدد الفصول اللي الخادم يشوفها، ولو هو أدمن ولا لأ</div>
+        <div id="roles-modal-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px">أي خادم متوزع على فصل بيبقى "خادم فصل" فيه تلقائي — الدور هنا لترقيته لمسؤول فصل أو أدمن</div>
       </div>
       <button class="modal-close" onclick="closeRolesModal()">✕</button>
     </div>
@@ -841,17 +858,15 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div id="roles-list-view" style="padding:16px">
       <button class="export-btn" onclick="openRoleEditor('')" style="width:100%;margin-bottom:14px;padding:11px;text-align:center">➕ دور جديد</button>
       <div id="roles-list"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
-      <div class="section-title" style="margin:20px 0 8px">خدام بدون دور</div>
+      <div class="section-title" style="margin:20px 0 8px">باقي الخدام (حسب الفصل تلقائيًا)</div>
       <div id="roles-unassigned-list"></div>
     </div>
 
     <!-- EDITOR VIEW -->
     <div id="role-editor-view" style="display:none;padding:16px">
       <button class="action-btn" onclick="closeRoleEditor()" style="margin-bottom:14px">→ كل الأدوار</button>
-      <label class="field-label">اسم الدور</label>
-      <input type="text" id="role-name-input" class="field-input" placeholder="مثلاً: خدام فصل أ" oninput="onRoleNameInput()">
-      <label class="field-label" style="display:block;margin-bottom:8px">صلاحية الأدمن</label>
-      <button id="role-admin-toggle" class="filter-chip" onclick="toggleRoleAdmin()" style="margin-bottom:16px;padding:10px 16px">👑 دور أدمن — يشوف ويعدّل كل حاجة</button>
+      <label class="field-label" style="display:block;margin-bottom:8px">نوع الدور</label>
+      <div id="role-type-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
 
       <div id="role-classes-section">
         <label class="field-label" style="display:block;margin-bottom:8px">الفصول</label>
@@ -1525,7 +1540,7 @@ function renderSettingsPeopleList() {
     }
     return `<div class="servant-item" style="flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--border)">
       <div class="s-info">
-        <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''}</div>
+        <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':s.role==='supervisor'?' 🗝️':''}</div>
         <div class="s-sub">${assigned.length ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
       </div>
       ${adminBtn}
@@ -1829,12 +1844,15 @@ function listenOwnServantDoc(uid) {
       applyMonitorVisibility();
       if (currentRole === 'admin') {
         showToast('مبروك! الأدمن الأساسي خلاك أدمن 👑', 'success');
+      } else if (currentRole === 'supervisor') {
+        showToast('اتحددتلك مسؤولية فصل — بقى عندك تبويب "خدام الفصل" 🗝️', 'success');
       } else {
-        showToast('الأدمن الأساسي شالك من الأدمن', 'info');
-        // لو كنت واقف في تبويب المتابعة ومعدش أدمن، نرجّعه لتبويب الحضور
-        if (document.getElementById('tab-monitor').style.display === 'block') {
-          goHome();
-        }
+        showToast('اتغيّر دورك بواسطة الأدمن الأساسي', 'info');
+      }
+      // لو كنت واقف في تبويب مش متاح ليك بدورك الجديد، نرجّعه لتبويب الحضور
+      if ((document.getElementById('tab-monitor').style.display === 'block' && currentRole !== 'admin') ||
+          (document.getElementById('tab-classservants').style.display === 'block' && currentRole !== 'supervisor')) {
+        goHome();
       }
     }
     currentPhone = d.phone || ''; currentAddress = d.address || '';
@@ -3566,14 +3584,17 @@ window.printAllQR = () => {
 
 // ===== TABS =====
 window.applyMonitorVisibility = () => {
-  const on = currentRole === 'admin';
-  document.getElementById('tab-btn-monitor').style.display = on ? 'block' : 'none';
-  const c = document.getElementById('home-card-monitor'); if (c) c.style.display = on ? '' : 'none';
+  const onAdmin = currentRole === 'admin';
+  const onSupervisor = currentRole === 'supervisor';
+  document.getElementById('tab-btn-monitor').style.display = onAdmin ? 'block' : 'none';
+  const c = document.getElementById('home-card-monitor'); if (c) c.style.display = onAdmin ? '' : 'none';
+  document.getElementById('tab-btn-classservants').style.display = onSupervisor ? 'block' : 'none';
+  const c2 = document.getElementById('home-card-classservants'); if (c2) c2.style.display = onSupervisor ? '' : 'none';
 };
 window.goHome = () => {
   stopScan(); stopVoice();
   stopTodayListeners();
-  ['attendance','students','filters','messages','monitor'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
+  ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
   document.getElementById('tab-home').style.display = 'block';
@@ -3582,12 +3603,14 @@ window.goHome = () => {
 window.switchTab = async (tab) => {
   if (tab !== 'attendance') { stopScan(); stopVoice(); stopTodayListeners(); }
   if (tab === 'monitor' && currentRole !== 'admin') return;
+  if (tab === 'classservants' && currentRole !== 'supervisor') return;
   document.getElementById('tab-home').style.display = 'none';
   document.getElementById('main-tabs').style.display = 'flex';
   document.getElementById('global-class-tabs').style.display = '';
   document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['attendance','students','filters','messages','monitor'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
+  ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
   if (tab === 'monitor') { loadMonitorTab(); return; }
+  if (tab === 'classservants') { if (!servantsLoadedFlag) await loadServantsOnce(); renderClassServAttList(); return; }
   await ensureStudents();
   if (tab === 'attendance') { startTodayListeners(); updateStats(); renderTodayList(); }
   if (tab === 'students')  renderStudentsList();
@@ -3712,6 +3735,63 @@ window.toggleServantAttendance = async (servantId, name, date) => {
   } catch(e) { console.error(e); showToast('حصل خطأ، حاول تاني', 'error'); }
 };
 
+// ===== خدام الفصل (تبويب مسؤول الفصل) — نسخة من حضور الخدام، مقصورة على خدام فصل المسؤول بس =====
+let classServAttActivity = 'mass';
+window.setClassServAttActivity = (activity, btn) => {
+  classServAttActivity = activity;
+  document.querySelectorAll('#class-serv-att-activity-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderClassServAttList();
+};
+async function renderClassServAttList() {
+  const cont = document.getElementById('class-serv-att-list');
+  if (!cont) return;
+  const date = document.getElementById('class-serv-att-date')?.value || toLocalDateKey(new Date());
+  if (!servantsLoadedFlag) await loadServantsOnce();
+  const allowed = normalizeAssignedClasses(currentAssignedClass);
+  let servants = cachedServants.filter(s => s.status === 'approved' && s.id !== currentUid);
+  if (allowed.length) servants = servants.filter(s => normalizeAssignedClasses(s.assignedClass).some(c => allowed.includes(c)));
+  else servants = [];
+  servants = servants.sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خدام تانيين في فصلك</div>`; return; }
+  const searchQ = normalizeArabic(document.getElementById('class-serv-att-search-input')?.value || '');
+  if (searchQ) servants = servants.filter(s => normalizeArabic(s.name||'').includes(searchQ));
+  if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خادم بالاسم ده</div>`; return; }
+  cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+  try {
+    const snap = await countedGetDocs(query(collection(db,'servantAttendance'), where('date','==',date), where('activity','==',classServAttActivity)), `servantAttendance فصل (${SERV_ATT_LABELS[classServAttActivity]})`);
+    const presentIds = new Set(snap.docs.map(d => d.data().servantId));
+    cont.innerHTML = servants.map(s => `
+      <div class="servant-item" onclick="toggleClassServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')" style="cursor:pointer">
+        <div class="s-info">
+          <div class="s-name">${s.name||'—'}</div>
+        </div>
+        <div class="serv-att-check ${presentIds.has(s.id)?'checked':''}"></div>
+      </div>`).join('');
+  } catch(e) {
+    console.error(e);
+    cont.innerHTML = `<div class="empty-state">تعذّر تحميل الحضور</div>`;
+  }
+}
+window.toggleClassServantAttendance = async (servantId, name, date) => {
+  const activity = classServAttActivity;
+  const id = servAttDocId(date, activity, servantId);
+  const countField = activity === 'sunday_school' ? 'sscCount' : activity === 'meeting' ? 'meetingCount' : activity === 'preparation' ? 'prepCount' : null;
+  try {
+    const alreadyPresent = document.querySelector(`#class-serv-att-list [onclick*="toggleClassServantAttendance('${servantId}'"] .serv-att-check`)?.classList.contains('checked');
+    if (alreadyPresent) {
+      await deleteDoc(doc(db,'servantAttendance',id));
+      if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(-1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = Math.max(0,(sv[countField]||0)-1); }
+      showToast(`تم إلغاء حضور ${name}`, 'info');
+    } else {
+      await setDoc(doc(db,'servantAttendance',id), { servantId, name, date, activity, timestamp: serverTimestamp() });
+      if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = (sv[countField]||0)+1; }
+      showToast(`تم تسجيل حضور ${name} في ${SERV_ATT_LABELS[activity]} ✓`, 'success');
+    }
+    renderClassServAttList();
+  } catch(e) { console.error(e); showToast('حصل خطأ، حاول تاني', 'error'); }
+};
+
 let cachedServants = [];
 let servantsLoadedFlag = false;
 // بيجيب قايمة الخدام من فايرستور مرة واحدة بس لكل جلسة (وبيعيد استخدام نفس النسخة في "متابعة" وشاشة الإعدادات/الأدوار
@@ -3763,7 +3843,7 @@ function renderServantsList(list) {
     .map(s => `
       <div class="servant-item" onclick="openServantProfile('${s.id}')" style="cursor:pointer">
         <div class="s-info">
-          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':''}</div>
+          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':s.role==='supervisor'?' 🗝️':''}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <div class="stat-badge"><div class="num ${s.sscCount?'has':''}">${s.sscCount||0}</div><div class="lbl">📖 مدارس أحد</div></div>
@@ -3790,8 +3870,8 @@ window.openServantProfile = (id) => {
   if (!s) return;
   servantProfileId = id;
   document.getElementById('sprof-avatar').textContent = (s.name||'؟').trim()[0] || '؟';
-  document.getElementById('sprof-name').textContent = (s.name||'—') + (s.role==='admin' ? ' 👑' : '');
-  document.getElementById('sprof-sub').textContent = s.role==='admin' ? 'أدمن' : 'خادم';
+  document.getElementById('sprof-name').textContent = (s.name||'—') + (s.role==='admin' ? ' 👑' : (s.role==='supervisor' ? ' 🗝️' : ''));
+  document.getElementById('sprof-sub').textContent = s.role==='admin' ? 'أدمن' : (s.role==='supervisor' ? 'مسؤول فصل' : 'خادم فصل');
   document.getElementById('sprof-ssc').textContent = s.sscCount||0;
   document.getElementById('sprof-meeting').textContent = s.meetingCount||0;
   document.getElementById('sprof-prep').textContent = s.prepCount||0;
@@ -3887,9 +3967,11 @@ window.demoteServant = async (id, name) => {
 let allRoles = [];
 let rolesLoadedFlag = false;
 let editingRoleId = '';        // '' = دور جديد
-let editingRoleIsAdmin = false;
+let editingRoleType = 'classServant'; // 'classServant' | 'classSupervisor' | 'admin'
 let editingRoleClasses = [];   // [classId,...]
 let editingRoleMemberIds = []; // [servantId,...]
+const ROLE_TYPE_LABELS = { classServant:'🧑‍🏫 خادم فصل', classSupervisor:'🗝️ مسؤول فصل', admin:'👑 أدمن' };
+const ROLE_TYPE_SHORT   = { classServant:'خادم فصل', classSupervisor:'مسؤول فصل', admin:'أدمن' };
 
 window.closeRolesModal = () => { document.getElementById('roles-modal').style.display = 'none'; };
 window.closeRolesOutside = (e) => { if (e.target.id === 'roles-modal') closeRolesModal(); };
@@ -3920,35 +4002,49 @@ function renderRolesList() {
       const memberCount = cachedServants.filter(s => s.roleId === r.id && s.status === 'approved').length;
       const classes = Array.isArray(r.classes) ? r.classes : [];
       const classesLabel = r.isAdmin ? 'كل الفصول (أدمن)' : (classes.length ? classes.map(c => classLabel(c)).join(' + ') : 'بدون فصول');
+      const typeEmoji = r.isAdmin ? '👑' : (r.isSupervisor ? '🗝️' : '🧑‍🏫');
       return `<div class="servant-item" onclick="openRoleEditor('${r.id}')" style="cursor:pointer">
-        <div class="s-avatar">${(r.name||'؟').trim()[0]||'؟'}</div>
+        <div class="s-avatar">${typeEmoji}</div>
         <div class="s-info">
-          <div class="s-name">${r.name||'—'}${r.isAdmin ? ' 👑' : ''}</div>
+          <div class="s-name">${r.name||'—'}</div>
           <div class="s-sub">${classesLabel} · ${memberCount} عضو</div>
         </div>
       </div>`;
     }).join('');
   }
-  const unassigned = cachedServants.filter(s => s.status === 'approved' && !s.roleId).sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
-  document.getElementById('roles-unassigned-list').innerHTML = unassigned.length
-    ? unassigned.map(s => `<div class="servant-item" onclick="closeRolesModal();openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
-        <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}${s.role==='admin' ? ' 👑' : ''}</div></div>
+  // خدام معندهمش دور صريح لكن متوزعين على فصل: بيتحسبوا تلقائيًا "خدام فصل" في فصلهم — مش "بدون دور"
+  const unassigned = cachedServants.filter(s => s.status === 'approved' && !s.roleId && s.role !== 'admin');
+  const withClass = unassigned.filter(s => s.assignedClass);
+  const withoutClass = unassigned.filter(s => !s.assignedClass);
+  const groups = {};
+  withClass.forEach(s => { const key = s.assignedClass; (groups[key] = groups[key] || []).push(s); });
+  const groupsHTML = Object.keys(groups).map(key => {
+    const members = groups[key].sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+    return `<div class="section-title" style="margin:14px 0 6px">🧑‍🏫 خادم فصل — ${formatAssignedClasses(key)} (${members.length})</div>` +
+      members.map(s => `<div class="servant-item" onclick="closeRolesModal();openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
+        <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
+      </div>`).join('');
+  }).join('');
+  const withoutClassHTML = withoutClass.length
+    ? `<div class="section-title" style="margin:14px 0 6px">بدون فصل ولا دور (${withoutClass.length})</div>` +
+      withoutClass.sort((a,b) => (a.name||'').localeCompare(b.name||'','ar')).map(s => `<div class="servant-item" onclick="closeRolesModal();openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
+        <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
       </div>`).join('')
-    : `<div class="empty-state" style="padding:16px">كل الخدام متسجلين في دور</div>`;
+    : '';
+  document.getElementById('roles-unassigned-list').innerHTML = (groupsHTML + withoutClassHTML) || `<div class="empty-state" style="padding:16px">مفيش خدام تانيين</div>`;
 }
 
 window.openRoleEditor = (roleId) => {
   editingRoleId = roleId || '';
   const r = editingRoleId ? allRoles.find(x => x.id === editingRoleId) : null;
-  editingRoleIsAdmin = r ? !!r.isAdmin : false;
+  editingRoleType = r ? (r.type || (r.isAdmin ? 'admin' : (r.isSupervisor ? 'classSupervisor' : 'classServant'))) : 'classServant';
   editingRoleClasses = (r && Array.isArray(r.classes)) ? [...r.classes] : [];
   editingRoleMemberIds = editingRoleId ? cachedServants.filter(s => s.roleId === editingRoleId).map(s => s.id) : [];
-  document.getElementById('role-name-input').value = r ? (r.name||'') : '';
   document.getElementById('roles-modal-title').textContent = r ? 'تعديل دور' : 'دور جديد';
   document.getElementById('role-delete-btn').style.display = r ? 'block' : 'none';
   document.getElementById('role-add-members-box').style.display = 'none';
   const searchEl = document.getElementById('role-add-members-search'); if (searchEl) searchEl.value = '';
-  renderRoleAdminToggle();
+  renderRoleTypeChips();
   renderRoleClassChips();
   renderRoleMembersChips();
   updateRoleEffectHint();
@@ -3956,17 +4052,16 @@ window.openRoleEditor = (roleId) => {
   document.getElementById('role-editor-view').style.display = 'block';
 };
 window.closeRoleEditor = () => { showRolesListView(); renderRolesList(); };
-window.onRoleNameInput = () => {};
 
-window.toggleRoleAdmin = () => { editingRoleIsAdmin = !editingRoleIsAdmin; renderRoleAdminToggle(); renderRoleClassChips(); updateRoleEffectHint(); };
-function renderRoleAdminToggle() {
-  const btn = document.getElementById('role-admin-toggle');
-  btn.classList.toggle('active', editingRoleIsAdmin);
-  document.getElementById('role-classes-section').style.display = editingRoleIsAdmin ? 'none' : 'block';
+window.setRoleType = (type) => { editingRoleType = type; renderRoleTypeChips(); renderRoleClassChips(); updateRoleEffectHint(); };
+function renderRoleTypeChips() {
+  document.getElementById('role-type-chips').innerHTML = Object.keys(ROLE_TYPE_LABELS).map(t =>
+    `<button type="button" class="filter-chip ${editingRoleType===t?'active':''}" onclick="setRoleType('${t}')">${ROLE_TYPE_LABELS[t]}</button>`).join('');
+  document.getElementById('role-classes-section').style.display = editingRoleType === 'admin' ? 'none' : 'block';
 }
 function renderRoleClassChips() {
   const cont = document.getElementById('role-classes-chips');
-  if (editingRoleIsAdmin) { cont.innerHTML = ''; return; }
+  if (editingRoleType === 'admin') { cont.innerHTML = ''; return; }
   if (!allClasses.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش فصول متضافة</div>`; return; }
   cont.innerHTML = allClasses.map(c => {
     const active = editingRoleClasses.includes(c.id);
@@ -4025,10 +4120,13 @@ function updateRoleEffectHint() {
 }
 
 window.saveRole = async () => {
-  const name = document.getElementById('role-name-input').value.trim();
-  if (!name) { showToast('اكتب اسم الدور', 'error'); return; }
+  if (editingRoleType !== 'admin' && !editingRoleClasses.length) { showToast('اختار الفصل / الفصول الأول', 'error'); return; }
+  const isAdmin = editingRoleType === 'admin';
+  const isSupervisor = editingRoleType === 'classSupervisor';
+  const classesLabel = isAdmin ? '' : editingRoleClasses.map(c => classLabel(c)).join(' + ');
+  const name = isAdmin ? 'أدمن' : `${ROLE_TYPE_SHORT[editingRoleType]} — ${classesLabel}`;
   try {
-    const data = { name, isAdmin: editingRoleIsAdmin, classes: editingRoleIsAdmin ? [] : editingRoleClasses };
+    const data = { name, type: editingRoleType, isAdmin, isSupervisor, classes: isAdmin ? [] : editingRoleClasses };
     let roleId = editingRoleId;
     if (roleId) await updateDoc(doc(db,'roles',roleId), data);
     else { const ref = await addDoc(collection(db,'roles'), data); roleId = ref.id; }
@@ -4036,11 +4134,12 @@ window.saveRole = async () => {
     // خدام كانوا في الدور ده وشيلتهم من قايمة الأعضاء دلوقتي: بنشيل عنهم ربط الدور بس، من غير ما نلمس صلاحياتهم الحالية
     const previousMemberIds = cachedServants.filter(s => s.roleId === roleId).map(s => s.id);
     const removed = previousMemberIds.filter(id => !editingRoleMemberIds.includes(id));
-    const assignedClassValue = editingRoleIsAdmin ? '' : editingRoleClasses.join(',');
+    const assignedClassValue = isAdmin ? '' : editingRoleClasses.join(',');
+    const roleValue = isAdmin ? 'admin' : (isSupervisor ? 'supervisor' : 'servant');
     await Promise.all([
       ...removed.map(id => updateDoc(doc(db,'servants',id), { roleId: '' })),
       ...editingRoleMemberIds.map(id => updateDoc(doc(db,'servants',id), {
-        roleId, role: editingRoleIsAdmin ? 'admin' : 'servant', assignedClass: assignedClassValue
+        roleId, role: roleValue, assignedClass: assignedClassValue
       })),
     ]);
 
