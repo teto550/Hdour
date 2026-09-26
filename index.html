@@ -252,8 +252,15 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <button class="btn-primary" id="login-btn" onclick="doLogin()">دخول</button>
     </div>
     <div id="auth-register-form" style="display:none">
-      <label class="field-label">الاسم</label>
-      <input type="text" id="reg-name" class="field-input" placeholder="اكتب اسمك">
+      <label class="field-label">الفصل</label>
+      <select class="field-select" id="reg-class" onchange="onRegClassChange()">
+        <option value="">جاري تحميل الفصول…</option>
+      </select>
+      <label class="field-label">اسمك</label>
+      <select class="field-select" id="reg-name-select" onchange="onRegNameSelectChange()">
+        <option value="">— اختار فصلك الأول —</option>
+      </select>
+      <input type="text" id="reg-name" class="field-input" placeholder="اكتب اسمك" style="display:none;margin-top:8px">
       <label class="field-label">البريد الإلكتروني</label>
       <input type="email" id="reg-email" class="field-input" placeholder="example@gmail.com" dir="ltr">
       <label class="field-label">كلمة المرور</label>
@@ -262,10 +269,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <input type="tel" id="reg-phone" class="field-input" placeholder="رقم تليفونك" dir="ltr">
       <label class="field-label">العنوان</label>
       <input type="text" id="reg-address" class="field-input" placeholder="عنوانك">
-      <label class="field-label">الفصل</label>
-      <select class="field-select" id="reg-class">
-        <option value="">جاري تحميل الفصول…</option>
-      </select>
       <button class="btn-primary" id="register-btn" onclick="doRegister()">تسجيل</button>
     </div>
     <div id="login-error" style="color:var(--danger);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
@@ -645,7 +648,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <span class="section-title">الفصول</span>
         <button class="export-btn" onclick="addClassPrompt()">➕ فصل جديد</button>
       </div>
-      <div id="classes-admin-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px"></div>
+      <div id="classes-admin-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+      <div id="class-names-panel" style="display:none;background:var(--card,rgba(255,255,255,0.04));border-radius:12px;padding:12px;margin-bottom:22px"></div>
 
       <div class="list-header">
         <span class="section-title">طلبات الانضمام (<span id="pending-count">0</span>)</span>
@@ -767,7 +771,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment }
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
@@ -1224,6 +1228,7 @@ function renderRegClassOptions() {
   if (sel && allClasses.length) sel.innerHTML = classSelectOptionsHTML(false);
 }
 // ===== إدارة الفصول (أدمن فقط) — إضافة/تعديل/حذف فصول من جوه التطبيق نفسه =====
+let openClassNamesId = '';
 function renderClassesAdminList() {
   const cont = document.getElementById('classes-admin-list');
   if (!cont) return;
@@ -1231,10 +1236,43 @@ function renderClassesAdminList() {
   cont.innerHTML = allClasses.map(c => `
     <div class="tpl-chip">
       <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name}</span>
+      <button class="tpl-chip-del" onclick="toggleClassNames('${c.id}')" title="أسماء الخدام" style="margin-left:4px">${openClassNamesId===c.id?'👥▲':'👥'} ${(c.servantNames||[]).length ? `(${c.servantNames.length})` : ''}</button>
       <button class="tpl-chip-del" onclick="editClassPrompt('${c.id}')" title="تعديل" style="margin-left:4px">✏️</button>
       <button class="tpl-chip-del" onclick="deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">✕</button>
     </div>`).join('');
+  renderClassNamesPanel();
 }
+// لوحة أسماء الخدام المتوقعين لفصل معين — الأسماء دي بتظهر للخادم الجديد يختار اسمه منها وقت التسجيل
+function renderClassNamesPanel() {
+  const panel = document.getElementById('class-names-panel');
+  if (!panel) return;
+  if (!openClassNamesId) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  const c = classById(openClassNamesId);
+  if (!c) { panel.style.display = 'none'; return; }
+  const names = (c.servantNames || []).slice().sort((a,b) => a.localeCompare(b,'ar'));
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="section-title" style="margin-bottom:8px">أسماء خدام ${c.emoji||''} ${c.name}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      ${names.length ? names.map(n => `
+        <div class="tpl-chip">
+          <span class="tpl-chip-name">${n}</span>
+          <button class="tpl-chip-del" onclick="removeServantNameFromClass('${c.id}','${n.replace(/'/g,"\\'")}')" title="حذف">✕</button>
+        </div>`).join('') : '<div class="empty-state" style="padding:6px">لسه مفيش أسماء مضافة</div>'}
+    </div>
+    <button class="export-btn" onclick="addServantNameToClass('${c.id}')">➕ إضافة اسم</button>`;
+}
+window.toggleClassNames = (id) => { openClassNamesId = openClassNamesId === id ? '' : id; renderClassesAdminList(); };
+window.addServantNameToClass = async (id) => {
+  const name = (prompt('اسم الخادم اللي عايز تضيفه للفصل ده؟') || '').trim();
+  if (!name) return;
+  try { await updateDoc(doc(db,'classes',id), { servantNames: arrayUnion(name) }); showToast(`تم إضافة "${name}" ✓`, 'success'); }
+  catch(e) { console.error(e); showToast('حصل خطأ أثناء الإضافة', 'error'); }
+};
+window.removeServantNameFromClass = async (id, name) => {
+  try { await updateDoc(doc(db,'classes',id), { servantNames: arrayRemove(name) }); }
+  catch(e) { console.error(e); showToast('حصل خطأ أثناء الحذف', 'error'); }
+};
 window.addClassPrompt = async () => {
   const name = (prompt('اسم الفصل الجديد؟ (مثلاً: فصل ج)') || '').trim();
   if (!name) return;
@@ -1320,6 +1358,25 @@ async function loadRegisterClassOptions() {
     sel.innerHTML = `<option value="">تعذّر تحميل الفصول</option>`;
   }
 }
+// أول ما تختار الفصل، بيتملى سيلكت "اسمك" بأسماء الخدام اللي الأدمن ضافهم مقدمًا لنفس الفصل ده
+window.onRegClassChange = () => {
+  const classId = document.getElementById('reg-class').value;
+  const nameSel = document.getElementById('reg-name-select');
+  const nameInput = document.getElementById('reg-name');
+  nameInput.style.display = 'none'; nameInput.value = '';
+  if (!classId) { nameSel.innerHTML = `<option value="">— اختار فصلك الأول —</option>`; return; }
+  const names = (classById(classId)?.servantNames || []).slice().sort((a,b) => a.localeCompare(b,'ar'));
+  let html = `<option value="">— اختار اسمك —</option>`;
+  html += names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+  html += `<option value="__other__">اسمي مش موجود في القايمة</option>`;
+  nameSel.innerHTML = html;
+};
+window.onRegNameSelectChange = () => {
+  const v = document.getElementById('reg-name-select').value;
+  const nameInput = document.getElementById('reg-name');
+  if (v === '__other__') { nameInput.style.display = 'block'; nameInput.value = ''; nameInput.focus(); }
+  else { nameInput.style.display = 'none'; nameInput.value = ''; }
+};
 
 window.doLogin = async () => {
   const btn = document.getElementById('login-btn');
@@ -1341,17 +1398,18 @@ window.doLogin = async () => {
 window.doRegister = async () => {
   const btn  = document.getElementById('register-btn');
   const err  = document.getElementById('login-error');
-  const name = document.getElementById('reg-name').value.trim();
+  const regClass = document.getElementById('reg-class').value;
+  const nameSelVal = document.getElementById('reg-name-select').value;
+  const name = (nameSelVal === '__other__' ? document.getElementById('reg-name').value : nameSelVal).trim();
   const email = document.getElementById('reg-email').value.trim();
   const pass  = document.getElementById('reg-pass').value;
   const phone = document.getElementById('reg-phone').value.trim();
   const address = document.getElementById('reg-address').value.trim();
-  const regClass = document.getElementById('reg-class').value;
   err.style.display = 'none';
-  if (!name)        { err.textContent = 'اكتب اسمك الأول';        err.style.display = 'block'; return; }
+  if (!regClass)    { err.textContent = 'اختار فصلك الأول';       err.style.display = 'block'; return; }
+  if (!name)        { err.textContent = 'اختار اسمك من القايمة، أو اكتبه لو مش موجود'; err.style.display = 'block'; return; }
   if (!email||!pass){ err.textContent = 'اكتب الإيميل وكلمة المرور'; err.style.display = 'block'; return; }
   if (!phone)       { err.textContent = 'اكتب رقم تليفونك';       err.style.display = 'block'; return; }
-  if (!regClass)    { err.textContent = 'اختار فصلك';             err.style.display = 'block'; return; }
   btn.disabled = true; btn.textContent = 'جاري التسجيل…';
   explicitAuthAction = true;
   try {
@@ -1365,6 +1423,7 @@ window.doRegister = async () => {
       createdAt: serverTimestamp(),
       lastActive: serverTimestamp()
     });
+    // لو الاسم ده مختار من قايمة الأسماء الجاهزة، هيتمسح من قايمة الفصل تلقائي لما الأدمن يقبل الطلب (مش دلوقتي، عشان القاعدة الأمنية بتاعة classes مسموح بيها للأدمن بس)
     try { await sendEmailVerification(cred.user); } catch(_) {}
     // onAuthStateChanged هيتكفل بعرض الشاشة المناسبة (انتظار أو دخول مباشر لو أدمن)
   } catch(e) {
@@ -3372,7 +3431,7 @@ function renderPendingList(list) {
         <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}${s.phone ? ' · '+s.phone : ''}</div>
         ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
       </div>
-      <button class="export-btn" onclick="approveServant('${s.id}')">✓ قبول</button>
+      <button class="export-btn" onclick="approveServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${s.assignedClass||''}')">✓ قبول</button>
       <button class="del-btn" onclick="rejectServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}')">✕ رفض</button>
     </div>`).join('');
 }
@@ -3458,8 +3517,12 @@ window.renderActivityList = async function() {
 
 // ملحوظة: مفيش داعي نعمل loadMonitorTab() بعد كل عملية هنا — البث اللحظي (onSnapshot) بيحدّث
 // القوائم عند كل الأدمنز الفاتحين تبويب "متابعة" فورًا من غير reload، حتى لو كانوا على أجهزة مختلفة
-window.approveServant = async (id) => {
+window.approveServant = async (id, name, assignedClass) => {
   await updateDoc(doc(db,'servants',id), { status:'approved' }); loadServantsOnce();
+  // لو اسمه كان مختار من قايمة أسماء الفصل الجاهزة، بيتمسح من القايمة دلوقتي (بعد القبول) عشان محدش تاني يختاره
+  if (name && assignedClass && (classById(assignedClass)?.servantNames || []).includes(name)) {
+    try { await updateDoc(doc(db,'classes',assignedClass), { servantNames: arrayRemove(name) }); } catch(e) { console.error(e); }
+  }
   showToast('تم قبول الخادم ✓', 'success');
 };
 window.rejectServant = async (id, name) => {
