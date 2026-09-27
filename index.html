@@ -68,15 +68,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .stat-card.a .stat-num{color:var(--danger);}
 .stat-card.t .stat-num{color:var(--accent);}
 
-.scan-zone{background:var(--surface);border:2px dashed var(--border);border-radius:var(--radius);padding:22px;text-align:center;margin-bottom:14px;cursor:pointer;transition:border-color .3s;}
-.scan-zone.active{border-color:var(--accent);border-style:solid;}
-#video-container{display:none;position:relative;border-radius:12px;overflow:hidden;background:#000;}
-#video-container video{width:100%;display:block;max-height:260px;object-fit:cover;}
-.scan-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
-.scan-frame{width:160px;height:160px;border:3px solid var(--accent);border-radius:14px;position:relative;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);}
-.scan-line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:scan 2s ease-in-out infinite;}
-@keyframes scan{0%{top:0}50%{top:calc(100% - 2px)}100%{top:0}}
-.scan-placeholder{display:flex;flex-direction:column;align-items:center;gap:8px;}
 .stop-btn{width:100%;margin-top:10px;background:rgba(231,76,60,0.12);border:1px solid rgba(231,76,60,0.3);border-radius:var(--radius-sm);color:var(--danger);font-family:'Cairo',sans-serif;font-size:14px;font-weight:600;padding:10px;cursor:pointer;}
 .btn-voice{width:100%;background:linear-gradient(135deg,#7c5cbf,#4f8ef7);border:none;border-radius:var(--radius-sm);color:#fff;font-family:'Cairo',sans-serif;font-size:16px;font-weight:700;padding:13px;cursor:pointer;margin-bottom:14px;}
 .btn-voice:active{opacity:.85;}
@@ -153,8 +144,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .form-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .form-2col .field-input,.form-2col .field-select{margin-bottom:0;}
 .del-btn{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:7px;color:var(--danger);font-family:'Cairo',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;flex-shrink:0;}
-.qr-wrap{width:52px;height:52px;background:#fff;border-radius:8px;padding:3px;flex-shrink:0;}
-.qr-wrap img{width:100%;height:100%;}
 .action-btn{background:rgba(79,142,247,0.1);border:1px solid rgba(79,142,247,0.2);border-radius:7px;color:var(--accent);font-family:'Cairo',sans-serif;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;flex-shrink:0;}
 
 
@@ -187,7 +176,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;overflow-y:auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));}
 .modal-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);max-width:480px;margin:0 auto;overflow:hidden;}
 .modal-header{background:linear-gradient(135deg,rgba(79,142,247,0.15),rgba(124,92,191,0.15));padding:18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);}
-.modal-avatar{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;flex-shrink:0;}
+.modal-avatar{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;flex-shrink:0;background-size:cover;background-position:center;}
+.avatar-cam-badge{position:absolute;left:-2px;bottom:-2px;width:20px;height:20px;border-radius:50%;background:var(--surface);border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;}
 .modal-close{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text-dim);font-size:18px;width:34px;height:34px;cursor:pointer;flex-shrink:0;}
 .modal-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);}
 .modal-stat{background:var(--surface);padding:14px;text-align:center;}
@@ -212,15 +202,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
 #install-banner{display:none;position:fixed;bottom:0;left:0;right:0;z-index:300;padding:10px 14px calc(24px + env(safe-area-inset-bottom));pointer-events:none;}
 .install-inner{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,0.5);pointer-events:all;}
-
-@media print{
-  body>*:not(#print-area){display:none!important;}
-  #print-area{display:grid!important;grid-template-columns:repeat(3,1fr);gap:14px;padding:14px;}
-  .print-card{border:1px solid #ccc;border-radius:10px;padding:10px;text-align:center;page-break-inside:avoid;}
-  .print-card img{width:100px;height:100px;}
-  .pname{font-family:Arial;font-size:13px;font-weight:bold;margin-top:6px;}
-}
-#print-area{display:none;}
 
 /* VERSE */
 .verse-badge{background:rgba(124,92,191,0.12);border:1px solid rgba(124,92,191,0.3);color:#a07de0;border-radius:7px;padding:2px 7px;font-size:10px;font-weight:700;flex-shrink:0;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -352,14 +333,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <div class="stat-card p"><div class="stat-num" id="stat-present">0</div><div class="stat-label">حاضر</div></div>
         <div class="stat-card a"><div class="stat-num" id="stat-absent">0</div><div class="stat-label">غائب</div></div>
       </div>
-      <button id="scan-toggle-btn" class="btn-primary" onclick="startScan()" style="margin-bottom:14px">📷 افتح الكاميرا</button>
-      <div class="scan-zone active" id="scan-zone" style="display:none">
-        <div id="video-container">
-          <video id="scanner-video" autoplay playsinline muted></video>
-          <div class="scan-overlay"><div class="scan-frame"><div class="scan-line"></div></div></div>
-        </div>
-      </div>
-      <button class="stop-btn" id="stop-btn" onclick="stopScan()" style="display:none">⏹ إيقاف الكاميرا</button>
       <button id="voice-toggle-btn" class="btn-voice" onclick="startVoice()">🎤 تسجيل بالصوت</button>
       <div class="voice-zone" id="voice-zone" style="display:none">
         <div class="mic-pulse-wrap"><span class="mic-pulse-icon">🎤</span></div>
@@ -377,7 +350,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="list-header">
         <span class="section-title">قائمة اليوم</span>
-        <button class="export-btn" onclick="exportExcel()">📥 Excel</button>
+        <button class="export-btn" onclick="openExportModal()">📥 Excel</button>
       </div>
       <div class="list-header" style="margin-top:-4px">
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -425,7 +398,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="list-header">
         <span class="section-title">المخدومين (<span id="stu-count">0</span>)</span>
-        <button class="export-btn" onclick="printAllQR()">🖨 QR</button>
         <button class="export-btn" onclick="cleanAllNames()" style="background:rgba(243,156,18,0.12);border-color:rgba(243,156,18,0.3);color:var(--warning)">🧹 تنظيف الأسماء</button>
         <button class="export-btn" onclick="guessAllGenders()" style="background:rgba(79,142,247,0.12);border-color:rgba(79,142,247,0.3);color:var(--accent)">🧬 تحديد النوع تلقائي</button>
       </div>
@@ -798,7 +770,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 <div id="profile-modal" class="modal-overlay" style="display:none" onclick="closeProfileOutside(event)">
   <div class="modal-box">
     <div class="modal-header">
-      <div class="modal-avatar" id="prof-avatar"></div>
+      <div class="modal-avatar" id="prof-avatar" onclick="triggerProfilePhotoPick()" style="cursor:pointer;position:relative"></div>
+      <input type="file" id="prof-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handleProfilePhotoChange(event)">
       <div style="flex:1;min-width:0">
         <div id="prof-name" style="font-size:18px;font-weight:900"></div>
         <div id="prof-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
@@ -909,6 +882,35 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
   </div>
 </div>
 
+<!-- EXPORT MODAL -->
+<div id="export-modal" class="modal-overlay" style="display:none" onclick="closeExportOutside(event)">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-header">
+      <div style="flex:1">
+        <div style="font-size:16px;font-weight:900">تصدير Excel</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">اختار الشيت عايز يتصدّر بإيه</div>
+      </div>
+      <button class="modal-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div style="padding:16px">
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
+        <input type="checkbox" id="export-opt-att" checked style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+        <span style="font-size:14px;font-weight:600">✓ سجل الحضور</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
+        <input type="checkbox" id="export-opt-verse" checked style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+        <span style="font-size:14px;font-weight:600">📖 سجل التسميع (الآية)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;border-top:1px solid var(--border);margin-top:4px">
+        <input type="checkbox" id="export-opt-students" style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+        <span style="font-size:14px;font-weight:600">👤 بيانات المخدومين</span>
+      </label>
+      <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.7">لو اخترت حضور و/أو تسميع، هيتحطوا مع بعض في نفس الشيت. لو اخترت بيانات المخدومين مع أي حاجة تانية، هتتصدّر في شيت منفصل جوه نفس الملف.</p>
+      <button class="btn-primary" onclick="runExportExcel()" style="margin-top:14px">📥 تصدير</button>
+    </div>
+  </div>
+</div>
+
 <!-- SERVANT PROFILE MODAL -->
 
 <div id="servant-profile-modal" class="modal-overlay" style="display:none" onclick="closeServantProfileOutside(event)">
@@ -945,7 +947,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 </div>
 
 <div id="toast"></div>
-<div id="print-area"></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -1287,8 +1288,6 @@ let editGenderManuallySet = false; // نفس الفكرة بس في مودال �
 let ownServantUnsub = null; // بث لحظي على مستند الخادم بتاعي نفسه — عشان لو الأدمن الأساسي غيّر صلاحيتي أو حذفني، أتأثر فورًا من غير ما أعمل reload
 let servantsUnsub = null;   // بث لحظي على قائمة الخدام في تبويب المتابعة — عشان أي تغيير (قبول/رفض/ترقية/حذف) يظهر لكل الأدمنز فورًا
 let explicitAuthAction = false; // بيتحط true بس لما الخادم يدوس زرار "دخول" بنفسه، عشان نفرّق بين جلسة محمولة من موقع تاني على نفس الدومين ودخول مقصود فعلاً
-let scanning = false, stream = null, scanInterval = null;
-let scanPaused = false, lastScanned = null, lastScannedTime = 0;
 let bdayMonth = 0, absenceFilter = 'all', attendanceFilter = 'all', noteFilter = 'all';
 let siblingsFilter = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب المخدومين)
 let classFilter = 'all'; // 'all' | <classId> | 'none' (فلتر الفصل — تبويب المخدومين)
@@ -1321,6 +1320,11 @@ function classBadgeHTML(sec, forceLabel) {
   const p = classPalette(sec);
   const label = forceLabel === false ? '' : classLabel(sec);
   return `<span class="class-badge" style="background:${p.bg};border:1px solid ${p.border};color:${p.text}">${classEmoji(sec)} ${label}</span>`;
+}
+// افاتار المخدوم: لو عنده صورة (s.photo) بيوريها، ولو لأ بيرجع لحرف الاسم زي ما كان بالظبط
+function studentAvatarHTML(s, cls) {
+  if (s.photo) return `<div class="${cls}" style="background-image:url('${s.photo}');background-size:cover;background-position:center"></div>`;
+  return `<div class="${cls}">${(s.name||'؟').trim()[0]||'؟'}</div>`;
 }
 // شرايط فصول (chips) عامة — بتتبني من allClasses مباشرة، فبتشتغل مع أي عدد فصول
 function classChipsHTML(activeId, onClickFn, opts = {}) {
@@ -1519,7 +1523,7 @@ window.openUsersRolesModal = () => {
   const homeVisible = document.getElementById('tab-home').style.display !== 'none';
   const activeBtn = document.querySelector('#main-tabs .tab.active[data-tab]');
   rolesReturnTab = homeVisible ? '' : (activeBtn ? activeBtn.dataset.tab : '');
-  stopScan(); stopVoice(); stopTodayListeners();
+  stopVoice(); stopTodayListeners();
   document.getElementById('tab-home').style.display = 'none';
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
@@ -1719,7 +1723,7 @@ window.doRegister = async () => {
 };
 
 window.doLogout = async () => {
-  stopScan(); stopHeartbeat();
+  stopHeartbeat();
   if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
   if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
   await signOut(auth);
@@ -1906,7 +1910,7 @@ async function forceLogout() {
   if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
   if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
   if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
-  stopScan(); stopHeartbeat();
+  stopHeartbeat();
   await signOut(auth);
 }
 
@@ -2160,7 +2164,6 @@ function renderStudentsList() {
     const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
     const classBadge = classBadgeHTML(s.classSection);
     return `<div class="student-item">
-      <div class="qr-wrap"><img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(s.id)}" loading="lazy"></div>
       <div class="s-info">
         <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}</div>
         ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
@@ -2169,19 +2172,11 @@ function renderStudentsList() {
       </div>
       <button class="action-btn" onclick="openProfile('${s.id}')">👤</button>
       <button class="action-btn" onclick="openEditModal('${s.id}')">✏️</button>
-      <button class="action-btn" onclick="downloadQR('${s.id}','${s.name}')">⬇</button>
       <button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>
     </div>`;
   }).join('');
 }
 window.renderStudentsList = renderStudentsList; // ضروري عشان oninput في الـ HTML يقدر يلاقيها (لأننا جوه type=module)
-
-window.downloadQR = async (id, name) => {
-  const res  = await fetch(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(id)}`);
-  const blob = await res.blob();
-  const a    = Object.assign(document.createElement('a'), { href:URL.createObjectURL(blob), download:`QR-${name}.png` });
-  a.click(); URL.revokeObjectURL(a.href);
-};
 
 // ===== WHATSAPP BULK MESSAGE TAB =====
 let waSiblingsFilter = 'all'; // 'all' | 'siblings' | 'nonSiblings'
@@ -2818,7 +2813,7 @@ function renderTodayList() {
     const verseEntry = todayVerses[s.id];
     const hasVerse = !!verseEntry;
     return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}">
-      <div class="s-avatar">${s.name.trim()[0]||'؟'}</div>
+      ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info">
         <div class="s-name">${s.name}</div>
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
@@ -2862,7 +2857,7 @@ window.onManualSearch = () => {
     // لسه معندوش فصل؟ نوريله فصل أ / فصل ب / كي جي ١ الأول عشان يتقسم قبل ما نسجله
     if (!s.classSection) {
       return `<div class="result-item" style="cursor:default;flex-wrap:wrap">
-        <div class="result-avatar">${s.name.trim()[0]||'؟'}</div>
+        ${studentAvatarHTML(s,'result-avatar')}
         <div style="flex:1;font-size:14px;font-weight:700;min-width:100%">${s.name} <span style="color:var(--text-dim);font-weight:600;font-size:11px">— هو في فصل إيه؟</span></div>
         ${classPickButtonsHTML(s.id)}
       </div>`;
@@ -2873,7 +2868,7 @@ window.onManualSearch = () => {
     const otherClass = !visibleClasses.includes(s.classSection);
     const classBadge = classBadgeHTML(s.classSection, otherClass);
     return `<div class="result-item" style="cursor:default">
-      <div class="result-avatar">${s.name.trim()[0]||'؟'}</div>
+      ${studentAvatarHTML(s,'result-avatar')}
       <div style="flex:1;font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>
       <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
       <div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>
@@ -3053,7 +3048,7 @@ function renderFilterList() {
           : '').join('')}</div>`
       : `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px"><span style="font-size:10px;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text-dim);border-radius:5px;padding:2px 6px">${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}</span></div>`;
     return `<div class="student-item">
-      <div class="s-avatar">${s.name.trim()[0]||'؟'}</div>
+      ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info">
         <div class="s-name">${s.name}</div>
         <div class="s-sub">${dob ? '🎂 '+dob+' · ' : ''}حضر ${attCount} مرة</div>
@@ -3067,11 +3062,65 @@ function renderFilterList() {
 
 // ===== PROFILE =====
 let currentProfileId = null;
+// عرض صورة المخدوم في ملفه لو موجودة، وإلا حرف الاسم زي ما كان، مع دايرة كاميرا صغيرة للرفع
+function renderProfAvatar(s) {
+  const el = document.getElementById('prof-avatar');
+  el.style.backgroundImage = s.photo ? `url('${s.photo}')` : '';
+  el.innerHTML = (s.photo ? '' : `<span>${(s.name||'؟').trim()[0]||'؟'}</span>`) + `<div class="avatar-cam-badge">📷</div>`;
+}
+window.triggerProfilePhotoPick = () => document.getElementById('prof-photo-input').click();
+
+// بتصغّر الصورة وتحوّلها base64 عشان تتخزن في مستند الفايرستور من غير ما تتعدى حد الحجم بتاعه
+function resizeImageToDataURL(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height) { if (width > maxSize) { height = Math.round(height * maxSize / width); width = maxSize; } }
+        else { if (height > maxSize) { width = Math.round(width * maxSize / height); height = maxSize; } }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('تعذّرت قراءة الصورة'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('تعذّرت قراءة الملف'));
+    reader.readAsDataURL(file);
+  });
+}
+
+window.handleProfilePhotoChange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file || !currentProfileId) return;
+  const id = currentProfileId;
+  try {
+    showToast('جاري رفع الصورة…', 'info');
+    const dataUrl = await resizeImageToDataURL(file, 320, 0.7);
+    await updateDoc(doc(db,'students',id), { photo: dataUrl });
+    const idx = allStudents.findIndex(x => x.id === id);
+    if (idx !== -1) allStudents[idx] = { ...allStudents[idx], photo: dataUrl };
+    if (currentProfileId === id) renderProfAvatar(allStudents[idx] || { photo: dataUrl, name: '' });
+    renderTodayList();
+    if (typeof renderFilterList === 'function') renderFilterList();
+    if (document.getElementById('manual-input')?.value) onManualSearch();
+    showToast('تم حفظ صورة المخدوم ✓', 'success');
+    logActivity('تحديث صورة مخدوم', allStudents[idx]?.name || '');
+  } catch (err) {
+    console.error(err);
+    showToast('حصل خطأ أثناء رفع الصورة', 'error');
+  }
+};
+
 window.openProfile = (id) => {
   currentProfileId = id;
   const s = allStudents.find(x => x.id === id);
   if (!s) return;
-  document.getElementById('prof-avatar').textContent = s.name.trim()[0]||'؟';
+  renderProfAvatar(s);
   document.getElementById('prof-name').textContent   = s.name;
   renderProfClassChips(s.classSection || '');
   const H = (studentHist[id] && Date.now() - studentHist[id].ts < 300000) ? studentHist[id] : null;
@@ -3167,94 +3216,6 @@ window.editFromProfile = () => {
   openEditModal(currentProfileId);
 };
 window.closeProfileOutside = (e) => { if (e.target.id === 'profile-modal') closeProfile(); };
-
-// ===== QR SCANNER =====
-async function getCameraStream() {
-  const tries = [
-    { video:{ facingMode:{exact:'environment'}, width:{ideal:1280} } },
-    { video:{ facingMode:'environment' } },
-    { video:true }
-  ];
-  for (const c of tries) {
-    try { return await navigator.mediaDevices.getUserMedia(c); } catch {}
-  }
-  throw new Error('no camera');
-}
-
-window.startScan = async () => {
-  if (scanning) return;
-  if (!navigator.mediaDevices?.getUserMedia) { showToast('جرّب Chrome', 'error'); return; }
-  stopVoice();
-  try {
-    stream = await getCameraStream();
-    const video = document.getElementById('scanner-video');
-    video.srcObject = stream;
-    await new Promise(res => { video.onloadedmetadata = res; setTimeout(res,4000); });
-    await video.play().catch(()=>{});
-    document.getElementById('scan-toggle-btn').style.display = 'none';
-    document.getElementById('scan-zone').style.display = 'block';
-    document.getElementById('video-container').style.display = 'block';
-    document.getElementById('stop-btn').style.display = 'block';
-    scanning = true;
-    if ('BarcodeDetector' in window) {
-      const det = new BarcodeDetector({ formats:['qr_code'] });
-      const cvs = document.createElement('canvas');
-      const ctx = cvs.getContext('2d');
-      scanInterval = setInterval(async () => {
-        if (!scanning || video.readyState < 2) return;
-        cvs.width=video.videoWidth; cvs.height=video.videoHeight;
-        ctx.drawImage(video,0,0);
-        try { const c = await det.detect(cvs); if (c.length) handleQR(c[0].rawValue); } catch {}
-      }, 350);
-    } else {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
-      s.onload = () => {
-        const cvs = document.createElement('canvas'), ctx = cvs.getContext('2d');
-        scanInterval = setInterval(() => {
-          if (!scanning || video.readyState < 2) return;
-          cvs.width=video.videoWidth; cvs.height=video.videoHeight;
-          ctx.drawImage(video,0,0);
-          const img = ctx.getImageData(0,0,cvs.width,cvs.height);
-          const c   = jsQR(img.data,img.width,img.height);
-          if (c) handleQR(c.data);
-        }, 350);
-      };
-      document.head.appendChild(s);
-    }
-  } catch(e) {
-    let msg = 'تعذّر فتح الكاميرا';
-    if (e?.name==='NotAllowedError')  msg = '🔒 اسمح للتطبيق بالكاميرا';
-    if (e?.name==='NotFoundError')    msg = '📷 مفيش كاميرا';
-    if (e?.name==='NotReadableError') msg = '⚠️ الكاميرا مستخدمة';
-    showToast(msg, 'error');
-  }
-};
-
-window.stopScan = () => {
-  scanning = false; clearInterval(scanInterval);
-  stream?.getTracks().forEach(t => t.stop()); stream = null;
-  document.getElementById('scan-zone').style.display = 'none';
-  document.getElementById('video-container').style.display = 'none';
-  document.getElementById('stop-btn').style.display = 'none';
-  document.getElementById('scan-toggle-btn').style.display = 'block';
-};
-
-async function handleQR(value) {
-  if (scanPaused) return;
-  const now = Date.now();
-  if (value === lastScanned && now - lastScannedTime < 1500) return;
-  lastScanned = value; lastScannedTime = now;
-  const s = allStudents.find(x => x.id === value);
-  if (!s) { showToast('QR غير معروف', 'error'); return; }
-  if (todayAttendance[s.id]) { showToast(`${s.name} — مسجّل مسبقاً ✓`, 'info'); return; }
-  scanPaused = true;
-  await markPresent(s.id);
-  showToast(`✅ ${s.name} — تم التسجيل`, 'success');
-  navigator.vibrate?.([60,30,60]);
-  logActivity('تسجيل حضور (QR)', s.name);
-  setTimeout(() => { scanPaused = false; lastScanned = null; }, 1500);
-}
 
 // ===== VOICE ATTENDANCE =====
 let voiceRecognition = null, voiceListening = false, voiceRestartTimer = null;
@@ -3362,7 +3323,6 @@ window.startVoice = () => {
   if (voiceListening) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { showToast('التسجيل بالصوت مش متاح على المتصفح ده، جرّب Chrome', 'error'); return; }
-  stopScan(); // avoid camera + mic running together
   voiceRecognition = buildVoiceRecognition();
   if (!voiceRecognition) { showToast('التسجيل بالصوت مش متاح', 'error'); return; }
   try {
@@ -3472,7 +3432,7 @@ async function processVoiceName(altTexts) {
     list.map(s => {
       const done = alreadyDone(s);
       return `<div class="result-item" style="cursor:default">
-        <div class="result-avatar">${s.name.trim()[0]||'؟'}</div>
+        ${studentAvatarHTML(s,'result-avatar')}
         <div style="flex:1;font-size:14px;font-weight:700">${s.name}</div>
         ${done
           ? `<span class="present-badge">✓ ${isVerseMode?'سمع':'حاضر'}</span>`
@@ -3520,87 +3480,160 @@ window.voicePickStudent = async (id) => {
 };
 
 // ===== EXPORT =====
-window.exportExcel = async () => {
-  showToast('جاري تحميل السجل الكامل…','info');
-  const expAtt = {}, expVer = {};
-  try {
-    const [a, v] = await Promise.all([countedGetDocs(collection(db,'attendance'), 'attendance (تصدير إكسل)'), countedGetDocs(collection(db,'verses'), 'verses (تصدير إكسل)')]);
-    a.docs.forEach(x => { const d = x.data(); (expAtt[d.date] ||= {})[d.studentId] = x.id; });
-    v.docs.forEach(x => { const d = x.data(); (expVer[d.date] ||= {})[d.studentId] = { id:x.id, verse:d.verse||'' }; });
-  } catch(e) { showToast('تعذّر تحميل السجل','error'); return; }
-  const attDates = Object.keys(expAtt).sort();
-  const verDates = Object.keys(expVer).sort();
+window.openExportModal = () => {
+  document.getElementById('export-modal').style.display = 'flex';
+};
+window.closeExportModal = () => { document.getElementById('export-modal').style.display = 'none'; };
+window.closeExportOutside = (e) => { if (e.target.id === 'export-modal') closeExportModal(); };
 
-  // كل تاريخ حضور بيبقى عمود، وأي تاريخ آية من غيره ينضم لأقرب تاريخ حضور سابق له
-  const cols = attDates.map(d => ({ dateKey: d, verseDates: [d] }));
-  verDates.forEach(vd => {
-    if (attDates.includes(vd)) return;
-    let target = null;
-    for (const c of cols) { if (c.dateKey <= vd) target = c; else break; }
-    if (target) target.verseDates.push(vd);
-    else cols.push({ dateKey: vd, verseDates: [vd] }); // مفيش تاريخ حضور قبله خالص
-  });
-  cols.sort((a,b) => a.dateKey.localeCompare(b.dateKey));
-
+// بيبني شيت الحضور/التسميع حسب اللي المستخدم اختاره بالظبط: حضور بس، آية بس، أو الاتنين مع بعض في نفس الشيت
+function buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse) {
+  const attDates = includeAtt ? Object.keys(expAtt).sort() : [];
+  const verDates = includeVerse ? Object.keys(expVer).sort() : [];
   const fmt = d => { const p = d.split('-'); return `${p[2]}/${p[1]}`; };
+
+  let cols, dual;
+  if (includeAtt && includeVerse) {
+    // كل تاريخ حضور بيبقى عمود، وأي تاريخ آية من غيره ينضم لأقرب تاريخ حضور سابق له
+    cols = attDates.map(d => ({ dateKey: d, verseDates: [d] }));
+    verDates.forEach(vd => {
+      if (attDates.includes(vd)) return;
+      let target = null;
+      for (const c of cols) { if (c.dateKey <= vd) target = c; else break; }
+      if (target) target.verseDates.push(vd);
+      else cols.push({ dateKey: vd, verseDates: [vd] }); // مفيش تاريخ حضور قبله خالص
+    });
+    cols.sort((a,b) => a.dateKey.localeCompare(b.dateKey));
+    dual = true;
+  } else if (includeAtt) {
+    cols = attDates.map(d => ({ dateKey: d, verseDates: [] }));
+    dual = false;
+  } else {
+    cols = verDates.map(d => ({ dateKey: d, verseDates: [d] }));
+    dual = false;
+  }
 
   const row1 = ['الاسم'];
   const row2 = [''];
   cols.forEach(c => {
-    row1.push(fmt(c.dateKey), '');
-    row2.push('حضور', 'آية');
+    if (dual) { row1.push(fmt(c.dateKey), ''); row2.push('حضور', 'آية'); }
+    else { row1.push(fmt(c.dateKey)); row2.push(includeAtt ? 'حضور' : 'آية'); }
   });
 
   const rows = ownClassStudents().map(s => {
     const r = [s.name];
     cols.forEach(c => {
-      const att   = !!expAtt[c.dateKey]?.[s.id];
-      const verse = c.verseDates.some(vd => expVer[vd]?.[s.id]);
-      r.push(att ? '✓' : '', verse ? '✓' : '');
+      if (dual) {
+        const att = !!expAtt[c.dateKey]?.[s.id];
+        const vEntry = c.verseDates.map(vd => expVer[vd]?.[s.id]).find(Boolean);
+        r.push(att ? '✓' : '', vEntry ? (vEntry.verse || '✓') : '');
+      } else if (includeAtt) {
+        r.push(expAtt[c.dateKey]?.[s.id] ? '✓' : '');
+      } else {
+        const vEntry = expVer[c.dateKey]?.[s.id];
+        r.push(vEntry ? (vEntry.verse || '✓') : '');
+      }
     });
     return r;
   });
 
   const ws = XLSX.utils.aoa_to_sheet([row1, row2, ...rows]);
+  const perCol = dual ? 2 : 1;
+  const totalCols = 1 + cols.length * perCol;
 
   ws['!merges'] = [{ s:{r:0,c:0}, e:{r:1,c:0} }];
   cols.forEach((c,i) => {
-    const start = 1 + i*2;
-    ws['!merges'].push({ s:{r:0,c:start}, e:{r:0,c:start+1} });
+    if (dual) {
+      const start = 1 + i*2;
+      ws['!merges'].push({ s:{r:0,c:start}, e:{r:0,c:start+1} });
+    } else {
+      const col = 1 + i;
+      ws['!merges'].push({ s:{r:0,c:col}, e:{r:1,c:col} });
+    }
   });
 
-  ws['!cols'] = [{ wch: 30 }, ...cols.flatMap(() => [{ wch: 10 }, { wch: 10 }])];
+  ws['!cols'] = [{ wch: 30 }, ...cols.flatMap(() => dual ? [{ wch: 10 }, { wch: 18 }] : [{ wch: includeAtt ? 10 : 20 }])];
   ws['!views'] = [{ rightToLeft: true }];
 
-  const center = { alignment: { horizontal:'center', vertical:'center' } };
-  const totalCols = 1 + cols.length*2;
+  const center = { alignment: { horizontal:'center', vertical:'center', wrapText: true } };
   for (let c = 0; c < totalCols; c++) {
     [0,1].forEach(r => {
       const addr = XLSX.utils.encode_cell({ r, c });
       if (ws[addr]) ws[addr].s = center;
     });
   }
-  // خانات الصح (حضور/آية) في نص الخلية، أسماء التلاميذ زي ما هي عادي من غير توسيط
+  // خانات الصح/الآية في نص الخلية، أسماء المخدومين زي ما هي عادي من غير توسيط
   for (let r = 2; r < rows.length + 2; r++) {
     for (let c = 1; c < totalCols; c++) {
       const addr = XLSX.utils.encode_cell({ r, c });
       if (ws[addr]) ws[addr].s = center;
     }
   }
+  return ws;
+}
+
+// بيبني شيت بيانات المخدومين (بروفايل كامل: النوع، تاريخ الميلاد، العنوان، التليفونات، ملاحظات الافتقاد)
+function buildStudentsSheet() {
+  const genderLabel = g => g === 'male' ? 'ولد' : (g === 'female' ? 'بنت' : '');
+  const row1 = ['الاسم','النوع','تاريخ الميلاد','الفصل','العنوان','أرقام التليفونات','ملاحظات الافتقاد'];
+  const rows = [...ownClassStudents()]
+    .sort((a,b) => a.name.localeCompare(b.name,'ar'))
+    .map(s => [
+      s.name || '',
+      genderLabel(s.gender),
+      s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) : '',
+      s.classSection ? classLabel(s.classSection) : '',
+      s.address || '',
+      (s.phones||[]).filter(Boolean).join(' / '),
+      (s.visitNotes?.length) ? s.visitNotes.map(n => NOTE_LABELS[n]?.text || n).join('، ') : ''
+    ]);
+  const ws = XLSX.utils.aoa_to_sheet([row1, ...rows]);
+  ws['!cols'] = [{wch:26},{wch:8},{wch:18},{wch:14},{wch:26},{wch:22},{wch:26}];
+  ws['!views'] = [{ rightToLeft: true }];
+  const headStyle = { font:{ bold:true }, alignment:{ horizontal:'center', vertical:'center' } };
+  for (let c = 0; c < row1.length; c++) {
+    const addr = XLSX.utils.encode_cell({ r:0, c });
+    if (ws[addr]) ws[addr].s = headStyle;
+  }
+  return ws;
+}
+
+window.runExportExcel = async () => {
+  const includeAtt = document.getElementById('export-opt-att').checked;
+  const includeVerse = document.getElementById('export-opt-verse').checked;
+  const includeStudents = document.getElementById('export-opt-students').checked;
+  if (!includeAtt && !includeVerse && !includeStudents) { showToast('اختار حاجة واحدة على الأقل', 'error'); return; }
+
+  closeExportModal();
+  showToast('جاري تجهيز الملف…','info');
 
   const wb = XLSX.utils.book_new();
   wb.Workbook = { Views: [{ RTL: true }] };
-  XLSX.utils.book_append_sheet(wb, ws, 'حضور');
-  XLSX.writeFile(wb, `حضور-${todayKey()}.xlsx`, { cellStyles: true });
-};
+  const nameParts = [];
 
-window.printAllQR = () => {
-  document.getElementById('print-area').innerHTML = ownClassStudents().map(s => `
-    <div class="print-card">
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(s.id)}">
-      <div class="pname">${s.name}</div>
-    </div>`).join('');
-  window.print();
+  try {
+    if (includeAtt || includeVerse) {
+      const expAtt = {}, expVer = {};
+      const proms = [];
+      if (includeAtt) proms.push(countedGetDocs(collection(db,'attendance'), 'attendance (تصدير إكسل)').then(a => a.docs.forEach(x => { const d = x.data(); (expAtt[d.date] ||= {})[d.studentId] = x.id; })));
+      if (includeVerse) proms.push(countedGetDocs(collection(db,'verses'), 'verses (تصدير إكسل)').then(v => v.docs.forEach(x => { const d = x.data(); (expVer[d.date] ||= {})[d.studentId] = { id:x.id, verse:d.verse||'' }; })));
+      await Promise.all(proms);
+      const sheetName = includeAtt && includeVerse ? 'حضور وتسميع' : (includeAtt ? 'حضور' : 'تسميع');
+      XLSX.utils.book_append_sheet(wb, buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse), sheetName);
+      if (includeAtt) nameParts.push('حضور');
+      if (includeVerse) nameParts.push('تسميع');
+    }
+    if (includeStudents) {
+      XLSX.utils.book_append_sheet(wb, buildStudentsSheet(), 'مخدومين');
+      nameParts.push('مخدومين');
+    }
+  } catch(e) {
+    console.error(e);
+    showToast('تعذّر تحميل السجل','error');
+    return;
+  }
+
+  XLSX.writeFile(wb, `${nameParts.join('-')}-${todayKey()}.xlsx`, { cellStyles: true });
 };
 
 // ===== TABS =====
@@ -3613,7 +3646,7 @@ window.applyMonitorVisibility = () => {
   const c2 = document.getElementById('home-card-classservants'); if (c2) c2.style.display = onSupervisor ? '' : 'none';
 };
 window.goHome = () => {
-  stopScan(); stopVoice();
+  stopVoice();
   stopTodayListeners();
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
   document.getElementById('main-tabs').style.display = 'none';
@@ -3622,7 +3655,7 @@ window.goHome = () => {
   applyMonitorVisibility();
 };
 window.switchTab = async (tab) => {
-  if (tab !== 'attendance') { stopScan(); stopVoice(); stopTodayListeners(); }
+  if (tab !== 'attendance') { stopVoice(); stopTodayListeners(); }
   if (tab === 'monitor' && currentRole !== 'admin') return;
   if (tab === 'classservants' && currentRole !== 'supervisor') return;
   document.getElementById('tab-home').style.display = 'none';
@@ -4047,7 +4080,7 @@ window.openRoleEditorFromList = (roleId, e) => {
 
 function renderRolesList() {
   // مفيش قايمة أدوار منفصلة فوق ولا رسالة "لسه مفيش أدوار" — أي دور بيتوزع بيظهر على طول
-  // في قايمة الفصول تحت، وتقدر تعدّله من هناك على طول (زرار ✏️ جنب اسم أي خادم عنده دور فورمالي)
+  // في قايمة الفصول تحت — دوس على اسم أي خادم يفتحلك ملفه عادي زي باقي الخدام (من غير زرار قلم مخصوص)
   if (!rolesClassFilter.length) {
     document.getElementById('roles-unassigned-list').innerHTML = `<div class="empty-state" style="padding:16px">دوس "🔍 تحديد فصل" فوق واختار فصل أو أكتر عشان تشوف الخدام</div>`;
     return;
@@ -4055,10 +4088,9 @@ function renderRolesList() {
   const approved = cachedServants.filter(s => s.status === 'approved' && s.role !== 'admin');
   const roleRowHTML = (s) => {
     const label = s.role === 'supervisor' ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل';
-    const editBtn = s.roleId ? `<span onclick="openRoleEditorFromList('${s.roleId}',event)" style="cursor:pointer;padding:2px 4px" title="تعديل الدور">✏️</span>` : '';
     return `<div class="servant-item" onclick="closeRolesModal();openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
       <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
-      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap;display:flex;align-items:center;gap:6px">${label}${editBtn}</span>
+      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">${label}</span>
     </div>`;
   };
   const html = rolesClassFilter.map(cid => {
