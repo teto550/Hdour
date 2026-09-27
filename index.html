@@ -295,6 +295,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <button class="icon-btn" onclick="toggleSettingsMenu(event)">⚙️</button>
       <div id="settings-dropdown" class="settings-dropdown" style="display:none">
         <button class="settings-dropdown-item" onclick="openMyProfileModal()">👤 ملفي</button>
+        <button class="settings-dropdown-item" onclick="openExportModal()">📥 تصدير Excel</button>
         <button class="settings-dropdown-item" id="settings-dropdown-roles" style="display:none" onclick="openUsersRolesModal()">👥 المستخدمين والأدوار</button>
         <div class="settings-dropdown-divider"></div>
         <button class="settings-dropdown-item danger" onclick="closeSettingsMenu();doLogout()">🚪 تسجيل الخروج</button>
@@ -350,7 +351,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="list-header">
         <span class="section-title">قائمة اليوم</span>
-        <button class="export-btn" onclick="openExportModal()">📥 Excel</button>
       </div>
       <div class="list-header" style="margin-top:-4px">
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -893,6 +893,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <button class="modal-close" onclick="closeExportModal()">✕</button>
     </div>
     <div style="padding:16px">
+      <div id="export-classes-wrap" style="display:none;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div class="section-title" style="margin-bottom:8px">الفصول</div>
+        <div id="export-classes-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
       <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
         <input type="checkbox" id="export-opt-att" checked style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
         <span style="font-size:14px;font-weight:600">✓ سجل الحضور</span>
@@ -3480,7 +3484,36 @@ window.voicePickStudent = async (id) => {
 };
 
 // ===== EXPORT =====
+let exportSelectedClasses = new Set();
+// الفصول اللي الخادم أصلاً يقدر يشوفها (لو أدمن أو مسموحله بكل الفصول بترجع كل الفصول)
+function exportClassChoices() {
+  const allowed = getAllowedAssignedClasses();
+  return allowed.length ? allClasses.filter(c => allowed.includes(c.id)) : allClasses;
+}
+function renderExportClassPicker() {
+  const choices = exportClassChoices();
+  const wrap = document.getElementById('export-classes-wrap');
+  if (choices.length <= 1) { wrap.style.display = 'none'; exportSelectedClasses = new Set(choices.map(c => c.id)); return; }
+  if (!exportSelectedClasses.size) exportSelectedClasses = new Set(choices.map(c => c.id)); // افتراضيًا كل الفصول متحددة
+  wrap.style.display = 'block';
+  document.getElementById('export-classes-list').innerHTML = choices.map(c =>
+    `<button type="button" class="filter-chip ${exportSelectedClasses.has(c.id)?'active':''}" onclick="toggleExportClass('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`
+  ).join('');
+}
+window.toggleExportClass = (id) => {
+  if (exportSelectedClasses.has(id)) exportSelectedClasses.delete(id); else exportSelectedClasses.add(id);
+  renderExportClassPicker();
+};
+// المخدومين اللي هيتصدّروا فعلاً: لو فيه أكتر من فصل متاح، بنفلتر على الفصول المتحددة بس
+function exportTargetStudents() {
+  const choices = exportClassChoices();
+  const base = ownClassStudents();
+  if (choices.length <= 1) return base;
+  return base.filter(s => exportSelectedClasses.has(s.classSection));
+}
 window.openExportModal = () => {
+  closeSettingsMenu();
+  renderExportClassPicker();
   document.getElementById('export-modal').style.display = 'flex';
 };
 window.closeExportModal = () => { document.getElementById('export-modal').style.display = 'none'; };
@@ -3520,7 +3553,7 @@ function buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse) {
     else { row1.push(fmt(c.dateKey)); row2.push(includeAtt ? 'حضور' : 'آية'); }
   });
 
-  const rows = ownClassStudents().map(s => {
+  const rows = exportTargetStudents().map(s => {
     const r = [s.name];
     cols.forEach(c => {
       if (dual) {
@@ -3555,20 +3588,32 @@ function buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse) {
   ws['!cols'] = [{ wch: 30 }, ...cols.flatMap(() => dual ? [{ wch: 10 }, { wch: 18 }] : [{ wch: includeAtt ? 10 : 20 }])];
   ws['!views'] = [{ rightToLeft: true }];
 
-  const center = { alignment: { horizontal:'center', vertical:'center', wrapText: true } };
+  const border = { top:{style:'thin',color:{rgb:'D9D9D9'}}, bottom:{style:'thin',color:{rgb:'D9D9D9'}}, left:{style:'thin',color:{rgb:'D9D9D9'}}, right:{style:'thin',color:{rgb:'D9D9D9'}} };
+  const headerStyle = { alignment:{ horizontal:'center', vertical:'center', wrapText:true }, font:{ bold:true, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'4472C4' } }, border };
+  const center = { alignment: { horizontal:'center', vertical:'center', wrapText: true }, border };
+  const nameCell = { alignment:{ horizontal:'right', vertical:'center' }, border };
+
   for (let c = 0; c < totalCols; c++) {
     [0,1].forEach(r => {
       const addr = XLSX.utils.encode_cell({ r, c });
-      if (ws[addr]) ws[addr].s = center;
+      if (ws[addr]) ws[addr].s = headerStyle;
     });
   }
-  // خانات الصح/الآية في نص الخلية، أسماء المخدومين زي ما هي عادي من غير توسيط
-  for (let r = 2; r < rows.length + 2; r++) {
-    for (let c = 1; c < totalCols; c++) {
+  // تلوين الصفوف بالتبادل (banded rows) وبوردر خفيف حوالين كل خلية عشان يبقى شكله جدول منسق فعلاً
+  const lastRow = rows.length + 1;
+  for (let r = 2; r <= lastRow; r++) {
+    const banded = (r % 2 === 0);
+    const bandFill = banded ? { patternType:'solid', fgColor:{ rgb:'F2F6FC' } } : null;
+    for (let c = 0; c < totalCols; c++) {
       const addr = XLSX.utils.encode_cell({ r, c });
-      if (ws[addr]) ws[addr].s = center;
+      if (!ws[addr]) continue;
+      const base = c === 0 ? nameCell : center;
+      ws[addr].s = bandFill ? { ...base, fill: bandFill } : base;
     }
   }
+  // فلتر وترتيب زي أي جدول حقيقي في إكسل + تجميد صفوف العناوين وهي بتنزل
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:1,c:0}, e:{r:lastRow,c:totalCols-1} }) };
+  ws['!freeze'] = { xSplit:0, ySplit:2, topLeftCell: XLSX.utils.encode_cell({r:2,c:0}), activePane:'bottomLeft', state:'frozen' };
   return ws;
 }
 
@@ -3576,7 +3621,7 @@ function buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse) {
 function buildStudentsSheet() {
   const genderLabel = g => g === 'male' ? 'ولد' : (g === 'female' ? 'بنت' : '');
   const row1 = ['الاسم','النوع','تاريخ الميلاد','الفصل','العنوان','أرقام التليفونات','ملاحظات الافتقاد'];
-  const rows = [...ownClassStudents()]
+  const rows = [...exportTargetStudents()]
     .sort((a,b) => a.name.localeCompare(b.name,'ar'))
     .map(s => [
       s.name || '',
@@ -3590,11 +3635,26 @@ function buildStudentsSheet() {
   const ws = XLSX.utils.aoa_to_sheet([row1, ...rows]);
   ws['!cols'] = [{wch:26},{wch:8},{wch:18},{wch:14},{wch:26},{wch:22},{wch:26}];
   ws['!views'] = [{ rightToLeft: true }];
-  const headStyle = { font:{ bold:true }, alignment:{ horizontal:'center', vertical:'center' } };
+
+  const border = { top:{style:'thin',color:{rgb:'D9D9D9'}}, bottom:{style:'thin',color:{rgb:'D9D9D9'}}, left:{style:'thin',color:{rgb:'D9D9D9'}}, right:{style:'thin',color:{rgb:'D9D9D9'}} };
+  const headStyle = { font:{ bold:true, color:{ rgb:'FFFFFF' } }, alignment:{ horizontal:'center', vertical:'center' }, fill:{ patternType:'solid', fgColor:{ rgb:'4472C4' } }, border };
   for (let c = 0; c < row1.length; c++) {
     const addr = XLSX.utils.encode_cell({ r:0, c });
     if (ws[addr]) ws[addr].s = headStyle;
   }
+  // تلوين الصفوف بالتبادل وبوردر خفيف عشان تبقى شكلها جدول منسق فعلاً
+  for (let r = 1; r <= rows.length; r++) {
+    const banded = (r % 2 === 0);
+    const fill = banded ? { patternType:'solid', fgColor:{ rgb:'F2F6FC' } } : null;
+    for (let c = 0; c < row1.length; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!ws[addr]) continue;
+      const align = { horizontal: c===0 || c===4 ? 'right' : 'center', vertical:'center' };
+      ws[addr].s = fill ? { alignment: align, border, fill } : { alignment: align, border };
+    }
+  }
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:rows.length,c:row1.length-1} }) };
+  ws['!freeze'] = { xSplit:0, ySplit:1, topLeftCell: XLSX.utils.encode_cell({r:1,c:0}), activePane:'bottomLeft', state:'frozen' };
   return ws;
 }
 
@@ -3603,6 +3663,7 @@ window.runExportExcel = async () => {
   const includeVerse = document.getElementById('export-opt-verse').checked;
   const includeStudents = document.getElementById('export-opt-students').checked;
   if (!includeAtt && !includeVerse && !includeStudents) { showToast('اختار حاجة واحدة على الأقل', 'error'); return; }
+  if (exportClassChoices().length > 1 && !exportSelectedClasses.size) { showToast('اختار فصل واحد على الأقل', 'error'); return; }
 
   closeExportModal();
   showToast('جاري تجهيز الملف…','info');
