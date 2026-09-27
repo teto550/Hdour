@@ -1700,7 +1700,11 @@ window.doRegister = async () => {
       createdAt: serverTimestamp(),
       lastActive: serverTimestamp()
     });
-    // لو الاسم ده مختار من قايمة الأسماء الجاهزة، هيتمسح من قايمة الدور تلقائي لما الأدمن يقبل الطلب (مش دلوقتي، عشان القاعدة الأمنية بتاعة roles مسموح بيها للأدمن بس)
+    // لو الاسم ده مختار من قايمة الأسماء الجاهزة، يتمسح من القايمة فورًا عشان محدش تاني يقدر يختاره
+    // (محتاج قاعدة فايرستور تسمح للمستخدم يعدّل pendingNames بتاعة roles حتى وهو لسه pending — لو القاعدة بترفض، هيتمسح بعدين لما الأدمن يقبله زي الأول)
+    if (matchedRole) {
+      try { await updateDoc(doc(db,'roles',matchedRole.id), { pendingNames: arrayRemove(name) }); } catch(e) { console.error('تعذّر مسح الاسم من القايمة فورًا:', e); }
+    }
     try { await sendEmailVerification(cred.user); } catch(_) {}
     // onAuthStateChanged هيتكفل بعرض الشاشة المناسبة (انتظار أو دخول مباشر لو أدمن)
   } catch(e) {
@@ -3935,7 +3939,7 @@ function renderPendingList(list) {
         ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
       </div>
       <button class="export-btn" onclick="approveServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${s.roleId||''}')">✓ قبول</button>
-      <button class="del-btn" onclick="rejectServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}')">✕ رفض</button>
+      <button class="del-btn" onclick="rejectServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${s.roleId||''}')">✕ رفض</button>
     </div>`).join('');
 }
 
@@ -3992,10 +3996,10 @@ function renderServantProfileActions(s) {
   if (s.role === 'admin') {
     if (sIsPrimary) html = `<span class="s-sub" style="white-space:nowrap">👑 الأدمن الأساسي</span>`;
     else if (viewerIsPrimary) html = `<button class="action-btn" onclick="demoteServant('${s.id}','${nameEsc}');closeServantProfile()">🔻 شيله من الأدمن</button>
-      <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}');closeServantProfile()">🗑 حذف</button>`;
+      <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}','${s.roleId||''}');closeServantProfile()">🗑 حذف</button>`;
   } else {
     html = `<button class="action-btn" onclick="promoteServant('${s.id}','${nameEsc}');closeServantProfile()">👑 خليه أدمن</button>
-      <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}');closeServantProfile()">🗑 حذف</button>`;
+      <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}','${s.roleId||''}');closeServantProfile()">🗑 حذف</button>`;
   }
   document.getElementById('sprof-actions').innerHTML = html;
 }
@@ -4031,14 +4035,22 @@ window.approveServant = async (id, name, roleId) => {
   }
   showToast('تم قبول الخادم ✓', 'success');
 };
-window.rejectServant = async (id, name) => {
+window.rejectServant = async (id, name, roleId) => {
   if (!confirm(`هترفض طلب "${name}"؟`)) return;
   await deleteDoc(doc(db,'servants',id)); loadServantsOnce(true);
+  // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
+  if (name && roleId) {
+    try { await updateDoc(doc(db,'roles',roleId), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
+  }
   showToast('تم رفض الطلب', 'info');
 };
-window.deleteServant = async (id, name) => {
+window.deleteServant = async (id, name, roleId) => {
   if (!confirm(`هتحذف الخادم "${name}"؟ هيفقد صلاحية الدخول للتطبيق فورًا حتى لو داخل بيسجل حضور دلوقتي`)) return;
   await deleteDoc(doc(db,'servants',id)); loadServantsOnce(true);
+  // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
+  if (name && roleId) {
+    try { await updateDoc(doc(db,'roles',roleId), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
+  }
   showToast('تم حذف الخادم', 'success');
 };
 window.promoteServant = async (id, name) => {
