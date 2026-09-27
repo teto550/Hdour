@@ -255,10 +255,9 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <option value="">جاري تحميل الفصول…</option>
       </select>
       <label class="field-label">اسمك</label>
-      <select class="field-select" id="reg-name-select" onchange="onRegNameSelectChange()">
+      <select class="field-select" id="reg-name-select">
         <option value="">— اختار فصلك الأول —</option>
       </select>
-      <input type="text" id="reg-name" class="field-input" placeholder="اكتب اسمك" style="display:none;margin-top:8px">
       <label class="field-label">البريد الإلكتروني</label>
       <input type="email" id="reg-email" class="field-input" placeholder="example@gmail.com" dir="ltr">
       <label class="field-label">كلمة المرور</label>
@@ -1355,8 +1354,8 @@ function classPickButtonsHTML(studentId) {
     return `<button class="class-pick-btn" style="border-color:${p.border};color:${p.text}" onclick="event.stopPropagation();assignClassSection('${studentId}','${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
   }).join('');
 }
-function classSelectOptionsHTML(includeEmpty) {
-  let html = includeEmpty ? `<option value="">— لسه متقسمش —</option>` : '';
+function classSelectOptionsHTML(includeEmpty, emptyLabel) {
+  let html = includeEmpty ? `<option value="">${emptyLabel || '— لسه متقسمش —'}</option>` : '';
   html += allClasses.map(c => `<option value="${c.id}">${c.emoji||'📘'} ${c.name}</option>`).join('');
   return html;
 }
@@ -1615,13 +1614,13 @@ async function loadRegisterClassOptions() {
       allRoles = rsnap.docs.map(d => ({ id:d.id, ...d.data() }));
     } catch(e) { console.error('تعذّر تحميل الأدوار (فورم التسجيل):', e); }
   }
-  if (allClasses.length) { sel.innerHTML = classSelectOptionsHTML(false); return; }
+  if (allClasses.length) { sel.innerHTML = classSelectOptionsHTML(true, 'تحديد الفصل'); return; }
   sel.innerHTML = `<option value="">جاري تحميل الفصول…</option>`;
   try {
     const snap = await countedGetDocs(collection(db,'classes'), 'classes (فورم التسجيل)');
     allClasses = snap.docs.map(d => ({ id:d.id, ...d.data() }))
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
-    sel.innerHTML = allClasses.length ? classSelectOptionsHTML(false) : `<option value="">لا يوجد فصول متاحة، كلم الأدمن</option>`;
+    sel.innerHTML = allClasses.length ? classSelectOptionsHTML(true, 'تحديد الفصل') : `<option value="">لا يوجد فصول متاحة، كلم الأدمن</option>`;
   } catch(e) {
     console.error('تعذّر تحميل الفصول:', e);
     sel.innerHTML = `<option value="">تعذّر تحميل الفصول</option>`;
@@ -1631,22 +1630,14 @@ async function loadRegisterClassOptions() {
 window.onRegClassChange = () => {
   const classId = document.getElementById('reg-class').value;
   const nameSel = document.getElementById('reg-name-select');
-  const nameInput = document.getElementById('reg-name');
-  nameInput.style.display = 'none'; nameInput.value = '';
   if (!classId) { nameSel.innerHTML = `<option value="">— اختار فصلك الأول —</option>`; return; }
   const names = [];
   allRoles.forEach(r => { if (!r.isAdmin && Array.isArray(r.classes) && r.classes.includes(classId)) (r.pendingNames||[]).forEach(n => names.push(n)); });
   names.sort((a,b) => a.localeCompare(b,'ar'));
-  let html = `<option value="">— اختار اسمك —</option>`;
-  html += names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
-  html += `<option value="__other__">اسمي مش موجود في القايمة</option>`;
+  let html = names.length
+    ? `<option value="">— اختار اسمك —</option>` + names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('')
+    : `<option value="">مفيش أسماء متاحة للفصل ده، كلم الأدمن</option>`;
   nameSel.innerHTML = html;
-};
-window.onRegNameSelectChange = () => {
-  const v = document.getElementById('reg-name-select').value;
-  const nameInput = document.getElementById('reg-name');
-  if (v === '__other__') { nameInput.style.display = 'block'; nameInput.value = ''; nameInput.focus(); }
-  else { nameInput.style.display = 'none'; nameInput.value = ''; }
 };
 
 window.doLogin = async () => {
@@ -1670,22 +1661,18 @@ window.doRegister = async () => {
   const btn  = document.getElementById('register-btn');
   const err  = document.getElementById('login-error');
   const regClass = document.getElementById('reg-class').value;
-  const nameSelVal = document.getElementById('reg-name-select').value;
-  const isCustomName = nameSelVal === '__other__';
-  const name = (isCustomName ? document.getElementById('reg-name').value : nameSelVal).trim();
+  const name = document.getElementById('reg-name-select').value.trim();
   const email = document.getElementById('reg-email').value.trim();
   const pass  = document.getElementById('reg-pass').value;
   const phone = document.getElementById('reg-phone').value.trim();
   const address = document.getElementById('reg-address').value.trim();
   err.style.display = 'none';
   if (!regClass)    { err.textContent = 'اختار فصلك الأول';       err.style.display = 'block'; return; }
-  if (!name)        { err.textContent = 'اختار اسمك من القايمة، أو اكتبه لو مش موجود'; err.style.display = 'block'; return; }
+  if (!name)        { err.textContent = 'اختار اسمك من القايمة';  err.style.display = 'block'; return; }
   if (!email||!pass){ err.textContent = 'اكتب الإيميل وكلمة المرور'; err.style.display = 'block'; return; }
   if (!phone)       { err.textContent = 'اكتب رقم تليفونك';       err.style.display = 'block'; return; }
-  // لو الاسم مختار من القايمة الجاهزة (مش مكتوب يدوي)، دوّر على الدور اللي هو منه عشان ناخد منه كل فصوله ونوعه بالظبط
-  const matchedRole = !isCustomName
-    ? allRoles.find(r => !r.isAdmin && Array.isArray(r.classes) && r.classes.includes(regClass) && (r.pendingNames||[]).includes(name))
-    : null;
+  // الاسم دايمًا مختار من القايمة الجاهزة، فبندوّر على الدور اللي هو منه عشان ناخد منه كل فصوله ونوعه بالظبط
+  const matchedRole = allRoles.find(r => !r.isAdmin && Array.isArray(r.classes) && r.classes.includes(regClass) && (r.pendingNames||[]).includes(name));
   btn.disabled = true; btn.textContent = 'جاري التسجيل…';
   explicitAuthAction = true;
   try {
