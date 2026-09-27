@@ -730,6 +730,15 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <div id="role-classes-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
         </div>
 
+        <div id="role-pending-names-section" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span class="section-title">أسماء خدام لسه هيسجلوا</span>
+            <button class="export-btn" onclick="addRolePendingName()">➕ إضافة اسم</button>
+          </div>
+          <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">لما أي حد يسجل ويختار نفس الفصل، هيلاقي اسمه هنا ويختاره بدل ما يكتب اسم جديد</p>
+          <div id="role-pending-names-list" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
+
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span class="section-title">الأعضاء (<span id="role-members-count">0</span>)</span>
           <button class="export-btn" onclick="openRoleAddMembersModal()">➕ إضافة أشخاص</button>
@@ -1417,7 +1426,6 @@ function renderRegClassOptions() {
   if (sel && allClasses.length) sel.innerHTML = classSelectOptionsHTML(false);
 }
 // ===== إدارة الفصول (أدمن فقط) — إضافة/تعديل/حذف فصول من جوه التطبيق نفسه =====
-let openClassNamesId = '';
 function renderClassesAdminList() {
   const cont = document.getElementById('classes-admin-list');
   if (!cont) return;
@@ -1425,43 +1433,10 @@ function renderClassesAdminList() {
   cont.innerHTML = allClasses.map(c => `
     <div class="tpl-chip">
       <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name}</span>
-      <button class="tpl-chip-del" onclick="toggleClassNames('${c.id}')" title="أسماء الخدام" style="margin-left:4px">${openClassNamesId===c.id?'👥▲':'👥'} ${(c.servantNames||[]).length ? `(${c.servantNames.length})` : ''}</button>
       <button class="tpl-chip-del" onclick="editClassPrompt('${c.id}')" title="تعديل" style="margin-left:4px">✏️</button>
       <button class="tpl-chip-del" onclick="deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">✕</button>
     </div>`).join('');
-  renderClassNamesPanel();
 }
-// لوحة أسماء الخدام المتوقعين لفصل معين — الأسماء دي بتظهر للخادم الجديد يختار اسمه منها وقت التسجيل
-function renderClassNamesPanel() {
-  const panel = document.getElementById('class-names-panel');
-  if (!panel) return;
-  if (!openClassNamesId) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
-  const c = classById(openClassNamesId);
-  if (!c) { panel.style.display = 'none'; return; }
-  const names = (c.servantNames || []).slice().sort((a,b) => a.localeCompare(b,'ar'));
-  panel.style.display = 'block';
-  panel.innerHTML = `
-    <div class="section-title" style="margin-bottom:8px">أسماء خدام ${c.emoji||''} ${c.name}</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      ${names.length ? names.map(n => `
-        <div class="tpl-chip">
-          <span class="tpl-chip-name">${n}</span>
-          <button class="tpl-chip-del" onclick="removeServantNameFromClass('${c.id}','${n.replace(/'/g,"\\'")}')" title="حذف">✕</button>
-        </div>`).join('') : '<div class="empty-state" style="padding:6px">لسه مفيش أسماء مضافة</div>'}
-    </div>
-    <button class="export-btn" onclick="addServantNameToClass('${c.id}')">➕ إضافة اسم</button>`;
-}
-window.toggleClassNames = (id) => { openClassNamesId = openClassNamesId === id ? '' : id; renderClassesAdminList(); };
-window.addServantNameToClass = async (id) => {
-  const name = (prompt('اسم الخادم اللي عايز تضيفه للفصل ده؟') || '').trim();
-  if (!name) return;
-  try { await updateDoc(doc(db,'classes',id), { servantNames: arrayUnion(name) }); showToast(`تم إضافة "${name}" ✓`, 'success'); }
-  catch(e) { console.error(e); showToast('حصل خطأ أثناء الإضافة', 'error'); }
-};
-window.removeServantNameFromClass = async (id, name) => {
-  try { await updateDoc(doc(db,'classes',id), { servantNames: arrayRemove(name) }); }
-  catch(e) { console.error(e); showToast('حصل خطأ أثناء الحذف', 'error'); }
-};
 window.addClassPrompt = async () => {
   const name = (prompt('اسم الفصل الجديد؟ (مثلاً: فصل ج)') || '').trim();
   if (!name) return;
@@ -1538,6 +1513,13 @@ window.openUsersRolesModal = () => {
 };
 window.closeSettingsModal = () => { document.getElementById('settings-modal').style.display = 'none'; };
 window.closeSettingsOutside = (e) => { if (e.target.id === 'settings-modal') closeSettingsModal(); };
+// بتفتح شاشة الأدوار وتوديك على طول لدور خادم معين — مستخدمة من زرار "🗂 دوره" في قايمة الخدام
+window.openServantRoleFromSettings = async (roleId) => {
+  closeSettingsModal();
+  openUsersRolesModal();
+  await loadRolesOnce();
+  openRoleEditor(roleId);
+};
 window.saveOwnSettings = async () => {
   const phone = document.getElementById('settings-phone').value.trim();
   const address = document.getElementById('settings-address').value.trim();
@@ -1549,7 +1531,7 @@ window.saveOwnSettings = async () => {
 };
 
 // ---- الأدوار (بريسيتس فصول جاهزة تتطبق على أكتر من خادم مرة واحدة) ----
-// ---- قايمة الخدام (بحث بالاسم + تعديل مباشر: الفصول اللي يشوفها / أدمن ولا لأ) ----
+// ---- قايمة الخدام (بحث بالاسم + ترقية/تنزيل أدمن — تغيير الفصل/النوع بقى بس من شاشة "الأدوار") ----
 function renderSettingsPeopleList() {
   const cont = document.getElementById('settings-people-list');
   if (!cont) return;
@@ -1576,9 +1558,7 @@ function renderSettingsPeopleList() {
         <div class="s-sub">${assigned.length ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
       </div>
       ${adminBtn}
-      <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-        ${servantClassChipsHTML(s, assigned)}
-      </div>
+      ${s.roleId ? `<button class="action-btn" onclick="openServantRoleFromSettings('${s.roleId}')">🗂 دوره</button>` : ''}
     </div>`;
   }).join('');
 }
@@ -1624,11 +1604,17 @@ window.switchAuthTab = (which) => {
   if (which === 'register') loadRegisterClassOptions();
 };
 
-// بيتحمّل قايمة الفصول لفورم التسجيل — بيتنادى قبل ما الخادم الجديد يعمل حساب أصلاً،
-// فلو ده أول مرة يفتح فيها التاب ده، بيجيب الفصول من فايرستور مباشرة (لازم قاعدة فايرستور تسمح بقراءة مجموعة 'classes' حتى من غير تسجيل دخول)
+// بيتحمّل قايمة الفصول والأدوار لفورم التسجيل — بيتنادى قبل ما الخادم الجديد يعمل حساب أصلاً،
+// فلو ده أول مرة يفتح فيها التاب ده، بيجيبهم من فايرستور مباشرة (لازم قاعدة فايرستور تسمح بقراءة مجموعتي 'classes' و'roles' حتى من غير تسجيل دخول)
 async function loadRegisterClassOptions() {
   const sel = document.getElementById('reg-class');
   if (!sel) return;
+  if (!allRoles.length) {
+    try {
+      const rsnap = await countedGetDocs(collection(db,'roles'), 'roles (فورم التسجيل)');
+      allRoles = rsnap.docs.map(d => ({ id:d.id, ...d.data() }));
+    } catch(e) { console.error('تعذّر تحميل الأدوار (فورم التسجيل):', e); }
+  }
   if (allClasses.length) { sel.innerHTML = classSelectOptionsHTML(false); return; }
   sel.innerHTML = `<option value="">جاري تحميل الفصول…</option>`;
   try {
@@ -1641,14 +1627,16 @@ async function loadRegisterClassOptions() {
     sel.innerHTML = `<option value="">تعذّر تحميل الفصول</option>`;
   }
 }
-// أول ما تختار الفصل، بيتملى سيلكت "اسمك" بأسماء الخدام اللي الأدمن ضافهم مقدمًا لنفس الفصل ده
+// أول ما تختار الفصل، بيتملى سيلكت "اسمك" بأسماء الخدام اللي الأدمن ضافهم مقدمًا لأي دور شامل الفصل ده
 window.onRegClassChange = () => {
   const classId = document.getElementById('reg-class').value;
   const nameSel = document.getElementById('reg-name-select');
   const nameInput = document.getElementById('reg-name');
   nameInput.style.display = 'none'; nameInput.value = '';
   if (!classId) { nameSel.innerHTML = `<option value="">— اختار فصلك الأول —</option>`; return; }
-  const names = (classById(classId)?.servantNames || []).slice().sort((a,b) => a.localeCompare(b,'ar'));
+  const names = [];
+  allRoles.forEach(r => { if (!r.isAdmin && Array.isArray(r.classes) && r.classes.includes(classId)) (r.pendingNames||[]).forEach(n => names.push(n)); });
+  names.sort((a,b) => a.localeCompare(b,'ar'));
   let html = `<option value="">— اختار اسمك —</option>`;
   html += names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
   html += `<option value="__other__">اسمي مش موجود في القايمة</option>`;
@@ -1683,7 +1671,8 @@ window.doRegister = async () => {
   const err  = document.getElementById('login-error');
   const regClass = document.getElementById('reg-class').value;
   const nameSelVal = document.getElementById('reg-name-select').value;
-  const name = (nameSelVal === '__other__' ? document.getElementById('reg-name').value : nameSelVal).trim();
+  const isCustomName = nameSelVal === '__other__';
+  const name = (isCustomName ? document.getElementById('reg-name').value : nameSelVal).trim();
   const email = document.getElementById('reg-email').value.trim();
   const pass  = document.getElementById('reg-pass').value;
   const phone = document.getElementById('reg-phone').value.trim();
@@ -1693,6 +1682,10 @@ window.doRegister = async () => {
   if (!name)        { err.textContent = 'اختار اسمك من القايمة، أو اكتبه لو مش موجود'; err.style.display = 'block'; return; }
   if (!email||!pass){ err.textContent = 'اكتب الإيميل وكلمة المرور'; err.style.display = 'block'; return; }
   if (!phone)       { err.textContent = 'اكتب رقم تليفونك';       err.style.display = 'block'; return; }
+  // لو الاسم مختار من القايمة الجاهزة (مش مكتوب يدوي)، دوّر على الدور اللي هو منه عشان ناخد منه كل فصوله ونوعه بالظبط
+  const matchedRole = !isCustomName
+    ? allRoles.find(r => !r.isAdmin && Array.isArray(r.classes) && r.classes.includes(regClass) && (r.pendingNames||[]).includes(name))
+    : null;
   btn.disabled = true; btn.textContent = 'جاري التسجيل…';
   explicitAuthAction = true;
   try {
@@ -1700,13 +1693,14 @@ window.doRegister = async () => {
     const isAdmin = ADMIN_EMAILS.map(e=>e.toLowerCase()).includes(email.toLowerCase());
     await setDoc(doc(db,'servants',cred.user.uid), {
       name, email, phone, address,
-      assignedClass: isAdmin ? '' : regClass,
+      assignedClass: isAdmin ? '' : (matchedRole ? matchedRole.classes.join(',') : regClass),
+      roleId: matchedRole ? matchedRole.id : '',
       status: isAdmin ? 'approved' : 'pending',
-      role:   isAdmin ? 'admin'    : 'servant',
+      role:   isAdmin ? 'admin'    : (matchedRole?.isSupervisor ? 'supervisor' : 'servant'),
       createdAt: serverTimestamp(),
       lastActive: serverTimestamp()
     });
-    // لو الاسم ده مختار من قايمة الأسماء الجاهزة، هيتمسح من قايمة الفصل تلقائي لما الأدمن يقبل الطلب (مش دلوقتي، عشان القاعدة الأمنية بتاعة classes مسموح بيها للأدمن بس)
+    // لو الاسم ده مختار من قايمة الأسماء الجاهزة، هيتمسح من قايمة الدور تلقائي لما الأدمن يقبل الطلب (مش دلوقتي، عشان القاعدة الأمنية بتاعة roles مسموح بيها للأدمن بس)
     try { await sendEmailVerification(cred.user); } catch(_) {}
     // onAuthStateChanged هيتكفل بعرض الشاشة المناسبة (انتظار أو دخول مباشر لو أدمن)
   } catch(e) {
@@ -3940,7 +3934,7 @@ function renderPendingList(list) {
         <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}${s.phone ? ' · '+s.phone : ''}</div>
         ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
       </div>
-      <button class="export-btn" onclick="approveServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${s.assignedClass||''}')">✓ قبول</button>
+      <button class="export-btn" onclick="approveServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${s.roleId||''}')">✓ قبول</button>
       <button class="del-btn" onclick="rejectServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}')">✕ رفض</button>
     </div>`).join('');
 }
@@ -3966,18 +3960,6 @@ function renderServantsList(list) {
         </div>
       </div>`).join('');
 }
-// شرايط الفصول اللي الخادم مسموحله بيها — toggle متعدد: كل ضغطة تضيف/تشيل فصل من قايمة assignedClass بتاعته
-// (لسه مستخدمة جوه ملف الخادم وشاشة "ملفي")
-function servantClassChipsHTML(s, assigned) {
-  let html = `<button class="filter-chip ${!s.assignedClass?'active':''}" onclick="setServantClass('${s.id}','')">🔓 كل الفصول</button>`;
-  html += allClasses.map(c => {
-    const active = assigned.includes(c.id);
-    const newList = active ? assigned.filter(x => x !== c.id) : [...assigned, c.id];
-    return `<button class="filter-chip ${active?'active':''}" onclick="setServantClass('${s.id}','${newList.join(',')}')">${c.emoji||'📘'} ${c.name}</button>`;
-  }).join('');
-  return html;
-}
-
 // ===== ملف الخادم (بيفتح لما تدوس على اسمه في تبويب "متابعة") =====
 let servantProfileId = '';
 window.openServantProfile = (id) => {
@@ -3991,7 +3973,9 @@ window.openServantProfile = (id) => {
   document.getElementById('sprof-meeting').textContent = s.meetingCount||0;
   document.getElementById('sprof-prep').textContent = s.prepCount||0;
   const assigned = normalizeAssignedClasses(s.assignedClass);
-  document.getElementById('sprof-class-chips').innerHTML = servantClassChipsHTML(s, assigned);
+  document.getElementById('sprof-class-chips').innerHTML =
+    (assigned.length ? assigned.map(cid => classBadgeHTML(cid)).join(' ') : `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`)
+    + (s.roleId ? `<button class="action-btn" onclick="closeServantProfile();openServantRoleFromSettings('${s.roleId}')">🗂 عدّل من الدور</button>` : '');
   const contactLines = [];
   if (s.email) contactLines.push(`📧 <span dir="ltr">${s.email}</span>`);
   if (s.phone) contactLines.push(`📞 <span dir="ltr">${s.phone}</span>`);
@@ -4018,15 +4002,6 @@ function renderServantProfileActions(s) {
 window.closeServantProfile = () => { document.getElementById('servant-profile-modal').style.display = 'none'; servantProfileId = ''; };
 window.closeServantProfileOutside = (e) => { if (e.target.id === 'servant-profile-modal') closeServantProfile(); };
 
-// تحديد الفصول المسموح للخادم من تبويب "متابعة" — ممكن يختار فصل واحد أو أكثر (مثلاً "a,b")
-// في كل الشاشة (الحضور، المخدومين، افتقاد، رسائل) وهيتفعل فورًا حتى لو داخل بيستخدم التطبيق دلوقتي
-window.setServantClass = async (id, cls) => {
-  const value = String(cls || '').trim();
-  await updateDoc(doc(db,'servants',id), { assignedClass: value }); loadServantsOnce(true);
-  showToast(value ? `تم تحديد ${formatAssignedClasses(value)} للخادم ✓` : 'الخادم بقى شايف كل الفصول', 'success');
-  if (servantProfileId === id) setTimeout(() => openServantProfile(id), 50); // يحدّث الشرايط في ملف الخادم لو فاتحه دلوقتي
-};
-
 window.renderActivityList = async function() {
   const cont = document.getElementById('activity-list');
   const v = document.getElementById('activity-date').value;
@@ -4048,11 +4023,11 @@ window.renderActivityList = async function() {
 
 // ملحوظة: قايمة الخدام هنا مش بث لحظي (onSnapshot)، دي قراءة مرة واحدة متخزنة في cachedServants —
 // عشان كده كل عملية تغيير هنا لازم تعمل loadServantsOnce(true) عشان تجيب النسخة الجديدة من السيرفر
-window.approveServant = async (id, name, assignedClass) => {
+window.approveServant = async (id, name, roleId) => {
   await updateDoc(doc(db,'servants',id), { status:'approved' }); loadServantsOnce(true);
-  // لو اسمه كان مختار من قايمة أسماء الفصل الجاهزة، بيتمسح من القايمة دلوقتي (بعد القبول) عشان محدش تاني يختاره
-  if (name && assignedClass && (classById(assignedClass)?.servantNames || []).includes(name)) {
-    try { await updateDoc(doc(db,'classes',assignedClass), { servantNames: arrayRemove(name) }); } catch(e) { console.error(e); }
+  // لو اسمه كان مختار من قايمة أسماء الدور الجاهزة، بيتمسح من القايمة دلوقتي (بعد القبول) عشان محدش تاني يختاره
+  if (name && roleId) {
+    try { await updateDoc(doc(db,'roles',roleId), { pendingNames: arrayRemove(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
   }
   showToast('تم قبول الخادم ✓', 'success');
 };
@@ -4086,6 +4061,7 @@ let editingRoleId = '';        // '' = دور جديد
 let editingRoleType = 'classServant'; // 'classServant' | 'classSupervisor' | 'admin'
 let editingRoleClasses = [];   // [classId,...]
 let editingRoleMemberIds = []; // [servantId,...]
+let editingRolePendingNames = []; // أسماء خدام لسه ملهمش حساب، هيلاقوا اسمهم وقت التسجيل ويختاروه
 const ROLE_TYPE_LABELS = { classServant:'🧑‍🏫 خادم فصل', classSupervisor:'🗝️ مسؤول فصل', admin:'👑 أدمن' };
 const ROLE_TYPE_SHORT   = { classServant:'خادم فصل', classSupervisor:'مسؤول فصل', admin:'أدمن' };
 
@@ -4172,12 +4148,14 @@ window.openRoleEditor = (roleId) => {
   editingRoleType = r ? (r.type || (r.isAdmin ? 'admin' : (r.isSupervisor ? 'classSupervisor' : 'classServant'))) : 'classServant';
   editingRoleClasses = (r && Array.isArray(r.classes)) ? [...r.classes] : [];
   editingRoleMemberIds = editingRoleId ? cachedServants.filter(s => s.roleId === editingRoleId).map(s => s.id) : [];
+  editingRolePendingNames = (r && Array.isArray(r.pendingNames)) ? [...r.pendingNames] : [];
   document.getElementById('roles-modal-title').textContent = r ? 'تعديل دور' : 'دور جديد';
   document.getElementById('role-delete-btn').style.display = r ? 'block' : 'none';
   document.getElementById('role-add-members-modal').style.display = 'none';
   renderRoleTypeChips();
   renderRoleClassChips();
   renderRoleMembersChips();
+  renderRolePendingNames();
   updateRoleEffectHint();
   document.getElementById('roles-list-view').style.display = 'none';
   document.getElementById('role-editor-view').style.display = 'block';
@@ -4189,6 +4167,7 @@ function renderRoleTypeChips() {
   document.getElementById('role-type-chips').innerHTML = Object.keys(ROLE_TYPE_LABELS).map(t =>
     `<button type="button" class="filter-chip ${editingRoleType===t?'active':''}" onclick="setRoleType('${t}')">${ROLE_TYPE_LABELS[t]}</button>`).join('');
   document.getElementById('role-classes-section').style.display = editingRoleType === 'admin' ? 'none' : 'block';
+  document.getElementById('role-pending-names-section').style.display = editingRoleType === 'admin' ? 'none' : 'block';
 }
 function renderRoleClassChips() {
   const cont = document.getElementById('role-classes-chips');
@@ -4230,7 +4209,7 @@ window.renderRoleAddMemberResults = () => {
     const selected = editingRoleMemberIds.includes(s.id);
     return `<div class="servant-item" onclick="toggleRoleMemberSelection('${s.id}')" style="cursor:pointer;padding:9px 12px">
       <input type="checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();toggleRoleMemberSelection('${s.id}')" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
-      <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}${(s.roleId && s.roleId !== editingRoleId) ? ' · في دور تاني حاليًا' : ''}</div></div>
+      <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
     </div>`;
   }).join('') : `<div class="empty-state" style="padding:14px">مفيش نتايج</div>`;
 };
@@ -4260,6 +4239,28 @@ function updateRoleEffectHint() {
   document.getElementById('role-effect-hint').innerHTML = `التغيير ده هيأثر على <b>${editingRoleMemberIds.length}</b> شخص دلوقتي`;
 }
 
+// أسماء خدام مضافين مقدمًا في الدور ده لسه ملهمش حساب — لما أي حد يسجل ويختار نفس الفصل، هيلاقي اسمه في القايمة ويختاره بدل ما يكتب اسم جديد
+function renderRolePendingNames() {
+  const cont = document.getElementById('role-pending-names-list');
+  if (!cont) return;
+  if (!editingRolePendingNames.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش أسماء مضافة</div>`; return; }
+  cont.innerHTML = editingRolePendingNames.slice().sort((a,b) => a.localeCompare(b,'ar')).map(n => `
+    <div class="tpl-chip">
+      <span class="tpl-chip-name">${n}</span>
+      <button class="tpl-chip-del" onclick="removeRolePendingName('${n.replace(/'/g,"\\'")}')" title="حذف">✕</button>
+    </div>`).join('');
+}
+window.addRolePendingName = () => {
+  const name = (prompt('اسم الخادم اللي لسه هيسجل؟') || '').trim();
+  if (!name || editingRolePendingNames.includes(name)) return;
+  editingRolePendingNames.push(name);
+  renderRolePendingNames();
+};
+window.removeRolePendingName = (name) => {
+  editingRolePendingNames = editingRolePendingNames.filter(x => x !== name);
+  renderRolePendingNames();
+};
+
 window.saveRole = async () => {
   if (editingRoleType !== 'admin' && !editingRoleClasses.length) { showToast('اختار الفصل / الفصول الأول', 'error'); return; }
   const isAdmin = editingRoleType === 'admin';
@@ -4267,7 +4268,7 @@ window.saveRole = async () => {
   const classesLabel = isAdmin ? '' : editingRoleClasses.map(c => classLabel(c)).join(' + ');
   const name = isAdmin ? 'أدمن' : `${ROLE_TYPE_SHORT[editingRoleType]} — ${classesLabel}`;
   try {
-    const data = { name, type: editingRoleType, isAdmin, isSupervisor, classes: isAdmin ? [] : editingRoleClasses };
+    const data = { name, type: editingRoleType, isAdmin, isSupervisor, classes: isAdmin ? [] : editingRoleClasses, pendingNames: isAdmin ? [] : editingRolePendingNames };
     let roleId = editingRoleId;
     if (roleId) await updateDoc(doc(db,'roles',roleId), data);
     else { const ref = await addDoc(collection(db,'roles'), data); roleId = ref.id; }
