@@ -195,7 +195,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 #toast.info{border-color:rgba(79,142,247,0.4);color:var(--accent);}
 
 .empty-state{text-align:center;padding:36px 20px;color:var(--text-dim);font-size:14px;}
-.empty-icon{font-size:36px;margin-bottom:10px;}
+.empty-icon{font-size:28px;margin-bottom:8px;}
 .loading{text-align:center;padding:28px;color:var(--text-dim);}
 .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px;}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -228,11 +228,11 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .page-title-box{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);text-align:center;font-size:22px;font-weight:700;padding:10px;margin-bottom:12px}
 #main-tabs.home-only .tab[data-tab]{display:none !important}
 #main-tabs{display:none !important}
-.admin-card{flex-direction:column;gap:6px}
-.ac-emoji{font-size:44px;line-height:1}
+.admin-card{flex-direction:column;gap:8px}
+.ac-emoji{font-size:30px;line-height:1;display:block}
 /* ADMIN HOME */
-.admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 18px}
-.admin-card{position:relative;display:flex;align-items:center;justify-content:center;min-height:150px;padding:16px 10px;border:1px solid var(--border);border-radius:24px;background:var(--surface);color:var(--text);font-family:'Cairo',sans-serif;font-size:26px;font-weight:600;cursor:pointer;text-align:center}
+.admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0 16px}
+.admin-card{position:relative;display:flex;align-items:center;justify-content:center;min-height:112px;padding:14px 10px;border:1px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text);font-family:'Cairo',sans-serif;font-size:18px;line-height:1.3;font-weight:700;cursor:pointer;text-align:center}
 .admin-card:active{transform:scale(.97)}
 .admin-card.add{border-style:dashed;color:var(--text-dim)}
 .admin-mode-bar{display:flex;gap:10px;margin:8px 0 4px}
@@ -310,7 +310,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="top-bar-sub" id="today-date-top"></div>
     </div>
-    <button class="icon-btn" id="top-home-btn" onclick="closeSettingsMenu();goHome()" title="الرئيسية" style="width:64px;height:64px;font-size:34px;border-radius:18px;margin:0 auto;flex:0 0 auto">🏠</button>
+    <button class="icon-btn" id="top-home-btn" onclick="closeSettingsMenu();goHome()" title="الرئيسية" style="width:44px;height:44px;font-size:22px;border-radius:14px;margin:0 auto;flex:0 0 auto">🏠</button>
     <div style="flex:1;display:flex;align-items:center;justify-content:flex-end">
     <div class="settings-menu-wrap">
       <button class="icon-btn" onclick="toggleSettingsMenu(event)">⚙️</button>
@@ -2157,12 +2157,15 @@ window.setClassFilter = (val) => {
   renderStudentsList();
 };
 
+let stuListCount = null; // عدد المخدومين بعد كل الفلاتر والبحث (بيتحدّث من renderStudentsList)
 function updateStuCount() {
   const el = document.getElementById('stu-count');
-  if (el) el.textContent = currentClassTab ? allStudents.filter(s => s.classSection === currentClassTab).length : allStudents.length;
+  if (!el) return;
+  el.textContent = stuListCount !== null ? stuListCount : (currentClassTab ? allStudents.filter(s => s.classSection === currentClassTab).length : allStudents.length);
 }
 function renderStudentsList() {
   const cont = document.getElementById('students-list');
+  stuListCount = null;
   updateStuCount();
   if (!allStudents.length) {
     cont.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>لا يوجد مخدومين بعد</div>`;
@@ -2191,6 +2194,8 @@ function renderStudentsList() {
     return c !== 0 ? c : a.name.localeCompare(b.name, 'ar');
   });
 
+  stuListCount = list.length;
+  updateStuCount();
   if (!list.length) {
     cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>مفيش نتايج</div>`;
     return;
