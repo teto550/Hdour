@@ -235,8 +235,13 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .admin-card{position:relative;display:flex;align-items:center;justify-content:center;min-height:150px;padding:16px 10px;border:1px solid var(--border);border-radius:24px;background:var(--surface);color:var(--text);font-family:'Cairo',sans-serif;font-size:26px;font-weight:600;cursor:pointer;text-align:center}
 .admin-card:active{transform:scale(.97)}
 .admin-card.add{border-style:dashed;color:var(--text-dim)}
-.admin-card-tools{position:absolute;top:8px;left:8px;display:flex;gap:4px}
-.admin-card-tools span{font-size:14px;padding:4px 7px;border-radius:8px;background:var(--surface2);opacity:.8}
+.admin-mode-bar{display:flex;gap:10px;margin:8px 0 4px}
+.admin-mode-btn{flex:1;padding:12px 10px;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;cursor:pointer}
+.admin-mode-btn.active.edit{background:rgba(79,142,247,0.15);border-color:var(--accent);color:var(--accent)}
+.admin-mode-btn.active.del{background:rgba(231,76,60,0.15);border-color:#e74c3c;color:#e74c3c}
+.admin-mode-hint{font-size:12px;color:var(--text-dim);text-align:center;min-height:18px;margin-bottom:4px}
+.admin-card.mode-edit{border-color:var(--accent);border-style:dashed}
+.admin-card.mode-del{border-color:#e74c3c;border-style:dashed}
 .admin-back{background:none;border:none;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;cursor:pointer;padding:4px 2px;margin-bottom:6px}
 </style>
 </head>
@@ -299,14 +304,14 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 <!-- APP -->
 <div id="app-screen">
   <div class="top-bar">
-    <div>
+    <div style="flex:1;min-width:0">
       <div class="top-bar-title" style="display:flex;align-items:center;gap:8px">
         <img src="icon-193.png" style="width:26px;height:26px;border-radius:6px;object-fit:cover">حضور
       </div>
       <div class="top-bar-sub" id="today-date-top"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-    <button class="icon-btn" id="top-home-btn" onclick="closeSettingsMenu();goHome()" title="الرئيسية">🏠</button>
+    <button class="icon-btn" id="top-home-btn" onclick="closeSettingsMenu();goHome()" title="الرئيسية" style="width:64px;height:64px;font-size:34px;border-radius:18px;margin:0 auto;flex:0 0 auto">🏠</button>
+    <div style="flex:1;display:flex;align-items:center;justify-content:flex-end">
     <div class="settings-menu-wrap">
       <button class="icon-btn" onclick="toggleSettingsMenu(event)">⚙️</button>
       <div id="settings-dropdown" class="settings-dropdown" style="display:none">
@@ -331,6 +336,11 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     </div>
     <div id="tab-admin-classes" style="display:none">
       <button class="admin-back" onclick="goHome()">→ رجوع</button>
+      <div class="admin-mode-bar">
+        <button class="admin-mode-btn edit" id="admin-mode-edit" onclick="setAdminClassMode('edit')">✏️ تعديل</button>
+        <button class="admin-mode-btn del" id="admin-mode-del" onclick="setAdminClassMode('del')">🗑️ حذف</button>
+      </div>
+      <div class="admin-mode-hint" id="admin-mode-hint"></div>
       <div class="admin-grid" id="admin-classes-grid"></div>
       <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
     </div>
@@ -386,13 +396,12 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <div class="list-header">
         <span class="section-title">قائمة اليوم</span>
       </div>
+      <div class="filter-row" style="margin-bottom:8px">
+        <button class="filter-chip active" id="today-filter-all" onclick="setTodayListFilter('all',this)">الكل</button>
+        <button class="filter-chip" id="today-filter-attendance" onclick="setTodayListFilter('attendance',this)">✅ حضور بس</button>
+        <button class="filter-chip" id="today-filter-verse" onclick="setTodayListFilter('verse',this)">📖 سماع بس</button>
+      </div>
       <div class="list-header" style="margin-top:-4px">
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="filter-chip active" id="today-filter-all" onclick="setTodayListFilter('all',this)">الكل</button>
-          <button class="filter-chip" id="today-filter-attendance" onclick="setTodayListFilter('attendance',this)">✓ حضور بس</button>
-          <button class="filter-chip" id="today-filter-verse" onclick="setTodayListFilter('verse',this)">📖 سماع بس</button>
-          <button class="filter-chip" id="today-filter-both" onclick="setTodayListFilter('both',this)">حضور وسماع</button>
-        </div>
         <button class="export-btn" id="today-sort-btn" onclick="toggleTodayListSort()">⇅ الأول ↞ الأخير</button>
       </div>
       <div id="today-list"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
@@ -432,8 +441,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="list-header">
         <span class="section-title">المخدومين (<span id="stu-count">0</span>)</span>
-        <button class="export-btn" onclick="cleanAllNames()" style="background:rgba(243,156,18,0.12);border-color:rgba(243,156,18,0.3);color:var(--warning)">🧹 تنظيف الأسماء</button>
-        <button class="export-btn" onclick="guessAllGenders()" style="background:rgba(79,142,247,0.12);border-color:rgba(79,142,247,0.3);color:var(--accent)">🧬 تحديد النوع تلقائي</button>
       </div>
       <div class="search-box" style="margin-bottom:12px">
         <input type="text" id="students-search-input" placeholder="🔍 ابحث عن مخدوم بالاسم…" oninput="renderStudentsList()" autocomplete="off">
@@ -1293,7 +1300,7 @@ function scoreStudentsVoice(list, normalizedQuery) {
 
 let allStudents = [], todayAttendance = {}, allAttendance = {};
 let todayAttendanceTime = {}, todayVerseTime = {}; // studentId -> millis وقت التسجيل، لترتيب "الأول للأخير"
-let todayListFilter = 'all'; // 'all' | 'attendance' | 'verse' | 'both'
+let todayListFilter = 'all'; // 'all' | 'attendance' | 'verse'
 let todayListSortOrder = 'first'; // 'first' (الأول اللي سجل فوق) | 'last' (الأخير اللي سجل فوق)
 function tsToMillis(ts) {
   if (!ts) return Date.now();
@@ -2016,7 +2023,7 @@ async function loadStudents(force = false) {
   // تبويب "المخدومين" بيعرض كل الفصول لكل خادم (مع إمكانية فلترة فصله بس من الشاشة)،
   // أما الشاشات التانية (الحضور، الرسائل، التصدير) فبتفضل مقفولة على فصل الخادم عن طريق
   // visibleClasses / ownClassStudents() في كل واحدة منها لوحدها
-  document.getElementById('stu-count').textContent = allStudents.length;
+  updateStuCount();
   renderStudentsList();
 }
 
@@ -2150,9 +2157,13 @@ window.setClassFilter = (val) => {
   renderStudentsList();
 };
 
+function updateStuCount() {
+  const el = document.getElementById('stu-count');
+  if (el) el.textContent = currentClassTab ? allStudents.filter(s => s.classSection === currentClassTab).length : allStudents.length;
+}
 function renderStudentsList() {
   const cont = document.getElementById('students-list');
-  document.getElementById('stu-count').textContent = allStudents.length;
+  updateStuCount();
   if (!allStudents.length) {
     cont.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>لا يوجد مخدومين بعد</div>`;
     return;
@@ -2790,7 +2801,7 @@ window.removeAttendance = async (studentId) => {
 // ===== فلتر وترتيب قائمة اليوم =====
 window.setTodayListFilter = (mode, btn) => {
   todayListFilter = mode;
-  document.querySelectorAll('#today-filter-all,#today-filter-attendance,#today-filter-verse,#today-filter-both').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#today-filter-all,#today-filter-attendance,#today-filter-verse').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderTodayList();
 };
@@ -2802,13 +2813,12 @@ window.toggleTodayListSort = () => {
   renderTodayList();
 };
 
-// وقت الحدث اللي بنرتب بيه، حسب الفلتر الحالي (لو الاتنين، بناخد آخر حاجة اتسجلت من الاتنين)
+// وقت الحدث اللي بنرتب بيه، حسب الفلتر الحالي
 function todayListRelevantTime(s) {
   const at = todayAttendanceTime[s.id];
   const vt = todayVerseTime[s.id];
   if (todayListFilter === 'attendance') return todayAttendance[s.id] ? (at ?? 0) : null;
   if (todayListFilter === 'verse') return todayVerses[s.id] ? (vt ?? 0) : null;
-  if (todayListFilter === 'both') return (todayAttendance[s.id] && todayVerses[s.id]) ? Math.max(at ?? 0, vt ?? 0) : null;
   const times = [at, vt].filter(t => t != null);
   return times.length ? Math.min(...times) : null;
 }
@@ -2821,7 +2831,6 @@ function renderTodayList() {
   let filtered = allStudents.filter(s => visibleClasses.includes(s.classSection)).filter(s => {
     if (todayListFilter === 'attendance') return !!todayAttendance[s.id];
     if (todayListFilter === 'verse')      return !!todayVerses[s.id];
-    if (todayListFilter === 'both')       return !!todayAttendance[s.id] && !!todayVerses[s.id];
     return true; // 'all'
   });
 
@@ -3734,22 +3743,40 @@ window.applyMonitorVisibility = () => {
 function hideAdminScreens() {
   ['tab-admin-home','tab-admin-classes'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
 }
+let adminClassMode = null; // null | 'edit' | 'del'
+window.setAdminClassMode = (m) => {
+  adminClassMode = (adminClassMode === m) ? null : m;
+  renderAdminClassCards();
+};
+window.adminClassCardClick = async (id, name) => {
+  const mode = adminClassMode;
+  if (mode === 'edit') { adminClassMode = null; renderAdminClassCards(); await editClassPrompt(id); }
+  else if (mode === 'del') { adminClassMode = null; renderAdminClassCards(); await deleteClass(id, name); }
+  else openClassFromAdmin(id);
+};
 function renderAdminClassCards() {
   const grid = document.getElementById('admin-classes-grid');
   if (!grid) return;
   const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const eb = document.getElementById('admin-mode-edit'), db_ = document.getElementById('admin-mode-del'), hint = document.getElementById('admin-mode-hint');
+  if (eb) eb.classList.toggle('active', adminClassMode === 'edit');
+  if (db_) db_.classList.toggle('active', adminClassMode === 'del');
+  if (hint) hint.textContent = adminClassMode === 'edit' ? 'اختار الفصل اللي عايز تعدّله' : adminClassMode === 'del' ? 'اختار الفصل اللي عايز تحذفه' : '';
+  const cls = adminClassMode === 'edit' ? ' mode-edit' : adminClassMode === 'del' ? ' mode-del' : '';
   grid.innerHTML = allClasses.map(c => `
-    <button class="admin-card" onclick="openClassFromAdmin('${c.id}')">
-      <span class="admin-card-tools">
-        <span onclick="event.stopPropagation();editClassPrompt('${c.id}')" title="تعديل">✏️</span>
-        <span onclick="event.stopPropagation();deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">🗑️</span>
-      </span><span class="ac-emoji">${esc(c.emoji||'📘')}</span>${esc(c.name)}
+    <button class="admin-card${cls}" data-cid="${esc(c.id)}">
+      <span class="ac-emoji">${esc(c.emoji||'📘')}</span>${esc(c.name)}
     </button>`).join('') + `<button class="admin-card add" onclick="addClassPrompt()">➕ إضافة فصل</button>`;
+  grid.querySelectorAll('button[data-cid]').forEach(b => {
+    const c = allClasses.find(x => x.id === b.dataset.cid);
+    b.onclick = () => adminClassCardClick(c.id, c.name || '');
+  });
 }
 window.showAdminClasses = () => {
   if (currentRole !== 'admin') return;
   hideAdminScreens();
   document.getElementById('tab-admin-classes').style.display = 'block';
+  adminClassMode = null;
   renderAdminClassCards();
 };
 window.openClassFromAdmin = (id) => {
@@ -3835,6 +3862,7 @@ window.switchClassTab = (cls, btn) => {
   if (btn) btn.classList.add('active');
   updateStats();
   renderTodayList();
+  updateStuCount();
   const input = document.getElementById('manual-input');
   if (input && input.value.trim()) onManualSearch();
 };
