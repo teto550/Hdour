@@ -227,6 +227,9 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 /* MONITOR (الخدام) */
 .page-title-box{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);text-align:center;font-size:22px;font-weight:700;padding:10px;margin-bottom:12px}
 #main-tabs.home-only .tab[data-tab]{display:none !important}
+#main-tabs{display:none !important}
+.admin-card{flex-direction:column;gap:6px}
+.ac-emoji{font-size:44px;line-height:1}
 /* ADMIN HOME */
 .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 18px}
 .admin-card{position:relative;display:flex;align-items:center;justify-content:center;min-height:150px;padding:16px 10px;border:1px solid var(--border);border-radius:24px;background:var(--surface);color:var(--text);font-family:'Cairo',sans-serif;font-size:26px;font-weight:600;cursor:pointer;text-align:center}
@@ -302,6 +305,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="top-bar-sub" id="today-date-top"></div>
     </div>
+    <div style="display:flex;align-items:center;gap:8px">
+    <button class="icon-btn" id="top-home-btn" onclick="closeSettingsMenu();goHome()" title="الرئيسية">🏠</button>
     <div class="settings-menu-wrap">
       <button class="icon-btn" onclick="toggleSettingsMenu(event)">⚙️</button>
       <div id="settings-dropdown" class="settings-dropdown" style="display:none">
@@ -312,6 +317,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="settings-dropdown-item danger" onclick="closeSettingsMenu();doLogout()">🚪 تسجيل الخروج</button>
       </div>
     </div>
+    </div>
   </div>
 
   <div class="app-content">
@@ -319,8 +325,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div class="class-tabs" id="global-class-tabs"></div>
     <div id="tab-admin-home" style="display:none">
       <div class="admin-grid">
-        <button class="admin-card" onclick="showAdminClasses()">الفصول</button>
-        <button class="admin-card" onclick="switchTab('monitor')">الخدام</button>
+        <button class="admin-card" onclick="showAdminClasses()"><span class="ac-emoji">🏫</span>الفصول</button>
+        <button class="admin-card" onclick="switchTab('monitor')"><span class="ac-emoji">👥</span>الخدام</button>
       </div>
     </div>
     <div id="tab-admin-classes" style="display:none">
@@ -334,12 +340,12 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <div class="page-title-box" id="class-home-title"></div>
       </div>
       <div class="admin-grid">
-        <button class="admin-card" onclick="switchTab('attendance')">الحضور</button>
-        <button class="admin-card" onclick="switchTab('students')">المخدومين</button>
-        <button class="admin-card" onclick="switchTab('filters')">الافتقاد</button>
-        <button class="admin-card" onclick="switchTab('messages')">الرسائل</button>
-        <button class="admin-card" id="home-card-monitor" style="display:none" onclick="switchTab('monitor')">متابعة</button>
-        <button class="admin-card" id="home-card-classservants" style="display:none" onclick="switchTab('classservants')">خدام الفصل</button>
+        <button class="admin-card" onclick="switchTab('attendance')"><span class="ac-emoji">✅</span>الحضور</button>
+        <button class="admin-card" onclick="switchTab('students')"><span class="ac-emoji">🧒</span>المخدومين</button>
+        <button class="admin-card" onclick="switchTab('filters')"><span class="ac-emoji">📞</span>الافتقاد</button>
+        <button class="admin-card" onclick="switchTab('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
+        <button class="admin-card" id="home-card-monitor" style="display:none" onclick="switchTab('monitor')"><span class="ac-emoji">📊</span>متابعة</button>
+        <button class="admin-card" id="home-card-classservants" style="display:none" onclick="switchTab('classservants')"><span class="ac-emoji">🧑‍🏫</span>خدام الفصل</button>
       </div>
       <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
     </div>
@@ -671,11 +677,11 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
     <!-- MONITOR TAB (ADMIN ONLY) -->
     <div id="tab-monitor" style="display:none">
-      <div class="page-title-box">الخدام</div>
+      <div class="page-title-box">👥 الخدام</div>
       <div class="tabs" id="monitor-class-chips" style="overflow-x:auto;margin-bottom:12px"></div>
       <div class="tabs" id="monitor-subtabs" style="margin-bottom:12px">
-        <button class="tab active" id="monitor-subtab-btn-attendance" onclick="switchMonitorSubTab('attendance')">الحضور</button>
-        <button class="tab" id="monitor-subtab-btn-servants" onclick="switchMonitorSubTab('servants')">الخدام</button>
+        <button class="tab active" id="monitor-subtab-btn-attendance" onclick="switchMonitorSubTab('attendance')">✅ الحضور</button>
+        <button class="tab" id="monitor-subtab-btn-servants" onclick="switchMonitorSubTab('servants')">👥 الخدام</button>
       </div>
       <div id="monitor-attendance-activities">
         <div class="tabs" id="serv-att-activity-chips" style="margin-bottom:12px">
@@ -3737,7 +3743,7 @@ function renderAdminClassCards() {
       <span class="admin-card-tools">
         <span onclick="event.stopPropagation();editClassPrompt('${c.id}')" title="تعديل">✏️</span>
         <span onclick="event.stopPropagation();deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">🗑️</span>
-      </span>${esc(c.name)}
+      </span><span class="ac-emoji">${esc(c.emoji||'📘')}</span>${esc(c.name)}
     </button>`).join('') + `<button class="admin-card add" onclick="addClassPrompt()">➕ إضافة فصل</button>`;
 }
 window.showAdminClasses = () => {
@@ -3777,7 +3783,7 @@ window.showClassHome = () => {
   hideAllScreens();
   const hdr = document.getElementById('class-home-header');
   if (hdr) hdr.style.display = currentRole === 'admin' ? 'block' : 'none';
-  const t = document.getElementById('class-home-title'); if (t) t.textContent = classLabel(currentClassTab);
+  const t = document.getElementById('class-home-title'); if (t) t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab);
   document.getElementById('tab-home').style.display = 'block';
   applyMonitorVisibility();
 };
@@ -3799,11 +3805,11 @@ window.switchTab = async (tab) => {
     const single = currentRole !== 'admin' && allowedCls.length === 1;
     const showClassBar = tab !== 'monitor' && tab !== 'classservants' && currentRole !== 'admin' && !single;
     document.getElementById('global-class-tabs').style.display = showClassBar ? '' : 'none';
-    const titles = { attendance:'✅ الحضور', students:'👥 المخدومين', filters:'📞 الافتقاد', messages:'📨 الرسائل' };
+    const titles = { attendance:'✅ الحضور', students:'🧒 المخدومين', filters:'📞 الافتقاد', messages:'📨 الرسائل' };
     const tb = document.getElementById('section-title');
     if (tb) {
       if (titles[tab]) {
-        tb.textContent = (showClassBar ? '' : classLabel(currentClassTab) + ' — ') + titles[tab];
+        tb.textContent = (showClassBar ? '' : classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab) + ' — ') + titles[tab];
         tb.style.display = 'block';
       } else tb.style.display = 'none';
     }
