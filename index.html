@@ -188,6 +188,106 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .prof-key{font-size:11px;color:var(--text-dim);margin-bottom:2px;}
 .prof-val{font-size:14px;font-weight:600;}
 
+/* DASHBOARD الخدام */
+.dash-opt{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;margin-bottom:8px;cursor:pointer;}
+.dash-opt input{width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;}
+.dash-opt-txt{flex:1;min-width:0;}
+.dash-opt-name{font-size:14px;font-weight:700;}
+.dash-opt-desc{font-size:11px;color:var(--text-dim);margin-top:2px;}
+.dash-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;}
+.dash-card-title{font-size:15px;font-weight:800;margin-bottom:14px;display:flex;align-items:center;gap:7px;}
+.dash-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.dash-kpi{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 10px;text-align:center;}
+.dash-kpi-num{font-size:26px;font-weight:900;line-height:1.1;}
+.dash-kpi-lbl{font-size:11px;color:var(--text-dim);margin-top:4px;}
+.dash-bar-row{margin-bottom:12px;}
+.dash-bar-row:last-child{margin-bottom:0;}
+.dash-bar-head{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:5px;}
+.dash-rank{width:22px;height:22px;border-radius:7px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--text-dim);flex-shrink:0;}
+.dash-rank.top1{background:rgba(241,196,15,0.18);color:#f1c40f;}
+.dash-rank.top2{background:rgba(189,195,199,0.18);color:#bdc3c7;}
+.dash-rank.top3{background:rgba(230,126,34,0.18);color:#e67e22;}
+.dash-bar-name{flex:1;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dash-bar-val{font-weight:800;flex-shrink:0;}
+.dash-bar-track{height:8px;background:var(--surface2);border-radius:6px;overflow:hidden;}
+.dash-bar-fill{height:100%;border-radius:6px;}
+.dash-empty{color:var(--text-dim);font-size:12px;text-align:center;padding:10px 0;}
+.dash-li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.dash-li:last-child{border-bottom:none;}
+.dash-li-name{font-weight:700;flex:1;min-width:0;}
+.dash-li-val{font-size:12px;color:var(--text-dim);flex-shrink:0;}
+.dash-pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;flex-shrink:0;}
+.dash-pill.bad{background:rgba(231,76,60,0.12);color:var(--danger);}
+.dash-pill.ok{background:rgba(46,204,113,0.12);color:var(--success);}
+.dash-pill.warn{background:rgba(241,196,15,0.12);color:#f1c40f;}
+.dash-sub-name{font-size:14px;font-weight:800;margin:14px 0 6px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+.dash-sub-name:first-child{margin-top:0;}
+.dash-phone{font-size:12px;color:var(--text-dim);direction:ltr;}
+
+/* شاشة الخدام (أدمن) */
+.mon-hero{border:1px solid rgba(79,142,247,0.28);border-radius:20px;padding:16px;margin-bottom:14px;background:linear-gradient(135deg,rgba(79,142,247,0.20),rgba(124,92,191,0.20));}
+.mon-hero-top{display:flex;align-items:center;gap:12px;}
+.mon-hero-icon{width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;box-shadow:0 6px 18px rgba(79,142,247,0.35);}
+.mon-hero-txt{flex:1;min-width:0;}
+.mon-hero-title{font-size:22px;font-weight:900;line-height:1.2;}
+.mon-hero-sub{font-size:12px;color:var(--text-dim);margin-top:3px;line-height:1.4;}
+.mon-dash-btn{flex-shrink:0;background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.22);border-radius:12px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;font-weight:800;padding:9px 12px;cursor:pointer;}
+.mon-dash-btn:active{transform:scale(.96);}
+.mon-hero-stats{display:flex;gap:8px;margin-top:14px;}
+.mon-stat{flex:1;background:rgba(15,19,25,0.45);border:1px solid var(--border);border-radius:13px;padding:9px 6px;text-align:center;}
+.mon-stat b{display:block;font-size:22px;font-weight:900;line-height:1.1;}
+.mon-stat span{display:block;font-size:11px;color:var(--text-dim);margin-top:3px;}
+.mon-stat.ok b{color:var(--success);}
+.mon-stat.warn b{color:var(--warning);}
+.mon-stat.srv{display:none;}
+.mon-hero.srv-mode .mon-stat.att{display:none;}
+.mon-hero.srv-mode .mon-stat.srv{display:block;}
+#monitor-class-chips{background:transparent;border:none;padding:2px 0 4px;gap:8px;scrollbar-width:none;}
+#monitor-class-chips::-webkit-scrollbar{display:none;}
+#monitor-class-chips .tab{flex:0 0 auto;white-space:nowrap;padding:8px 16px;border-radius:999px;background:var(--surface);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-dim);}
+#monitor-class-chips .tab.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(79,142,247,0.35);}
+#monitor-subtabs{padding:5px;}
+#monitor-subtabs .tab{padding:12px 10px;font-size:14px;font-weight:800;border-radius:10px;}
+#serv-att-activity-chips{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:transparent;border:none;padding:0;}
+#serv-att-activity-chips .tab{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 8px;border-radius:14px;background:var(--surface);border:1px solid var(--border);font-size:14px;font-weight:700;color:var(--text-dim);}
+#serv-att-activity-chips .act-ic{font-size:20px;line-height:1;}
+#serv-att-activity-chips .tab[data-act="mass"]{--c:160,125,224;}
+#serv-att-activity-chips .tab[data-act="sunday_school"]{--c:79,142,247;}
+#serv-att-activity-chips .tab[data-act="meeting"]{--c:46,204,113;}
+#serv-att-activity-chips .tab[data-act="preparation"]{--c:243,156,18;}
+#serv-att-activity-chips .tab.active{background:rgba(var(--c),0.18);border-color:rgba(var(--c),0.75);color:#fff;box-shadow:0 0 0 1px rgba(var(--c),0.35) inset,0 4px 14px rgba(var(--c),0.25);}
+#tab-monitor .search-box input{padding:13px 14px;border-radius:14px;font-size:14px;}
+.mon-date-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.mon-date-lbl{font-size:13px;font-weight:800;flex-shrink:0;}
+.mon-date-row .field-input{margin-bottom:0;flex:1;padding:9px 12px;border-radius:12px;}
+.mon-summary{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:10px;}
+.mon-sum-row{display:flex;align-items:center;justify-content:space-between;font-size:13px;margin-bottom:8px;}
+.mon-sum-row b{font-size:17px;font-weight:900;color:var(--success);}
+.mon-sum-pct{font-weight:900;color:var(--success);}
+.mon-sum-track{height:8px;background:var(--surface2);border-radius:6px;overflow:hidden;}
+.mon-sum-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--success),#5be39a);}
+#tab-monitor .servant-item{padding:12px 14px;border-radius:14px;gap:12px;margin-bottom:8px;transition:background .2s,border-color .2s;}
+.mon-row{cursor:pointer;}
+.mon-row:active{transform:scale(.985);}
+.mon-row.present{background:rgba(46,204,113,0.09);border-color:rgba(46,204,113,0.45);}
+.mon-avatar{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;flex-shrink:0;}
+.mon-name{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:15px;font-weight:800;}
+.mon-badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;}
+.mon-stats{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.mon-stat-chip{font-size:11px;color:var(--text-dim);background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:3px 9px;white-space:nowrap;}
+.mon-stat-chip b{font-size:13px;font-weight:900;margin-right:3px;}
+.mon-stat-chip.has b{color:var(--success);}
+.mon-role{white-space:nowrap;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;}
+.mon-role.admin{background:rgba(241,196,15,0.15);color:#f1c40f;border:1px solid rgba(241,196,15,0.4);}
+.mon-role.sup{background:rgba(79,142,247,0.15);color:var(--accent);border:1px solid rgba(79,142,247,0.4);}
+#tab-monitor .serv-att-check{width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);}
+#tab-monitor .serv-att-check.checked{background:var(--success);border-color:var(--success);box-shadow:0 0 12px rgba(46,204,113,0.45);}
+#tab-monitor .stat-badge{border-radius:12px;padding:8px 10px;min-width:64px;}
+#tab-monitor .stat-badge .num{font-size:18px;}
+#tab-monitor .stat-badge .lbl{font-size:10px;}
+#tab-monitor .list-header .section-title{font-size:14px;font-weight:800;color:var(--text);letter-spacing:0;}
+#tab-monitor .list-header .field-input{margin-bottom:0;width:auto;padding:6px 10px;}
+
 #toast{position:fixed;top:calc(72px + env(safe-area-inset-top));left:50%;transform:translateX(-50%) translateY(-16px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 18px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.4);}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 #toast.success{border-color:rgba(46,204,113,0.4);color:var(--success);}
@@ -684,7 +784,22 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
     <!-- MONITOR TAB (ADMIN ONLY) -->
     <div id="tab-monitor" style="display:none">
-      <div class="page-title-box">👥 الخدام</div>
+      <div class="mon-hero" id="mon-hero">
+        <div class="mon-hero-top">
+          <div class="mon-hero-icon">👥</div>
+          <div class="mon-hero-txt">
+            <div class="mon-hero-title">الخدام</div>
+            <div class="mon-hero-sub" id="mon-hero-sub">متابعة حضور الخدام</div>
+          </div>
+          <button class="mon-dash-btn" onclick="openDashModal()">📊 الداشبورد</button>
+        </div>
+        <div class="mon-hero-stats">
+          <div class="mon-stat"><b id="mon-stat-total">0</b><span>خادم</span></div>
+          <div class="mon-stat ok att"><b id="mon-stat-present">–</b><span>حضروا</span></div>
+          <div class="mon-stat warn att"><b id="mon-stat-absent">–</b><span>لسه</span></div>
+          <div class="mon-stat warn srv"><b id="mon-stat-pending">0</b><span>طلبات انضمام</span></div>
+        </div>
+      </div>
       <div class="tabs" id="monitor-class-chips" style="overflow-x:auto;margin-bottom:12px"></div>
       <div class="tabs" id="monitor-subtabs" style="margin-bottom:12px">
         <button class="tab active" id="monitor-subtab-btn-attendance" onclick="switchMonitorSubTab('attendance')">✅ الحضور</button>
@@ -692,19 +807,19 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div id="monitor-attendance-activities">
         <div class="tabs" id="serv-att-activity-chips" style="margin-bottom:12px">
-          <button class="tab active" onclick="setServAttActivity('mass',this)">⛪ القداس</button>
-          <button class="tab" onclick="setServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
-          <button class="tab" onclick="setServAttActivity('meeting',this)">🤝 اجتماع الخدام</button>
-          <button class="tab" onclick="setServAttActivity('preparation',this)">📝 التحضير</button>
+          <button class="tab active" data-act="mass" onclick="setServAttActivity('mass',this)"><span class="act-ic">⛪</span>القداس</button>
+          <button class="tab" data-act="sunday_school" onclick="setServAttActivity('sunday_school',this)"><span class="act-ic">📖</span>مدارس الأحد</button>
+          <button class="tab" data-act="meeting" onclick="setServAttActivity('meeting',this)"><span class="act-ic">🤝</span>اجتماع الخدام</button>
+          <button class="tab" data-act="preparation" onclick="setServAttActivity('preparation',this)"><span class="act-ic">📝</span>التحضير</button>
         </div>
       </div>
       <div class="search-box" style="margin:0 0 10px">
-        <input type="text" id="monitor-search-input" placeholder="اكتب اسم الخادم ...." oninput="onMonitorSearch()" autocomplete="off">
+        <input type="text" id="monitor-search-input" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="onMonitorSearch()" autocomplete="off">
       </div>
 
       <!-- حضور الخدام في الأنشطة -->
       <div id="monitor-subtab-attendance">
-        <input type="date" id="serv-att-date" class="field-input" onchange="renderServAttList()">
+        <div class="mon-date-row"><span class="mon-date-lbl">📅 التاريخ</span><input type="date" id="serv-att-date" class="field-input" onchange="renderServAttList()"></div>
         <div id="serv-att-list"></div>
       </div>
 
@@ -717,7 +832,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <div id="pending-list" style="margin-bottom:22px"></div>
         </div>
 
-        <span id="servants-count" style="display:none">0</span>
+        <div class="list-header"><span class="section-title">👥 الخدام المعتمدين (<span id="servants-count">0</span>)</span></div>
         <div id="servants-list" style="margin-bottom:22px"></div>
 
         <div class="list-header">
@@ -967,6 +1082,40 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 </div>
 
 <!-- SERVANT PROFILE MODAL -->
+
+<!-- DASHBOARD الخدام: SETTINGS MODAL -->
+<div id="dash-modal" class="modal-overlay" style="display:none;z-index:340" onclick="closeDashModalOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:18px;font-weight:900">📊 داشبورد الخدام</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">اختار الأقسام اللي عايزها تظهر في الداشبورد</div>
+      </div>
+      <button class="modal-close" onclick="closeDashModal()">✕</button>
+    </div>
+    <div style="padding:16px">
+      <div id="dash-options" style="max-height:46vh;overflow-y:auto;margin-bottom:18px"></div>
+      <div style="display:flex;gap:10px">
+        <button onclick="closeDashModal()" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:14px;font-weight:700;padding:12px;cursor:pointer">إلغاء</button>
+        <button class="btn-primary" onclick="openDashboard()" style="flex:2">📊 اعرض الداشبورد</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DASHBOARD الخدام: FULL VIEW -->
+<div id="dash-view" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:320;overflow-y:auto">
+  <div style="position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border);padding:calc(14px + env(safe-area-inset-top)) 16px 14px;display:flex;align-items:center;gap:10px;z-index:5">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:17px;font-weight:900">📊 داشبورد الخدام</div>
+      <div id="dash-subtitle" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
+    </div>
+    <button onclick="openDashModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:8px 10px;cursor:pointer;flex-shrink:0">⚙️</button>
+    <button onclick="printDashboard()" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);border-radius:8px;color:var(--success);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:8px 10px;cursor:pointer;flex-shrink:0">🖨 PDF</button>
+    <button onclick="closeDashboard()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text-dim);font-size:18px;width:36px;height:36px;cursor:pointer;flex-shrink:0">✕</button>
+  </div>
+  <div id="dash-body" style="padding:16px;max-width:560px;margin:0 auto"></div>
+</div>
 
 <div id="servant-profile-modal" class="modal-overlay" style="display:none" onclick="closeServantProfileOutside(event)">
   <div class="modal-box">
@@ -3942,6 +4091,8 @@ window.switchMonitorSubTab = (which) => {
   document.getElementById('monitor-subtab-attendance').style.display = which === 'attendance' ? 'block' : 'none';
   document.getElementById('monitor-subtab-servants').style.display   = which === 'servants'   ? 'block' : 'none';
   document.getElementById('monitor-attendance-activities').style.display = which === 'attendance' ? 'block' : 'none';
+  const hero = document.getElementById('mon-hero'); if (hero) hero.classList.toggle('srv-mode', which === 'servants');
+  const hsub = document.getElementById('mon-hero-sub'); if (hsub && which === 'servants') hsub.textContent = 'إدارة الخدام وطلبات الانضمام';
   if (which === 'attendance') renderServAttList(); else renderServantsList();
 };
 window.setServAttActivity = (activity, btn) => {
@@ -3952,13 +4103,39 @@ window.setServAttActivity = (activity, btn) => {
 };
 function servAttDocId(date, activity, servantId) { return `${date}_${activity}_${servantId}`; }
 // بيجيب مين متسجل حضوره للتاريخ والنشاط المختارين بس (قراءة صغيرة ومحدودة، مش كل السجل)
+// ===== مساعدات شاشة الخدام (أفاتار / شارات الفصول / الدور / ملخص الهيرو) =====
+function servantAvatarHTML(s) {
+  const first = normalizeAssignedClasses(s.assignedClass)[0];
+  const p = first ? classPalette(first) : { bg:'rgba(79,142,247,0.15)', text:'#4f8ef7' };
+  return `<div class="mon-avatar" style="background:${p.bg};color:${p.text}">${(s.name||'؟').trim()[0]||'؟'}</div>`;
+}
+function servantClassBadges(s) {
+  const ids = normalizeAssignedClasses(s.assignedClass);
+  if (!ids.length) return `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
+  return ids.map(cid => classBadgeHTML(cid)).join('');
+}
+function servantRoleChip(s) {
+  if (s.role === 'admin') return `<span class="mon-role admin">👑 أدمن</span>`;
+  if (s.role === 'supervisor') return `<span class="mon-role sup">🗝️ مسؤول فصل</span>`;
+  return '';
+}
+function updateMonHero(date, total, present) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('mon-stat-total', total);
+  set('mon-stat-present', present);
+  set('mon-stat-absent', Math.max(0, total - present));
+  let d = '';
+  try { d = new Date(date + 'T00:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' }); } catch (e) {}
+  set('mon-hero-sub', `${SERV_ATT_EMOJI[servAttActivity]} ${SERV_ATT_LABELS[servAttActivity]}${d ? ' · ' + d : ''}`);
+}
 async function renderServAttList() {
   const cont = document.getElementById('serv-att-list');
   if (!cont) return;
   const date = document.getElementById('serv-att-date')?.value || toLocalDateKey(new Date());
   if (!servantsLoadedFlag) await loadServantsOnce();
   let servants = monitorFilterServants(cachedServants.filter(s => s.status === 'approved')).sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
-  if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خدام متسجلين لسه</div>`; return; }
+  const classBase = servants;
+  if (!servants.length) { updateMonHero(date, 0, 0); cont.innerHTML = `<div class="empty-state">مفيش خدام متسجلين لسه</div>`; return; }
   const searchQ = normalizeArabic(document.getElementById('monitor-search-input')?.value || '');
   if (searchQ) servants = servants.filter(s => normalizeArabic(s.name||'').includes(searchQ));
   if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خادم بالاسم ده</div>`; return; }
@@ -3966,14 +4143,25 @@ async function renderServAttList() {
   try {
     const snap = await countedGetDocs(query(collection(db,'servantAttendance'), where('date','==',date), where('activity','==',servAttActivity)), `servantAttendance (${SERV_ATT_LABELS[servAttActivity]})`);
     const presentIds = new Set(snap.docs.map(d => d.data().servantId));
-    cont.innerHTML = servants.map(s => `
-      <div class="servant-item" onclick="toggleServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')" style="cursor:pointer">
+    const presentTotal = classBase.filter(s => presentIds.has(s.id)).length;
+    updateMonHero(date, classBase.length, presentTotal);
+    const pct = classBase.length ? Math.round(presentTotal / classBase.length * 100) : 0;
+    const summary = `<div class="mon-summary">
+      <div class="mon-sum-row"><span><b>${presentTotal}</b> من ${classBase.length} حضروا ${SERV_ATT_EMOJI[servAttActivity]}</span><span class="mon-sum-pct">${pct}%</span></div>
+      <div class="mon-sum-track"><div class="mon-sum-fill" style="width:${pct}%"></div></div>
+    </div>`;
+    cont.innerHTML = summary + servants.map(s => {
+      const present = presentIds.has(s.id);
+      return `
+      <div class="servant-item mon-row ${present ? 'present' : ''}" onclick="toggleServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')">
+        ${servantAvatarHTML(s)}
         <div class="s-info">
-          <div class="s-name">${s.name||'—'}</div>
-          <div class="s-sub">${s.assignedClass ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
+          <div class="mon-name">${s.name||'—'}${servantRoleChip(s)}</div>
+          <div class="mon-badges">${servantClassBadges(s)}</div>
         </div>
-        <div class="serv-att-check ${presentIds.has(s.id)?'checked':''}"></div>
-      </div>`).join('');
+        <div class="serv-att-check ${present ? 'checked' : ''}"></div>
+      </div>`;
+    }).join('');
   } catch(e) {
     console.error(e);
     cont.innerHTML = `<div class="empty-state">تعذّر تحميل الحضور</div>`;
@@ -4080,6 +4268,7 @@ async function loadServantsOnce(force) {
 function renderPendingList(list) {
   const ps = document.getElementById('pending-section'); if (ps) ps.style.display = list.length ? '' : 'none';
   document.getElementById('pending-count').textContent = list.length;
+  { const mp = document.getElementById('mon-stat-pending'); if (mp) mp.textContent = list.length; }
   const cont = document.getElementById('pending-list');
   if (!list.length) { cont.innerHTML = `<div class="empty-state">لا يوجد طلبات انضمام جديدة</div>`; return; }
   cont.innerHTML = list.map(s => `
@@ -4099,6 +4288,7 @@ function renderPendingList(list) {
 function renderServantsList(list) {
   const base = monitorFilterServants(list || cachedServants.filter(x => x.status === 'approved'));
   document.getElementById('servants-count').textContent = base.length;
+  { const t = document.getElementById('mon-stat-total'); if (t) t.textContent = base.length; }
   const q = normalizeArabic(document.getElementById('monitor-search-input')?.value || '');
   const filtered = q ? base.filter(s => normalizeArabic(s.name||'').includes(q)) : base;
   const cont = document.getElementById('servants-list');
@@ -4106,13 +4296,15 @@ function renderServantsList(list) {
   cont.innerHTML = filtered
     .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
     .map(s => `
-      <div class="servant-item" onclick="openServantProfile('${s.id}')" style="cursor:pointer">
+      <div class="servant-item mon-row" onclick="openServantProfile('${s.id}')">
+        ${servantAvatarHTML(s)}
         <div class="s-info">
-          <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':s.role==='supervisor'?' 🗝️':''}</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
-          <div class="stat-badge"><div class="num ${s.sscCount?'has':''}">${s.sscCount||0}</div><div class="lbl">📖 مدارس أحد</div></div>
-          <div class="stat-badge"><div class="num ${s.meetingCount?'has':''}">${s.meetingCount||0}</div><div class="lbl">🤝 اجتماع خدام</div></div>
+          <div class="mon-name">${s.name||'—'}${servantRoleChip(s)}</div>
+          <div class="mon-badges">${servantClassBadges(s)}</div>
+          <div class="mon-stats">
+            <span class="mon-stat-chip ${s.sscCount?'has':''}">📖 مدارس أحد <b>${s.sscCount||0}</b></span>
+            <span class="mon-stat-chip ${s.meetingCount?'has':''}">🤝 اجتماع <b>${s.meetingCount||0}</b></span>
+          </div>
         </div>
       </div>`).join('');
 }
@@ -4157,6 +4349,207 @@ function renderServantProfileActions(s) {
 }
 window.closeServantProfile = () => { document.getElementById('servant-profile-modal').style.display = 'none'; servantProfileId = ''; };
 window.closeServantProfileOutside = (e) => { if (e.target.id === 'servant-profile-modal') closeServantProfile(); };
+// ===== داشبورد الخدام (تحت عنوان "الخدام" عند الأدمن) =====
+// بيستخدم البيانات المحمّلة أصلاً (cachedServants + allStudents + allClasses) وعدّادات الحضور المخزنة على كل خادم — من غير أي قراءة إضافية من فايرستور
+const dEsc = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+const DASH_SECTIONS = [
+  { id:'kpi',     name:'📋 ملخص عام',                  desc:'عدد الخدام والمخدومين والفصول ومتوسط المخدومين للخادم' },
+  { id:'ssc',     name:'📖 الأكثر حضورًا لمدارس الأحد',  desc:'ترتيب الخدام حسب عدد مرات حضور مدارس الأحد' },
+  { id:'meeting', name:'🤝 الأكثر حضورًا لاجتماع الخدام', desc:'ترتيب الخدام حسب عدد مرات حضور الاجتماع' },
+  { id:'prep',    name:'📝 الأكثر حضورًا للتحضير',       desc:'ترتيب الخدام حسب عدد مرات حضور التحضير' },
+  { id:'total',   name:'🏆 إجمالي الحضور',              desc:'مجموع حضور كل خادم (مدارس أحد + اجتماع + تحضير)' },
+  { id:'classes', name:'🏫 توزيع الخدام على الفصول',     desc:'عدد الخدام والمخدومين في كل فصل ونسبة المخدومين لكل خادم' },
+  { id:'noAtt',   name:'⏳ خدام مسجلوش حضور',           desc:'خدام معتمدين ملهمش أي حضور متسجل لسه' },
+  { id:'noClass', name:'⚠️ مخدومين بدون فصل',           desc:'مخدومين لسه متقسموش على فصل' },
+  { id:'list',    name:'📄 قائمة الخدام بالتليفونات',    desc:'كل فصل وتحته خدامه وأرقام تليفوناتهم' }
+];
+const DASH_DEFAULT = ['kpi','ssc','meeting','prep','classes','noAtt'];
+
+function getDashPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('dashSections') || 'null');
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch (e) {}
+  return DASH_DEFAULT.slice();
+}
+function saveDashPrefs(ids) { try { localStorage.setItem('dashSections', JSON.stringify(ids)); } catch (e) {} }
+
+window.openDashModal = () => {
+  const active = getDashPrefs();
+  document.getElementById('dash-options').innerHTML = DASH_SECTIONS.map(s => `
+    <label class="dash-opt">
+      <input type="checkbox" value="${s.id}" ${active.includes(s.id) ? 'checked' : ''}>
+      <span class="dash-opt-txt">
+        <span class="dash-opt-name">${s.name}</span>
+        <div class="dash-opt-desc">${s.desc}</div>
+      </span>
+    </label>`).join('');
+  document.getElementById('dash-modal').style.display = 'flex';
+};
+window.closeDashModal = () => { document.getElementById('dash-modal').style.display = 'none'; };
+window.closeDashModalOutside = (e) => { if (e.target.id === 'dash-modal') closeDashModal(); };
+
+function dashApprovedServants() { return cachedServants.filter(x => x.status === 'approved'); }
+function dashServantStats(sv) {
+  const ssc = sv.sscCount || 0, meeting = sv.meetingCount || 0, prep = sv.prepCount || 0;
+  return { ssc, meeting, prep, total: ssc + meeting + prep };
+}
+function dashBarChart(rows, color, suffix) {
+  if (!rows.length) return `<div class="dash-empty">مفيش بيانات</div>`;
+  const max = Math.max(...rows.map(r => r.value), 1);
+  return rows.map((r, i) => {
+    const rank = i < 3 ? `top${i + 1}` : '';
+    const pct = Math.round(r.value / max * 100);
+    return `<div class="dash-bar-row">
+      <div class="dash-bar-head">
+        <span class="dash-rank ${rank}">${i + 1}</span>
+        <span class="dash-bar-name">${dEsc(r.name)}</span>
+        <span class="dash-bar-val" style="color:${color}">${r.value}${suffix || ''}</span>
+      </div>
+      <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${Math.max(pct, 3)}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+}
+function dashCard(title, inner) { return `<div class="dash-card"><div class="dash-card-title">${title}</div>${inner}</div>`; }
+function dashServantPhone(sv) { return sv.phone ? dEsc(sv.phone) : 'لا يوجد رقم هاتف'; }
+
+function buildDashboardHTML() {
+  const active = getDashPrefs();
+  const servants = dashApprovedServants();
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'ar');
+  const noClassStudents = allStudents.filter(s => !s.classSection).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+  const rowsBy = key => servants.map(sv => ({ name: sv.name || '—', value: dashServantStats(sv)[key] })).sort((a, b) => b.value - a.value);
+  let out = '';
+
+  if (active.includes('kpi')) {
+    const avg = servants.length ? (allStudents.length / servants.length).toFixed(1) : '0';
+    const noAttCount = servants.filter(sv => dashServantStats(sv).total === 0).length;
+    out += dashCard('📋 ملخص عام', `<div class="dash-kpis">
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--accent)">${servants.length}</div><div class="dash-kpi-lbl">عدد الخدام</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--accent2)">${allStudents.length}</div><div class="dash-kpi-lbl">عدد المخدومين</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--success)">${allClasses.length}</div><div class="dash-kpi-lbl">عدد الفصول</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--text)">${avg}</div><div class="dash-kpi-lbl">متوسط المخدومين للخادم</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--warning)">${noAttCount}</div><div class="dash-kpi-lbl">خدام مسجلوش حضور</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--danger)">${noClassStudents.length}</div><div class="dash-kpi-lbl">مخدومين بدون فصل</div></div>
+    </div>`);
+  }
+  if (active.includes('ssc'))     out += dashCard('📖 الأكثر حضورًا لمدارس الأحد', dashBarChart(rowsBy('ssc'), 'var(--success)'));
+  if (active.includes('meeting')) out += dashCard('🤝 الأكثر حضورًا لاجتماع الخدام', dashBarChart(rowsBy('meeting'), 'var(--accent)'));
+  if (active.includes('prep'))    out += dashCard('📝 الأكثر حضورًا للتحضير', dashBarChart(rowsBy('prep'), '#f1c40f'));
+  if (active.includes('total'))   out += dashCard('🏆 إجمالي الحضور', dashBarChart(rowsBy('total'), 'var(--accent2)'));
+
+  if (active.includes('classes')) {
+    const inner = allClasses.length ? allClasses.map(c => {
+      const sv = servants.filter(x => normalizeAssignedClasses(x.assignedClass).includes(c.id));
+      const st = allStudents.filter(x => x.classSection === c.id);
+      const ratio = sv.length ? (st.length / sv.length).toFixed(1) : null;
+      return `<div class="dash-li">
+        <span class="dash-li-name">${dEsc(c.emoji || '📘')} ${dEsc(c.name)}</span>
+        <span class="dash-li-val">${sv.length} خادم · ${st.length} مخدوم</span>
+        <span class="dash-pill ${ratio === null ? 'bad' : 'ok'}">${ratio === null ? 'مفيش خدام' : ratio + ' لكل خادم'}</span>
+      </div>`;
+    }).join('') : `<div class="dash-empty">مفيش فصول</div>`;
+    const allCls = servants.filter(x => !normalizeAssignedClasses(x.assignedClass).length).length;
+    out += dashCard('🏫 توزيع الخدام على الفصول', inner + (allCls ? `<div class="dash-empty" style="margin-top:6px">🔓 ${allCls} خادم على كل الفصول (مش محسوبين فوق)</div>` : ''));
+  }
+
+  if (active.includes('noAtt')) {
+    const rows = servants.filter(sv => dashServantStats(sv).total === 0).sort(byName);
+    const inner = rows.length
+      ? rows.map(sv => `<div class="dash-li"><span class="dash-li-name">${dEsc(sv.name || '—')}</span><span class="dash-pill bad">مفيش حضور</span></div>`).join('')
+      : `<div class="dash-empty">تمام ✅ كل الخدام ليهم حضور متسجل</div>`;
+    out += dashCard('⏳ خدام مسجلوش حضور', inner);
+  }
+
+  if (active.includes('noClass')) {
+    const inner = noClassStudents.length
+      ? noClassStudents.map(s => `<div class="dash-li"><span class="dash-li-name">${dEsc(s.name)}</span><span class="dash-phone">${(s.phones || []).filter(Boolean).map(dEsc).join(' — ') || 'لا يوجد رقم هاتف'}</span></div>`).join('')
+      : `<div class="dash-empty">تمام ✅ كل المخدومين ليهم فصل</div>`;
+    out += dashCard('⚠️ مخدومين بدون فصل', inner);
+  }
+
+  if (active.includes('list')) {
+    const groups = allClasses.map(c => ({ title: `${dEsc(c.emoji || '📘')} ${dEsc(c.name)}`, list: servants.filter(x => normalizeAssignedClasses(x.assignedClass).includes(c.id)).sort(byName) }));
+    const allClsList = servants.filter(x => !normalizeAssignedClasses(x.assignedClass).length).sort(byName);
+    if (allClsList.length) groups.push({ title: '🔓 كل الفصول', list: allClsList });
+    const inner = groups.map(g => {
+      const rows = g.list.length
+        ? g.list.map(sv => `<div class="dash-li"><span class="dash-li-name">${dEsc(sv.name || '—')}</span><span class="dash-phone">${dashServantPhone(sv)}</span></div>`).join('')
+        : `<div class="dash-empty">مفيش خدام في الفصل ده</div>`;
+      return `<div class="dash-sub-name">${g.title} <span style="font-size:11px;color:var(--text-dim);font-weight:700">(${g.list.length})</span></div>${rows}`;
+    }).join('');
+    out += dashCard('📄 قائمة الخدام بالتليفونات', inner || `<div class="dash-empty">مفيش خدام</div>`);
+  }
+
+  return out || `<div class="dash-empty">مختارتش أي قسم — دوس ⚙️ واختار الأقسام</div>`;
+}
+
+window.openDashboard = async () => {
+  const boxes = document.querySelectorAll('#dash-options input[type=checkbox]');
+  if (boxes.length) saveDashPrefs(Array.from(boxes).filter(b => b.checked).map(b => b.value));
+  closeDashModal();
+  try { await ensureStudents(); if (!servantsLoadedFlag) await loadServantsOnce(); } catch (e) { console.error(e); }
+  const servants = dashApprovedServants();
+  if (!servants.length) { showToast('مفيش خدام معتمدين لسه', 'info'); return; }
+  document.getElementById('dash-subtitle').textContent = `${servants.length} خادم · ${allStudents.length} مخدوم · ${allClasses.length} فصل`;
+  document.getElementById('dash-body').innerHTML = buildDashboardHTML();
+  document.getElementById('dash-view').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+};
+window.closeDashboard = () => {
+  document.getElementById('dash-view').style.display = 'none';
+  document.body.style.overflow = '';
+};
+
+// نسخة فاتحة من الداشبورد للطباعة / الحفظ كـ PDF
+function buildDashboardPrintDocument(bodyHtml) {
+  const servants = dashApprovedServants();
+  return `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+<title>داشبورد الخدام</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root { --surface2:#f4f6fa; --border:#e3e7ef; --text-dim:#6b7385; --accent:#4f8ef7; --accent2:#7c5cbf; --success:#27ae60; --danger:#e74c3c; --warning:#c49b06; --radius:12px; --radius-sm:8px; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Cairo',sans-serif; color:#1a1f2e; padding:20px; max-width:720px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:900; }
+  .sub { font-size:12px; color:var(--text-dim); margin:4px 0 16px; }
+  .dash-card { border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:14px; page-break-inside:avoid; }
+  .dash-card-title { font-size:15px; font-weight:800; margin-bottom:14px; }
+  .dash-kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .dash-kpi { background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 8px; text-align:center; }
+  .dash-kpi-num { font-size:22px; font-weight:900; }
+  .dash-kpi-lbl { font-size:10px; color:var(--text-dim); margin-top:4px; }
+  .dash-bar-row { margin-bottom:11px; }
+  .dash-bar-head { display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:4px; }
+  .dash-rank { width:20px; height:20px; border-radius:6px; background:var(--surface2); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; color:var(--text-dim); }
+  .dash-rank.top1 { background:#fdf3cf; color:#c49b06; } .dash-rank.top2 { background:#eef1f2; color:#8d9698; } .dash-rank.top3 { background:#fbe7d6; color:#c4600f; }
+  .dash-bar-name { flex:1; font-weight:700; } .dash-bar-val { font-weight:800; }
+  .dash-bar-track { height:7px; background:var(--surface2); border-radius:6px; overflow:hidden; } .dash-bar-fill { height:100%; border-radius:6px; }
+  .dash-li { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; border-bottom:1px solid #f0f0f0; font-size:12px; }
+  .dash-li:last-child { border-bottom:none; } .dash-li-name { font-weight:700; flex:1; } .dash-li-val { font-size:11px; color:var(--text-dim); }
+  .dash-phone { font-size:11px; color:#555; direction:ltr; }
+  .dash-pill { font-size:10px; font-weight:700; padding:3px 8px; border-radius:20px; }
+  .dash-pill.bad { background:#fdeceb; color:var(--danger); } .dash-pill.ok { background:#eafaf1; color:#27ae60; } .dash-pill.warn { background:#fef9e7; color:#c49b06; }
+  .dash-sub-name { font-size:13px; font-weight:800; margin:12px 0 5px; padding-bottom:4px; border-bottom:1px solid var(--border); }
+  .dash-empty { color:#999; font-size:11px; text-align:center; padding:8px 0; }
+  @media print { body { padding:0; } }
+</style></head>
+<body>
+  <h1>📊 داشبورد الخدام</h1>
+  <div class="sub">${servants.length} خادم · ${allStudents.length} مخدوم · ${allClasses.length} فصل · ${new Date().toLocaleDateString('ar-EG', { day:'numeric', month:'long', year:'numeric' })}</div>
+  ${bodyHtml}
+</body></html>`;
+}
+window.printDashboard = () => {
+  const win = window.open('', '_blank');
+  if (!win) { showToast('امنع حظر النوافذ المنبثقة للموقع ده من إعدادات المتصفح', 'error'); return; }
+  win.document.open();
+  win.document.write(buildDashboardPrintDocument(buildDashboardHTML()));
+  win.document.close();
+  setTimeout(() => { try { win.focus(); win.print(); } catch (e) {} }, 500);
+};
+
 
 window.renderActivityList = async function() {
   const cont = document.getElementById('activity-list');
