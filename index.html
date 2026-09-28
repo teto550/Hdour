@@ -1318,7 +1318,7 @@ let heartbeatTimer = null;
 
 function normalizeAssignedClasses(raw) {
   const items = Array.isArray(raw) ? raw : String(raw ?? '').split(',');
-  return [...new Set(items.map(v => String(v).trim().toLowerCase()).filter(Boolean))];
+  return [...new Set(items.map(v => String(v).trim()).filter(Boolean))];
 }
 function formatAssignedClasses(raw) {
   const list = normalizeAssignedClasses(raw);
@@ -3913,7 +3913,7 @@ const SERV_ATT_EMOJI = { mass:'⛪', sunday_school:'📖', meeting:'🤝', prepa
 let monitorClassFilter = 'all';
 function monitorFilterServants(list) {
   if (monitorClassFilter === 'all') return list;
-  const id = String(monitorClassFilter).toLowerCase();
+  const id = String(monitorClassFilter);
   return list.filter(s => normalizeAssignedClasses(s.assignedClass).includes(id));
 }
 function renderMonitorClassChips() {
