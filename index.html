@@ -223,6 +223,18 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .home-card{display:flex;flex-direction:column;align-items:center;gap:8px;padding:26px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;cursor:pointer}
 .home-card span{font-size:30px}
 .home-card:active{transform:scale(.97)}
+
+/* MONITOR (الخدام) */
+.page-title-box{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);text-align:center;font-size:22px;font-weight:700;padding:10px;margin-bottom:12px}
+#main-tabs.home-only .tab[data-tab]{display:none !important}
+/* ADMIN HOME */
+.admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 18px}
+.admin-card{position:relative;display:flex;align-items:center;justify-content:center;min-height:150px;padding:16px 10px;border:1px solid var(--border);border-radius:24px;background:var(--surface);color:var(--text);font-family:'Cairo',sans-serif;font-size:26px;font-weight:600;cursor:pointer;text-align:center}
+.admin-card:active{transform:scale(.97)}
+.admin-card.add{border-style:dashed;color:var(--text-dim)}
+.admin-card-tools{position:absolute;top:8px;left:8px;display:flex;gap:4px}
+.admin-card-tools span{font-size:14px;padding:4px 7px;border-radius:8px;background:var(--surface2);opacity:.8}
+.admin-back{background:none;border:none;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;cursor:pointer;padding:4px 2px;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -305,19 +317,34 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
   <div class="app-content">
     <!-- GLOBAL CLASS TABS — فوق كل التابات التانية، وبيتحكم في الفصل المعروض في كل الشاشة -->
     <div class="class-tabs" id="global-class-tabs"></div>
+    <div id="tab-admin-home" style="display:none">
+      <div class="admin-grid">
+        <button class="admin-card" onclick="showAdminClasses()">الفصول</button>
+        <button class="admin-card" onclick="switchTab('monitor')">الخدام</button>
+      </div>
+    </div>
+    <div id="tab-admin-classes" style="display:none">
+      <button class="admin-back" onclick="goHome()">→ رجوع</button>
+      <div class="admin-grid" id="admin-classes-grid"></div>
+      <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
+    </div>
     <div id="tab-home" style="display:none">
-      <div class="home-grid">
-        <button class="home-card" onclick="switchTab('attendance')"><span>✅</span>الحضور</button>
-        <button class="home-card" onclick="switchTab('students')"><span>👥</span>المخدومين</button>
-        <button class="home-card" onclick="switchTab('filters')"><span>📞</span>افتقاد</button>
-        <button class="home-card" onclick="switchTab('messages')"><span>📨</span>رسائل</button>
-        <button class="home-card" id="home-card-monitor" style="display:none" onclick="switchTab('monitor')"><span>🛡️</span>متابعة</button>
-        <button class="home-card" id="home-card-classservants" style="display:none" onclick="switchTab('classservants')"><span>👥</span>خدام الفصل</button>
+      <div id="class-home-header" style="display:none">
+        <button class="admin-back" onclick="showAdminClasses()">→ رجوع</button>
+        <div class="page-title-box" id="class-home-title"></div>
+      </div>
+      <div class="admin-grid">
+        <button class="admin-card" onclick="switchTab('attendance')">الحضور</button>
+        <button class="admin-card" onclick="switchTab('students')">المخدومين</button>
+        <button class="admin-card" onclick="switchTab('filters')">الافتقاد</button>
+        <button class="admin-card" onclick="switchTab('messages')">الرسائل</button>
+        <button class="admin-card" id="home-card-monitor" style="display:none" onclick="switchTab('monitor')">متابعة</button>
+        <button class="admin-card" id="home-card-classservants" style="display:none" onclick="switchTab('classservants')">خدام الفصل</button>
       </div>
       <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
     </div>
     <div class="tabs" id="main-tabs">
-      <button class="tab" style="flex:0 0 auto" onclick="goHome()">🏠</button>
+      <button class="tab" style="flex:0 0 auto" onclick="tabsHome()">🏠</button>
       <button class="tab active" id="tab-btn-attendance" data-tab="attendance" onclick="switchTab('attendance')">الحضور</button>
       <button class="tab" data-tab="students" onclick="switchTab('students')">المخدومين</button>
       <button class="tab" data-tab="filters" onclick="switchTab('filters')">افتقاد</button>
@@ -642,39 +669,40 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
     <!-- MONITOR TAB (ADMIN ONLY) -->
     <div id="tab-monitor" style="display:none">
-      <div class="tabs" id="monitor-subtabs" style="margin-bottom:16px">
-        <button class="tab active" id="monitor-subtab-btn-attendance" onclick="switchMonitorSubTab('attendance')">✅ الحضور</button>
-        <button class="tab" id="monitor-subtab-btn-servants" onclick="switchMonitorSubTab('servants')">👥 الخدام</button>
+      <div class="page-title-box">الخدام</div>
+      <div class="tabs" id="monitor-class-chips" style="overflow-x:auto;margin-bottom:12px"></div>
+      <div class="tabs" id="monitor-subtabs" style="margin-bottom:12px">
+        <button class="tab active" id="monitor-subtab-btn-attendance" onclick="switchMonitorSubTab('attendance')">الحضور</button>
+        <button class="tab" id="monitor-subtab-btn-servants" onclick="switchMonitorSubTab('servants')">الخدام</button>
+      </div>
+      <div id="monitor-attendance-activities">
+        <div class="tabs" id="serv-att-activity-chips" style="margin-bottom:12px">
+          <button class="tab active" onclick="setServAttActivity('mass',this)">القداس</button>
+          <button class="tab" onclick="setServAttActivity('sunday_school',this)">مدارس الأحد</button>
+          <button class="tab" onclick="setServAttActivity('meeting',this)">اجتماع الخدام</button>
+          <button class="tab" onclick="setServAttActivity('preparation',this)">التحضير</button>
+        </div>
+      </div>
+      <div class="search-box" style="margin:0 0 10px">
+        <input type="text" id="monitor-search-input" placeholder="اكتب اسم الخادم ...." oninput="onMonitorSearch()" autocomplete="off">
       </div>
 
-      <!-- حضور الخدام في الأنشطة الثلاثة -->
+      <!-- حضور الخدام في الأنشطة -->
       <div id="monitor-subtab-attendance">
-        <div class="tabs" id="serv-att-activity-chips" style="margin-bottom:12px">
-          <button class="tab active" onclick="setServAttActivity('mass',this)">⛪ القداس</button>
-          <button class="tab" onclick="setServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
-          <button class="tab" onclick="setServAttActivity('meeting',this)">🤝 اجتماع الخدام</button>
-          <button class="tab" onclick="setServAttActivity('preparation',this)">📝 التحضير</button>
-        </div>
         <input type="date" id="serv-att-date" class="field-input" onchange="renderServAttList()">
-        <div class="search-box" style="margin:10px 0">
-          <input type="text" id="serv-att-search-input" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="renderServAttList()" autocomplete="off">
-        </div>
         <div id="serv-att-list"></div>
       </div>
 
       <!-- إدارة الخدام وطلبات الانضمام وسجل الأنشطة -->
       <div id="monitor-subtab-servants" style="display:none">
-        <div class="list-header">
-          <span class="section-title">طلبات الانضمام (<span id="pending-count">0</span>)</span>
+        <div id="pending-section" style="display:none">
+          <div class="list-header">
+            <span class="section-title">طلبات الانضمام (<span id="pending-count">0</span>)</span>
+          </div>
+          <div id="pending-list" style="margin-bottom:22px"></div>
         </div>
-        <div id="pending-list" style="margin-bottom:22px"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
 
-        <div class="list-header">
-          <span class="section-title">الخدام (<span id="servants-count">0</span>)</span>
-          <button class="export-btn" onclick="loadMonitorTab()">🔄 تحديث</button>
-        </div>
-        <input type="text" id="servants-list-search" class="field-input" placeholder="🔍 دوّر على اسم خادم…" oninput="renderServantsList()" autocomplete="off" style="margin-bottom:10px">
-        <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 10px">دوس على اسم أي خادم يفتحلك ملفه بكل التفاصيل — تحديد الفصل والدور بيتعمل من هناك أو من "المستخدمين والأدوار"</p>
+        <span id="servants-count" style="display:none">0</span>
         <div id="servants-list" style="margin-bottom:22px"></div>
 
         <div class="list-header">
@@ -1391,8 +1419,9 @@ function onClassesUpdated() {
   if (editSel) { const cur = editSel.value; editSel.innerHTML = classSelectOptionsHTML(true); editSel.value = cur; }
   if (currentRole === 'admin') {
     renderClassesAdminList();
+    if (document.getElementById('tab-admin-classes')?.style.display === 'block') renderAdminClassCards();
     // بنقرا مجموعة الخدام تاني بس لو تبويب "متابعة" مفتوح فعلاً دلوقتي — مش عند كل تحديث للفصول
-    if (document.getElementById('tab-monitor')?.style.display === 'block') loadServantsOnce();
+    if (document.getElementById('tab-monitor')?.style.display === 'block') { renderMonitorClassChips(); loadServantsOnce(); }
   }
   if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
   if (document.getElementById('tab-attendance')?.style.display === 'block') { updateStats(); renderTodayList(); }
@@ -1498,7 +1527,7 @@ window.openMyProfileModal = () => {
 window.openUsersRolesModal = () => {
   closeSettingsMenu();
   if (currentRole !== 'admin') return;
-  const homeVisible = document.getElementById('tab-home').style.display !== 'none';
+  const homeVisible = document.getElementById('tab-home').style.display !== 'none' || document.getElementById('tab-admin-home').style.display !== 'none' || document.getElementById('tab-admin-classes').style.display !== 'none';
   const activeBtn = document.querySelector('#main-tabs .tab.active[data-tab]');
   rolesReturnTab = homeVisible ? '' : (activeBtn ? activeBtn.dataset.tab : '');
   stopVoice(); stopTodayListeners();
@@ -1506,6 +1535,7 @@ window.openUsersRolesModal = () => {
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
+  hideAdminScreens();
   document.getElementById('tab-roles').style.display = 'block';
   showRolesListView();
   loadRolesOnce();
@@ -3686,27 +3716,81 @@ window.runExportExcel = async () => {
 window.applyMonitorVisibility = () => {
   const onAdmin = currentRole === 'admin';
   const onSupervisor = currentRole === 'supervisor';
-  document.getElementById('tab-btn-monitor').style.display = onAdmin ? 'block' : 'none';
-  const c = document.getElementById('home-card-monitor'); if (c) c.style.display = onAdmin ? '' : 'none';
+  document.getElementById('tab-btn-monitor').style.display = 'none';
+  const c = document.getElementById('home-card-monitor'); if (c) c.style.display = 'none'; // الأدمن بيدخل المتابعة من كارت "الخدام" في رئيسيته
   document.getElementById('tab-btn-classservants').style.display = onSupervisor ? 'block' : 'none';
   const c2 = document.getElementById('home-card-classservants'); if (c2) c2.style.display = onSupervisor ? '' : 'none';
 };
-window.goHome = () => {
+// ===== الصفحة الرئيسية للأدمن: الفصول / الخدام =====
+function hideAdminScreens() {
+  ['tab-admin-home','tab-admin-classes'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+}
+function renderAdminClassCards() {
+  const grid = document.getElementById('admin-classes-grid');
+  if (!grid) return;
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  grid.innerHTML = allClasses.map(c => `
+    <button class="admin-card" onclick="openClassFromAdmin('${c.id}')">
+      <span class="admin-card-tools">
+        <span onclick="event.stopPropagation();editClassPrompt('${c.id}')" title="تعديل">✏️</span>
+        <span onclick="event.stopPropagation();deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">🗑️</span>
+      </span>${esc(c.name)}
+    </button>`).join('') + `<button class="admin-card add" onclick="addClassPrompt()">➕ إضافة فصل</button>`;
+}
+window.showAdminClasses = () => {
+  if (currentRole !== 'admin') return;
+  hideAdminScreens();
+  document.getElementById('tab-admin-classes').style.display = 'block';
+  renderAdminClassCards();
+};
+window.openClassFromAdmin = (id) => {
+  currentClassTab = id;
+  localStorage.setItem('attendanceClassTab', id);
+  classFilter = id;
+  renderClassChips();
+  applyClassRestrictionUI();
+  showClassHome();
+};
+function hideAllScreens() {
   stopVoice();
   stopTodayListeners();
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
+  hideAdminScreens();
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
+  document.getElementById('tab-home').style.display = 'none';
+}
+// الرئيسية: الأدمن بيشوف (الفصول / الخدام)، وباقي الخدام بيشوفوا كروت فصلهم على طول
+window.goHome = () => {
+  hideAllScreens();
+  const hdr = document.getElementById('class-home-header'); if (hdr) hdr.style.display = 'none';
+  if (currentRole === 'admin') document.getElementById('tab-admin-home').style.display = 'block';
+  else document.getElementById('tab-home').style.display = 'block';
+  applyMonitorVisibility();
+};
+// كروت الفصل (الحضور / المخدومين / الافتقاد / الرسائل) — الأدمن بيوصلها بعد ما يختار فصل
+window.showClassHome = () => {
+  hideAllScreens();
+  const hdr = document.getElementById('class-home-header');
+  if (hdr) hdr.style.display = currentRole === 'admin' ? 'block' : 'none';
+  const t = document.getElementById('class-home-title'); if (t) t.textContent = classLabel(currentClassTab);
   document.getElementById('tab-home').style.display = 'block';
   applyMonitorVisibility();
+};
+// زرار 🏠 في شريط التابات: الأدمن يرجع لكروت الفصل اللي فيه، والباقي للرئيسية
+window.tabsHome = () => {
+  if (currentRole === 'admin' && currentClassTab && document.getElementById('tab-monitor').style.display !== 'block') showClassHome();
+  else goHome();
 };
 window.switchTab = async (tab) => {
   if (tab !== 'attendance') { stopVoice(); stopTodayListeners(); }
   if (tab === 'monitor' && currentRole !== 'admin') return;
   if (tab === 'classservants' && currentRole !== 'supervisor') return;
+  hideAdminScreens();
   document.getElementById('tab-home').style.display = 'none';
   document.getElementById('main-tabs').style.display = 'flex';
-  document.getElementById('global-class-tabs').style.display = '';
+  document.getElementById('main-tabs').classList.toggle('home-only', tab === 'monitor');
+  document.getElementById('global-class-tabs').style.display = tab === 'monitor' ? 'none' : '';
   document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
   if (tab === 'monitor') { loadMonitorTab(); return; }
@@ -3763,6 +3847,7 @@ window.applyClassRestrictionUI = applyClassRestrictionUI;
 // يظهر فورًا عند كل الأدمنز الفاتحين تبويب "متابعة" من غير reload
 window.loadMonitorTab = async () => {
   if (currentRole !== 'admin') return;
+  renderMonitorClassChips();
   await loadServantsOnce(true);
   const di = document.getElementById('activity-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
   document.getElementById('activity-list').innerHTML = `<div class="empty-state">اختار التاريخ واضغط "عرض"</div>`;
@@ -3773,12 +3858,34 @@ window.loadMonitorTab = async () => {
 // ===== حضور الخدام (القداس / مدارس الأحد / اجتماع الخدام / التحضير) =====
 let servAttActivity = 'mass'; // 'mass' | 'sunday_school' | 'meeting' | 'preparation'
 const SERV_ATT_LABELS = { mass:'القداس', sunday_school:'مدارس الأحد', meeting:'اجتماع الخدام', preparation:'التحضير' };
+let monitorClassFilter = 'all';
+function monitorFilterServants(list) {
+  if (monitorClassFilter === 'all') return list;
+  const id = String(monitorClassFilter).toLowerCase();
+  return list.filter(s => normalizeAssignedClasses(s.assignedClass).includes(id));
+}
+function renderMonitorClassChips() {
+  const cont = document.getElementById('monitor-class-chips');
+  if (!cont) return;
+  cont.innerHTML = `<button class="tab ${monitorClassFilter==='all'?'active':''}" onclick="setMonitorClass('all')">كل الفصول</button>` +
+    allClasses.map(c => `<button class="tab ${monitorClassFilter===c.id?'active':''}" onclick="setMonitorClass('${c.id}')">${c.name}</button>`).join('');
+}
+window.setMonitorClass = (id) => {
+  monitorClassFilter = id;
+  renderMonitorClassChips();
+  onMonitorSearch();
+};
+window.onMonitorSearch = () => {
+  if (document.getElementById('monitor-subtab-servants').style.display === 'block') renderServantsList();
+  else renderServAttList();
+};
 window.switchMonitorSubTab = (which) => {
   document.getElementById('monitor-subtab-btn-attendance').classList.toggle('active', which === 'attendance');
   document.getElementById('monitor-subtab-btn-servants').classList.toggle('active', which === 'servants');
   document.getElementById('monitor-subtab-attendance').style.display = which === 'attendance' ? 'block' : 'none';
   document.getElementById('monitor-subtab-servants').style.display   = which === 'servants'   ? 'block' : 'none';
-  if (which === 'attendance') renderServAttList();
+  document.getElementById('monitor-attendance-activities').style.display = which === 'attendance' ? 'block' : 'none';
+  if (which === 'attendance') renderServAttList(); else renderServantsList();
 };
 window.setServAttActivity = (activity, btn) => {
   servAttActivity = activity;
@@ -3793,9 +3900,9 @@ async function renderServAttList() {
   if (!cont) return;
   const date = document.getElementById('serv-att-date')?.value || toLocalDateKey(new Date());
   if (!servantsLoadedFlag) await loadServantsOnce();
-  let servants = cachedServants.filter(s => s.status === 'approved').sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  let servants = monitorFilterServants(cachedServants.filter(s => s.status === 'approved')).sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
   if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خدام متسجلين لسه</div>`; return; }
-  const searchQ = normalizeArabic(document.getElementById('serv-att-search-input')?.value || '');
+  const searchQ = normalizeArabic(document.getElementById('monitor-search-input')?.value || '');
   if (searchQ) servants = servants.filter(s => normalizeArabic(s.name||'').includes(searchQ));
   if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خادم بالاسم ده</div>`; return; }
   cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
@@ -3914,6 +4021,7 @@ async function loadServantsOnce(force) {
 }
 
 function renderPendingList(list) {
+  const ps = document.getElementById('pending-section'); if (ps) ps.style.display = list.length ? '' : 'none';
   document.getElementById('pending-count').textContent = list.length;
   const cont = document.getElementById('pending-list');
   if (!list.length) { cont.innerHTML = `<div class="empty-state">لا يوجد طلبات انضمام جديدة</div>`; return; }
@@ -3932,9 +4040,9 @@ function renderPendingList(list) {
 
 // مبسّطة: اسم الخادم بس + رقمين على الشمال (مدارس أحد + اجتماع خدام) — دوس على الاسم يفتحلك ملفه بكل تفاصيله وأزرار الإدارة
 function renderServantsList(list) {
-  const base = list || cachedServants.filter(x => x.status === 'approved');
+  const base = monitorFilterServants(list || cachedServants.filter(x => x.status === 'approved'));
   document.getElementById('servants-count').textContent = base.length;
-  const q = normalizeArabic(document.getElementById('servants-list-search')?.value || '');
+  const q = normalizeArabic(document.getElementById('monitor-search-input')?.value || '');
   const filtered = q ? base.filter(s => normalizeArabic(s.name||'').includes(q)) : base;
   const cont = document.getElementById('servants-list');
   if (!filtered.length) { cont.innerHTML = `<div class="empty-state">${q ? 'مفيش خادم بالاسم ده' : 'لا يوجد خدام معتمدين بعد'}</div>`; return; }
