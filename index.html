@@ -353,6 +353,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <button class="tab" id="tab-btn-classservants" style="display:none" data-tab="classservants" onclick="switchTab('classservants')">👥 خدام الفصل</button>
     </div>
 
+    <div class="page-title-box" id="section-title" style="display:none"></div>
+
     <!-- ATTENDANCE TAB -->
     <div id="tab-attendance">
       <div class="stats-row">
@@ -677,10 +679,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div id="monitor-attendance-activities">
         <div class="tabs" id="serv-att-activity-chips" style="margin-bottom:12px">
-          <button class="tab active" onclick="setServAttActivity('mass',this)">القداس</button>
-          <button class="tab" onclick="setServAttActivity('sunday_school',this)">مدارس الأحد</button>
-          <button class="tab" onclick="setServAttActivity('meeting',this)">اجتماع الخدام</button>
-          <button class="tab" onclick="setServAttActivity('preparation',this)">التحضير</button>
+          <button class="tab active" onclick="setServAttActivity('mass',this)">⛪ القداس</button>
+          <button class="tab" onclick="setServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
+          <button class="tab" onclick="setServAttActivity('meeting',this)">🤝 اجتماع الخدام</button>
+          <button class="tab" onclick="setServAttActivity('preparation',this)">📝 التحضير</button>
         </div>
       </div>
       <div class="search-box" style="margin:0 0 10px">
@@ -1534,6 +1536,7 @@ window.openUsersRolesModal = () => {
   document.getElementById('tab-home').style.display = 'none';
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
+  { const st = document.getElementById('section-title'); if (st) st.style.display = 'none'; }
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
   hideAdminScreens();
   document.getElementById('tab-roles').style.display = 'block';
@@ -3759,6 +3762,7 @@ function hideAllScreens() {
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
   document.getElementById('tab-home').style.display = 'none';
+  const st = document.getElementById('section-title'); if (st) st.style.display = 'none';
 }
 // الرئيسية: الأدمن بيشوف (الفصول / الخدام)، وباقي الخدام بيشوفوا كروت فصلهم على طول
 window.goHome = () => {
@@ -3789,8 +3793,21 @@ window.switchTab = async (tab) => {
   hideAdminScreens();
   document.getElementById('tab-home').style.display = 'none';
   document.getElementById('main-tabs').style.display = 'flex';
-  document.getElementById('main-tabs').classList.toggle('home-only', tab === 'monitor');
-  document.getElementById('global-class-tabs').style.display = tab === 'monitor' ? 'none' : '';
+  document.getElementById('main-tabs').classList.add('home-only');
+  {
+    const allowedCls = getAllowedAssignedClasses();
+    const single = currentRole !== 'admin' && allowedCls.length === 1;
+    const showClassBar = tab !== 'monitor' && tab !== 'classservants' && currentRole !== 'admin' && !single;
+    document.getElementById('global-class-tabs').style.display = showClassBar ? '' : 'none';
+    const titles = { attendance:'✅ الحضور', students:'👥 المخدومين', filters:'📞 الافتقاد', messages:'📨 الرسائل' };
+    const tb = document.getElementById('section-title');
+    if (tb) {
+      if (titles[tab]) {
+        tb.textContent = (showClassBar ? '' : classLabel(currentClassTab) + ' — ') + titles[tab];
+        tb.style.display = 'block';
+      } else tb.style.display = 'none';
+    }
+  }
   document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
   if (tab === 'monitor') { loadMonitorTab(); return; }
@@ -3858,6 +3875,7 @@ window.loadMonitorTab = async () => {
 // ===== حضور الخدام (القداس / مدارس الأحد / اجتماع الخدام / التحضير) =====
 let servAttActivity = 'mass'; // 'mass' | 'sunday_school' | 'meeting' | 'preparation'
 const SERV_ATT_LABELS = { mass:'القداس', sunday_school:'مدارس الأحد', meeting:'اجتماع الخدام', preparation:'التحضير' };
+const SERV_ATT_EMOJI = { mass:'⛪', sunday_school:'📖', meeting:'🤝', preparation:'📝' };
 let monitorClassFilter = 'all';
 function monitorFilterServants(list) {
   if (monitorClassFilter === 'all') return list;
@@ -3935,7 +3953,7 @@ window.toggleServantAttendance = async (servantId, name, date) => {
     } else {
       await setDoc(doc(db,'servantAttendance',id), { servantId, name, date, activity: servAttActivity, timestamp: serverTimestamp() });
       if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = (sv[countField]||0)+1; }
-      showToast(`تم تسجيل حضور ${name} في ${SERV_ATT_LABELS[servAttActivity]} ✓`, 'success');
+      showToast(`تم تسجيل حضور ${name} في ${SERV_ATT_EMOJI[servAttActivity]} ${SERV_ATT_LABELS[servAttActivity]} ✓`, 'success');
     }
     renderServAttList();
     if (document.getElementById('monitor-subtab-servants')?.style.display === 'block') renderServantsList(cachedServants.filter(x => x.status === 'approved'));
@@ -3993,7 +4011,7 @@ window.toggleClassServantAttendance = async (servantId, name, date) => {
     } else {
       await setDoc(doc(db,'servantAttendance',id), { servantId, name, date, activity, timestamp: serverTimestamp() });
       if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = (sv[countField]||0)+1; }
-      showToast(`تم تسجيل حضور ${name} في ${SERV_ATT_LABELS[activity]} ✓`, 'success');
+      showToast(`تم تسجيل حضور ${name} في ${SERV_ATT_EMOJI[activity]} ${SERV_ATT_LABELS[activity]} ✓`, 'success');
     }
     renderClassServAttList();
   } catch(e) { console.error(e); showToast('حصل خطأ، حاول تاني', 'error'); }
