@@ -4759,6 +4759,7 @@ window.openRoleEditor = (roleId) => {
   editingRoleMemberIds = editingRoleId ? cachedServants.filter(s => servantInRole(s, editingRoleId)).map(s => s.id) : [];
   editingRolePendingNames = (r && Array.isArray(r.pendingNames)) ? [...r.pendingNames] : [];
   roleAutoAddedIds = [];
+  roleAutoAddedPending = [];
   document.getElementById('roles-modal-title').textContent = r ? 'تعديل دور' : 'دور جديد';
   document.getElementById('role-delete-btn').style.display = r ? 'block' : 'none';
   document.getElementById('role-add-members-modal').style.display = 'none';
@@ -4791,6 +4792,15 @@ function renderRoleClassChips() {
 // في الدور الجديد بس: أول ما تختار فصل، خدام الفصل ده بيتضافوا لخانة الأعضاء تلقائي (وتقدر تشيل أي حد بالـ ✕)،
 // ولو شلت الفصل بيتشال معاه الخدام اللي اتضافوا بسببه (إلا لو تبع فصل تاني لسه مختاره)
 let roleAutoAddedIds = [];
+let roleAutoAddedPending = []; // أسماء لسه مسجلتش اتضافت تلقائي بسبب اختيار فصل
+// أسماء مضافة مقدمًا (لسه مسجلوش) في أي دور تاني للفصل ده
+function rolePendingNamesForClass(classId) {
+  const registered = new Set(cachedServants.map(x => (x.name||'').trim()));
+  return [...new Set(allRoles
+    .filter(r => !r.isAdmin && r.id !== editingRoleId && Array.isArray(r.classes) && r.classes.includes(classId))
+    .flatMap(r => r.pendingNames || []))]
+    .filter(n => !registered.has((n||'').trim()));
+}
 function roleClassServantIds(classId) {
   return cachedServants
     .filter(s => s.status === 'approved' && s.role !== 'admin' && normalizeAssignedClasses(s.assignedClass).includes(classId))
@@ -4804,13 +4814,21 @@ window.toggleRoleClass = (classId) => {
       roleClassServantIds(classId).forEach(id => {
         if (!editingRoleMemberIds.includes(id)) { editingRoleMemberIds.push(id); roleAutoAddedIds.push(id); }
       });
+      rolePendingNamesForClass(classId).forEach(n => {
+        if (!editingRolePendingNames.includes(n)) { editingRolePendingNames.push(n); roleAutoAddedPending.push(n); }
+      });
     } else {
       const stillCovered = new Set(editingRoleClasses.flatMap(roleClassServantIds));
       const toRemove = roleAutoAddedIds.filter(id => !stillCovered.has(id));
       editingRoleMemberIds = editingRoleMemberIds.filter(id => !toRemove.includes(id));
       roleAutoAddedIds = roleAutoAddedIds.filter(id => !toRemove.includes(id));
+      const stillPending = new Set(editingRoleClasses.flatMap(rolePendingNamesForClass));
+      const pendRemove = roleAutoAddedPending.filter(n => !stillPending.has(n));
+      editingRolePendingNames = editingRolePendingNames.filter(n => !pendRemove.includes(n));
+      roleAutoAddedPending = roleAutoAddedPending.filter(n => !pendRemove.includes(n));
     }
     renderRoleMembersChips();
+    renderRolePendingNames();
   }
   renderRoleClassChips();
   updateRoleEffectHint();
@@ -4859,17 +4877,23 @@ window.removeRoleMember = (id) => {
   updateRoleEffectHint();
 };
 function renderRoleMembersChips() {
-  document.getElementById('role-members-count').textContent = editingRoleMemberIds.length;
+  document.getElementById('role-members-count').textContent = editingRoleMemberIds.length + editingRolePendingNames.length;
   const cont = document.getElementById('role-members-chips');
-  if (!editingRoleMemberIds.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش أعضاء في الدور ده</div>`; return; }
-  cont.innerHTML = editingRoleMemberIds.map(id => {
+  if (!editingRoleMemberIds.length && !editingRolePendingNames.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش أعضاء في الدور ده</div>`; return; }
+  const escTxt = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const registeredChips = editingRoleMemberIds.map(id => {
     const s = cachedServants.find(x => x.id === id);
     return `<span class="filter-chip active" style="display:flex;align-items:center;gap:6px">${s ? (s.name||'؟') : '؟'}
       <span onclick="removeRoleMember('${id}')" style="cursor:pointer;font-weight:900">✕</span></span>`;
-  }).join('');
+  });
+  // أسماء لسه مسجلتش (من قايمة الأسماء المضافة مقدمًا) — بتظهر مع الأعضاء بعلامة ⏳
+  const pendingChips = editingRolePendingNames.slice().sort((a,b) => a.localeCompare(b,'ar')).map(n =>
+    `<span class="filter-chip active" style="display:flex;align-items:center;gap:6px;opacity:.8">⏳ ${escTxt(n)}
+      <span onclick="removeRolePendingName('${n.replace(/'/g,"\\'")}')" style="cursor:pointer;font-weight:900">✕</span></span>`);
+  cont.innerHTML = [...registeredChips, ...pendingChips].join('');
 }
 function updateRoleEffectHint() {
-  document.getElementById('role-effect-hint').innerHTML = `التغيير ده هيأثر على <b>${editingRoleMemberIds.length}</b> شخص دلوقتي`;
+  document.getElementById('role-effect-hint').innerHTML = `التغيير ده هيأثر على <b>${editingRoleMemberIds.length}</b> شخص دلوقتي${editingRolePendingNames.length ? ` (+ ${editingRolePendingNames.length} لسه مسجلوش، هيتطبق عليهم أول ما يسجلوا)` : ''}`;
 }
 
 // أسماء خدام مضافين مقدمًا في الدور ده لسه ملهمش حساب — لما أي حد يسجل ويختار نفس الفصل، هيلاقي اسمه في القايمة ويختاره بدل ما يكتب اسم جديد
@@ -4888,10 +4912,15 @@ window.addRolePendingName = () => {
   if (!name || editingRolePendingNames.includes(name)) return;
   editingRolePendingNames.push(name);
   renderRolePendingNames();
+  renderRoleMembersChips();
+  updateRoleEffectHint();
 };
 window.removeRolePendingName = (name) => {
   editingRolePendingNames = editingRolePendingNames.filter(x => x !== name);
+  roleAutoAddedPending = roleAutoAddedPending.filter(x => x !== name);
   renderRolePendingNames();
+  renderRoleMembersChips();
+  updateRoleEffectHint();
 };
 
 window.saveRole = async () => {
