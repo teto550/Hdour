@@ -4374,7 +4374,22 @@ function renderServantsList(list) {
   const q = normalizeArabic(document.getElementById('monitor-search-input')?.value || '');
   const filtered = q ? base.filter(s => normalizeArabic(s.name||'').includes(q)) : base;
   const cont = document.getElementById('servants-list');
-  if (!filtered.length) { cont.innerHTML = `<div class="empty-state">${q ? 'مفيش خادم بالاسم ده' : 'لا يوجد خدام معتمدين بعد'}</div>`; return; }
+  // الأسماء المضافة مقدمًا ولسه مسجلتش — بتظهر تحت المعتمدين وتقدر تفتح ملفها (الأدوار بتتحمل مرة واحدة أول ما تفتح الخانة دي)
+  if (!rolesLoadedFlag && !rolesTriedForServantsList) { rolesTriedForServantsList = true; loadRolesOnce(); }
+  const pendingPeople = pendingPeopleList().filter(x => (monitorClassFilter === 'all' || x.classes.includes(String(monitorClassFilter))) && (!q || normalizeArabic(x.name).includes(q)));
+  const pendingHTML = pendingPeople.length ? `<div class="section-title" style="margin:16px 0 8px">⏳ لسه مسجلوش حساب (${pendingPeople.length})</div>` + pendingPeople.map(x => {
+    const first = x.classes[0], pal = first ? classPalette(first) : { bg:'rgba(79,142,247,0.15)', text:'#4f8ef7' };
+    const isSup = x.sup.size > 0;
+    return `
+      <div class="servant-item mon-row" style="opacity:.85" onclick="openPendingProfile(decodeURIComponent('${pEnc(x.name)}'))">
+        <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${(x.name||'؟').trim()[0]||'؟'}</div>
+        <div class="s-info">
+          <div class="mon-name">${dEsc(x.name)}${isSup ? '<span class="mon-role sup">🗝️ مسؤول فصل</span>' : ''}<span class="mon-role" style="background:rgba(255,255,255,0.06);color:var(--text-dim);border:1px solid var(--border)">⏳ لسه مسجلش</span></div>
+          <div class="mon-badges">${x.classes.map(cid => classBadgeHTML(cid)).join('')}</div>
+        </div>
+      </div>`;
+  }).join('') : '';
+  if (!filtered.length) { cont.innerHTML = (q && !pendingHTML ? `<div class="empty-state">مفيش خادم بالاسم ده</div>` : (!q && !pendingHTML ? `<div class="empty-state">لا يوجد خدام معتمدين بعد</div>` : '')) + pendingHTML; return; }
   cont.innerHTML = filtered
     .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
     .map(s => `
@@ -4388,7 +4403,17 @@ function renderServantsList(list) {
             <span class="mon-stat-chip ${s.meetingCount?'has':''}">🤝 اجتماع <b>${s.meetingCount||0}</b></span>
           </div>
         </div>
-      </div>`).join('');
+      </div>`).join('') + pendingHTML;
+}
+let rolesTriedForServantsList = false;
+// كل الأسماء المضافة مقدمًا في أدوار الفصول ولسه ملهاش حساب: [{ name, classes, sup:Set }] — الاسم بيظهر مرة واحدة حتى لو في أكتر من دور
+function pendingPeopleList() {
+  const registered = new Set(cachedServants.map(x => nameKey(x.name)));
+  const names = uniqueNames(allRoles.filter(r => !r.isAdmin && Array.isArray(r.classes)).flatMap(r => r.pendingNames || []))
+    .filter(n => !registered.has(nameKey(n)));
+  return names.map(n => ({ name: n, ...pendingPersonMap(n) }))
+    .filter(x => x.classes.length)
+    .sort((a,b) => a.name.localeCompare(b.name,'ar'));
 }
 // ===== ملف الخادم (بيفتح لما تدوس على اسمه في تبويب "متابعة") =====
 let servantProfileId = '';
@@ -4978,6 +5003,7 @@ async function loadRolesOnce(force) {
     allRoles = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     rolesLoadedFlag = true;
     renderRolesList();
+    if (document.getElementById('monitor-subtab-servants')?.style.display === 'block') renderServantsList();
   } catch(e) { console.error(e); document.getElementById('roles-unassigned-list').innerHTML = `<div class="empty-state">تعذّر تحميل الأدوار</div>`; }
 }
 
