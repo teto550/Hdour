@@ -1091,6 +1091,19 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <span style="font-size:14px;font-weight:600">👤 بيانات المخدومين</span>
       </label>
       <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.7">لو اخترت حضور و/أو تسميع، هيتحطوا مع بعض في نفس الشيت. لو اخترت بيانات المخدومين مع أي حاجة تانية، هتتصدّر في شيت منفصل جوه نفس الملف.</p>
+      <div id="export-servants-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="section-title" style="margin-bottom:8px">👥 الخدام</div>
+        <div id="export-serv-classes" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
+          <input type="checkbox" id="export-opt-serv-data" style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+          <span style="font-size:14px;font-weight:600">🧑‍🏫 بيانات الخدام</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
+          <input type="checkbox" id="export-opt-serv-att" style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+          <span style="font-size:14px;font-weight:600">🗓️ حضور الخدام (قداس / مدارس أحد / اجتماع / تحضير)</span>
+        </label>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.7">لو عايز الخدام بس، شيل علامة الحضور والتسميع وبيانات المخدومين اللي فوق. حضور الخدام بيتصدّر شيت لكل نشاط.</p>
+      </div>
       <button class="btn-primary" onclick="runExportExcel()" style="margin-top:14px">📥 تصدير</button>
     </div>
   </div>
@@ -1503,7 +1516,8 @@ function isAssignedClassRestricted() {
 // (رسائل الواتساب، تصدير الإكسل، طباعة الـQR، الحضور بالصوت) حتى لو تبويب "المخدومين" بيعرض كل الفصول
 function ownClassStudents() {
   const allowed = getAllowedAssignedClasses();
-  return (currentRole !== 'admin' && allowed.length) ? allStudents.filter(s => allowed.includes(s.classSection)) : allStudents;
+  const base = (currentRole !== 'admin' && allowed.length) ? allStudents.filter(s => allowed.includes(s.classSection)) : allStudents;
+  return currentRole !== 'admin' ? classScope(base) : base;
 }
 let newGenderManuallySet  = false; // true لو المستخدم غيّر خانة "النوع" بنفسه في فورم الإضافة (يوقف التخمين التلقائي)
 let editGenderManuallySet = false; // نفس الفكرة بس في مودال التعديل
@@ -1616,14 +1630,14 @@ function studentAvatarHTML(s, cls) {
 function classChipsHTML(activeId, onClickFn, opts = {}) {
   let html = '';
   if (opts.includeAll) html += `<button class="filter-chip ${activeId==='all'?'active':''}" onclick="${onClickFn}('all',this)">كل الفصول</button>`;
-  allClasses.forEach(c => {
+  (opts.classes || allClasses).forEach(c => {
     html += `<button class="filter-chip ${activeId===c.id?'active':''}" onclick="${onClickFn}('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
   });
   if (opts.includeNone) html += `<button class="filter-chip ${activeId==='none'?'active':''}" onclick="${onClickFn}('none',this)">؟ لسه متقسمش</button>`;
   return html;
 }
-function classPickButtonsHTML(studentId) {
-  return allClasses.map(c => {
+function classPickButtonsHTML(studentId, classes) {
+  return (classes || allClasses).map(c => {
     const p = classPalette(c.id);
     return `<button class="class-pick-btn" style="border-color:${p.border};color:${p.text}" onclick="event.stopPropagation();assignClassSection('${studentId}','${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
   }).join('');
@@ -1684,10 +1698,35 @@ function renderGlobalClassTabs() {
   }).join('');
   applyClassRestrictionUI();
 }
+// الفصول الوحيدة اللي ليها فلتر فصول في تبويب المخدومين: بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1
+// (لحد ما باقي المخدومين يتوزعوا عليهم). أي فصل تاني بيعرض مخدومينه بس من غير فلتر.
+function isBabyKgClass(c) {
+  const n = normalizeArabic(c && c.name || '')
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/\s+/g, ' ').trim();
+  return /^بيبي( كلاس)? ?[12]$/.test(n) || /^كي ?جي ?1$/.test(n);
+}
+function babyKgClasses() { return allClasses.filter(isBabyKgClass); }
+// أي فصل غير التلات فصول دول مسؤول عن مخدومين فصله بس — ميوصلش لمخدومين بيبي كلاس 1/2 وكي جي 1 ولا للي لسه متقسمش
+function classScopeActive() {
+  if (!currentClassTab || !classById(currentClassTab)) return false;
+  return !babyKgClasses().some(c => c.id === currentClassTab);
+}
+function classScope(list) { return classScopeActive() ? list.filter(s => s.classSection === currentClassTab) : list; }
+// الفلتر الفعلي المستخدم في قائمة المخدومين
+function effectiveClassFilter() {
+  if (!currentClassTab || !classById(currentClassTab)) return classFilter;
+  const grp = babyKgClasses();
+  if (grp.some(c => c.id === currentClassTab)) return grp.some(c => c.id === classFilter) ? classFilter : currentClassTab;
+  return currentClassTab;
+}
 function renderClassChips() {
   const cont = document.getElementById('class-chips');
   if (!cont) return;
-  cont.innerHTML = classChipsHTML(classFilter, 'setClassFilter', { includeAll:true, includeNone:true });
+  const grp = babyKgClasses();
+  const show = !!currentClassTab && grp.some(c => c.id === currentClassTab);
+  cont.style.display = show ? '' : 'none';
+  cont.innerHTML = show ? classChipsHTML(effectiveClassFilter(), 'setClassFilter', { classes: grp }) : '';
 }
 function renderProfClassChips(activeId) {
   const cont = document.getElementById('prof-class-chips');
@@ -2441,8 +2480,9 @@ function renderStudentsList() {
     list = list.filter(s => { const k = familyKey(s.name); return !k || siblingCounts[k] <= 1; });
   }
 
-  if (classFilter === 'none') list = list.filter(s => !s.classSection);
-  else if (classFilter && classFilter !== 'all') list = list.filter(s => s.classSection === classFilter);
+  const cf = effectiveClassFilter();
+  if (cf === 'none') list = list.filter(s => !s.classSection);
+  else if (cf && cf !== 'all') list = list.filter(s => s.classSection === cf);
 
   // ترتيب اللستة عشان كل الإخوات (نفس الاسم بالظبط من اسم الأب لحد آخر اسم) يظهروا ورا بعض مجموعين — دايمًا، حتى وقت البحث
   list = [...list].sort((a, b) => {
@@ -2623,7 +2663,7 @@ function buildWaMessageFor(s) {
 function waHasPhone(s) { return !!getWaPhone(s); }
 
 function waRecipientsSource() {
-  let list = [...ownClassStudents()]; // الرسائل تفضل لمخدومين فصل الخادم بس
+  let list = [...classScope(ownClassStudents())]; // الرسائل تفضل لمخدومين فصل الخادم بس
   const dates = Object.keys(allAttendance).sort();
   if (waBdayMonth > 0) {
     list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === waBdayMonth);
@@ -2638,7 +2678,7 @@ function waRecipientsSource() {
     const lastDates = dates.slice(-n);
     list = list.filter(s => lastDates.length === n && lastDates.every(d => !!allAttendance[d]?.[s.id]));
   }
-  const siblingCounts = computeSiblingCounts(ownClassStudents());
+  const siblingCounts = computeSiblingCounts(classScope(ownClassStudents()));
   if (waSiblingsFilter === 'siblings') {
     list = list.filter(s => { const k = familyKey(s.name); return k && siblingCounts[k] > 1; });
   } else if (waSiblingsFilter === 'nonSiblings') {
@@ -3146,20 +3186,23 @@ window.onManualSearch = () => {
   // بنوري كل المخدومين اللي اسمهم مطابق من أي فصل (مش بس فصل الخادم)، وبنفضّل فصله فوق،
   // وبعدين اللي لسه معندوش فصل، وأخيرًا اللي في فصل تاني، عشان الخادم يقدر يسجل لأي حد يلاقيه
   const groupRank = s => visibleClasses.includes(s.classSection) ? 0 : (!s.classSection ? 1 : 2);
-  const list = searchStudents(allStudents, q)
+  const list = classScope(searchStudents(allStudents, q))
     .sort((a, b) => groupRank(a) - groupRank(b))
     .slice(0,30);
   if (!list.length) {
     cont.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:8px 4px">لا يوجد مخدوم بهذا الاسم</div>`;
     return;
   }
+  // لو الخادم في بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1: المخدوم اللي لسه متقسمش بيتوزع على التلات فصول دول بس
+  const pickGrp = babyKgClasses();
+  const pickClasses = pickGrp.some(c => c.id === currentClassTab) ? pickGrp : undefined;
   cont.innerHTML = list.map(s => {
-    // لسه معندوش فصل؟ نوريله فصل أ / فصل ب / كي جي ١ الأول عشان يتقسم قبل ما نسجله
+    // لسه معندوش فصل؟ نوريله أزرار الفصول الأول عشان يتقسم قبل ما نسجله
     if (!s.classSection) {
       return `<div class="result-item" style="cursor:default;flex-wrap:wrap">
         ${studentAvatarHTML(s,'result-avatar')}
         <div style="flex:1;font-size:14px;font-weight:700;min-width:100%">${s.name} <span style="color:var(--text-dim);font-weight:600;font-size:11px">— هو في فصل إيه؟</span></div>
-        ${classPickButtonsHTML(s.id)}
+        ${classPickButtonsHTML(s.id, pickClasses)}
       </div>`;
     }
     const isPresent = !!todayAttendance[s.id];
@@ -3300,6 +3343,7 @@ function renderFilterList() {
   if (currentRole !== 'admin' && allowed.length) {
     list = list.filter(s => allowed.includes(s.classSection));
   }
+  list = classScope(list);
   if (bdayMonth > 0) {
     list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === bdayMonth);
   }
@@ -3682,7 +3726,7 @@ async function processVoiceName(altTexts) {
     const qClean = stripVoiceFillers(q);
     const variants = qClean === q ? [q] : [qClean, q];
     for (const v of variants) {
-      for (const { s, score } of scoreStudentsVoice(ownClassStudents(), v)) {
+      for (const { s, score } of scoreStudentsVoice(classScope(ownClassStudents()), v)) {
         const prev = bestById.get(s.id);
         if (!prev || score > prev.score) bestById.set(s.id, { s, score });
       }
@@ -3784,7 +3828,8 @@ let exportSelectedClasses = new Set();
 // الفصول اللي الخادم أصلاً يقدر يشوفها (لو أدمن أو مسموحله بكل الفصول بترجع كل الفصول)
 function exportClassChoices() {
   const allowed = getAllowedAssignedClasses();
-  return allowed.length ? allClasses.filter(c => allowed.includes(c.id)) : allClasses;
+  const list = allowed.length ? allClasses.filter(c => allowed.includes(c.id)) : allClasses;
+  return (currentRole !== 'admin' && classScopeActive()) ? list.filter(c => c.id === currentClassTab) : list;
 }
 function renderExportClassPicker() {
   const choices = exportClassChoices();
@@ -3810,6 +3855,7 @@ function exportTargetStudents() {
 window.openExportModal = () => {
   closeSettingsMenu();
   renderExportClassPicker();
+  renderExportServScope();
   document.getElementById('export-modal').style.display = 'flex';
 };
 window.closeExportModal = () => { document.getElementById('export-modal').style.display = 'none'; };
@@ -3954,12 +4000,100 @@ function buildStudentsSheet() {
   return ws;
 }
 
+// ===== تصدير الخدام (للأدمن ومسؤول الفصل) =====
+let exportServScope = 'all'; // 'all' | <classId>
+function canExportServants() {
+  return currentRole === 'admin' || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0);
+}
+// الفصول اللي يقدر يصدّر خدامها: الأدمن كل الفصول، ومسؤول الفصل فصوله اللي مسؤول عنها بس
+function exportServClassChoices() {
+  if (currentRole === 'admin') return allClasses;
+  const sup = normalizeAssignedClasses(currentSupervisorClass);
+  return allClasses.filter(c => sup.includes(c.id));
+}
+function renderExportServScope() {
+  const wrap = document.getElementById('export-servants-wrap');
+  if (!wrap) return;
+  const ok = canExportServants();
+  wrap.style.display = ok ? 'block' : 'none';
+  if (!ok) return;
+  const choices = exportServClassChoices();
+  if (exportServScope !== 'all' && !choices.some(c => c.id === exportServScope)) exportServScope = 'all';
+  const box = document.getElementById('export-serv-classes');
+  if (choices.length <= 1) { box.style.display = 'none'; return; }
+  box.style.display = 'flex';
+  box.innerHTML = `<button type="button" class="filter-chip ${exportServScope==='all'?'active':''}" onclick="setExportServScope('all')">كل الفصول</button>` +
+    choices.map(c => `<button type="button" class="filter-chip ${exportServScope===c.id?'active':''}" onclick="setExportServScope('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`).join('');
+}
+window.setExportServScope = (id) => { exportServScope = id; renderExportServScope(); };
+// الخدام اللي هيتصدّروا: الأدمن + كل الفصول = كل المعتمدين، غير كده الخدام المتوزعين على الفصل/الفصول المختارة (ومسؤول الفصل من غير نفسه)
+function exportTargetServants() {
+  let list = cachedServants.filter(x => x.status === 'approved');
+  if (currentRole !== 'admin') list = list.filter(x => x.id !== currentUid);
+  if (!(currentRole === 'admin' && exportServScope === 'all')) {
+    const cids = exportServScope === 'all' ? exportServClassChoices().map(c => c.id) : [exportServScope];
+    list = list.filter(x => normalizeAssignedClasses(x.assignedClass).some(c => cids.includes(c)));
+  }
+  return list.sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+}
+// تنسيق شيت بسيط: صف عناوين ملوّن + صفوف بالتبادل + فلتر وتجميد (نفس شكل باقي الشيتات)
+function styleSimpleSheet(ws, ncols, nrows, wch) {
+  ws['!cols'] = wch.map(w => ({ wch: w }));
+  ws['!views'] = [{ rightToLeft: true }];
+  const border = { top:{style:'thin',color:{rgb:'D9D9D9'}}, bottom:{style:'thin',color:{rgb:'D9D9D9'}}, left:{style:'thin',color:{rgb:'D9D9D9'}}, right:{style:'thin',color:{rgb:'D9D9D9'}} };
+  const head = { font:{ bold:true, color:{ rgb:'FFFFFF' } }, alignment:{ horizontal:'center', vertical:'center', wrapText:true }, fill:{ patternType:'solid', fgColor:{ rgb:'4472C4' } }, border };
+  for (let c = 0; c < ncols; c++) { const a = XLSX.utils.encode_cell({ r:0, c }); if (ws[a]) ws[a].s = head; }
+  for (let r = 1; r <= nrows; r++) {
+    const fill = (r % 2 === 0) ? { patternType:'solid', fgColor:{ rgb:'F2F6FC' } } : null;
+    for (let c = 0; c < ncols; c++) {
+      const a = XLSX.utils.encode_cell({ r, c });
+      if (!ws[a]) continue;
+      const align = { horizontal: c === 0 ? 'right' : 'center', vertical:'center', wrapText:true };
+      ws[a].s = fill ? { alignment: align, border, fill } : { alignment: align, border };
+    }
+  }
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:nrows,c:ncols-1} }) };
+  ws['!freeze'] = { xSplit:0, ySplit:1, topLeftCell: XLSX.utils.encode_cell({r:1,c:0}), activePane:'bottomLeft', state:'frozen' };
+  return ws;
+}
+function buildServantsDataSheet() {
+  const roleLabel = x => x.role === 'admin' ? 'أدمن' : (x.role === 'supervisor' ? 'مسؤول فصل' : 'خادم');
+  const head = ['الاسم','التليفون','الإيميل','العنوان','الدور','الفصول','مسؤول عن','مدارس أحد (عدد)','اجتماع خدام (عدد)','تحضير (عدد)'];
+  const rows = exportTargetServants().map(x => [
+    x.name || '', x.phone || '', x.email || '', x.address || '', roleLabel(x),
+    normalizeAssignedClasses(x.assignedClass).map(classLabel).join('، '),
+    supervisedClassesOf(x).map(classLabel).join('، '),
+    x.sscCount || 0, x.meetingCount || 0, x.prepCount || 0
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
+  return styleSimpleSheet(ws, head.length, rows.length, [26,16,28,26,12,24,20,14,14,12]);
+}
+// شيت حضور خدام لنشاط واحد: صف لكل خادم وعمود لكل تاريخ + إجمالي. بيرجع null لو مفيش أي حضور للنشاط ده
+function buildServantsAttSheet(activity, byDate) {
+  const servants = exportTargetServants();
+  const ids = new Set(servants.map(x => x.id));
+  const dates = Object.keys(byDate).filter(d => Object.keys(byDate[d]).some(id => ids.has(id))).sort();
+  if (!dates.length) return null;
+  const fmt = d => { const q = d.split('-'); return `${q[2]}/${q[1]}/${q[0]}`; };
+  const head = ['الاسم','الفصول', ...dates.map(fmt), 'الإجمالي'];
+  const rows = servants.map(x => {
+    const marks = dates.map(d => byDate[d][x.id] ? '✓' : '');
+    return [x.name || '', normalizeAssignedClasses(x.assignedClass).map(classLabel).join('، '), ...marks, marks.filter(Boolean).length];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
+  return styleSimpleSheet(ws, head.length, rows.length, [26, 22, ...dates.map(() => 11), 10]);
+}
+
 window.runExportExcel = async () => {
   const includeAtt = document.getElementById('export-opt-att').checked;
   const includeVerse = document.getElementById('export-opt-verse').checked;
   const includeStudents = document.getElementById('export-opt-students').checked;
-  if (!includeAtt && !includeVerse && !includeStudents) { showToast('اختار حاجة واحدة على الأقل', 'error'); return; }
-  if (exportClassChoices().length > 1 && !exportSelectedClasses.size) { showToast('اختار فصل واحد على الأقل', 'error'); return; }
+  const servOk = canExportServants();
+  const includeServData = servOk && !!document.getElementById('export-opt-serv-data')?.checked;
+  const includeServAtt  = servOk && !!document.getElementById('export-opt-serv-att')?.checked;
+  const anyStudentPart = includeAtt || includeVerse || includeStudents;
+  if (!anyStudentPart && !includeServData && !includeServAtt) { showToast('اختار حاجة واحدة على الأقل', 'error'); return; }
+  if (anyStudentPart && exportClassChoices().length > 1 && !exportSelectedClasses.size) { showToast('اختار فصل واحد على الأقل', 'error'); return; }
 
   closeExportModal();
   showToast('جاري تجهيز الملف…','info');
@@ -3984,12 +4118,32 @@ window.runExportExcel = async () => {
       XLSX.utils.book_append_sheet(wb, buildStudentsSheet(), 'مخدومين');
       nameParts.push('مخدومين');
     }
+    if (includeServData || includeServAtt) {
+      if (!servantsLoadedFlag) await loadServantsOnce();
+      if (includeServData) {
+        XLSX.utils.book_append_sheet(wb, buildServantsDataSheet(), 'الخدام');
+        nameParts.push('خدام');
+      }
+      if (includeServAtt) {
+        const snap = await countedGetDocs(collection(db,'servantAttendance'), 'servantAttendance (تصدير إكسل)');
+        const byAct = {};
+        snap.docs.forEach(x => { const d = x.data(); if (!d.activity || !d.date || !d.servantId) return; ((byAct[d.activity] ||= {})[d.date] ||= {})[d.servantId] = true; });
+        let added = 0;
+        Object.keys(SERV_ATT_LABELS).forEach(act => {
+          const ws = byAct[act] ? buildServantsAttSheet(act, byAct[act]) : null;
+          if (ws) { XLSX.utils.book_append_sheet(wb, ws, `حضور ${SERV_ATT_LABELS[act]}`); added++; }
+        });
+        if (added) nameParts.push('حضور-خدام');
+        else showToast('مفيش سجل حضور خدام للفصول دي', 'info');
+      }
+    }
   } catch(e) {
     console.error(e);
     showToast('تعذّر تحميل السجل','error');
     return;
   }
 
+  if (!wb.SheetNames.length) return;
   XLSX.writeFile(wb, `${nameParts.join('-')}-${todayKey()}.xlsx`, { cellStyles: true });
 };
 
@@ -4153,7 +4307,7 @@ window.switchTab = async (tab) => {
   if (tab === 'classservants') { if (!servantsLoadedFlag) await loadServantsOnce(); renderClassServAttList(); return; }
   await ensureStudents();
   if (tab === 'attendance') { startTodayListeners(); updateStats(); renderTodayList(); }
-  if (tab === 'students')  renderStudentsList();
+  if (tab === 'students')  { renderClassChips(); renderStudentsList(); }
   if (tab === 'filters')   renderFilterList();
   if (tab === 'messages')  renderWaTab();
 };
@@ -4164,6 +4318,11 @@ window.switchClassTab = (cls, btn) => {
   if (currentRole !== 'admin' && allowed.length && !allowed.includes(cls)) return;
   currentClassTab = cls;
   localStorage.setItem('attendanceClassTab', cls);
+  classFilter = cls;
+  renderClassChips();
+  if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
+  if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
+  if (document.getElementById('tab-messages')?.style.display === 'block') renderWaTab();
   document.querySelectorAll('.class-tab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   updateStats();
