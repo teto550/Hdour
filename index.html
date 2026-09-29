@@ -4177,6 +4177,8 @@ window.runExportExcel = async () => {
   const nameParts = [];
 
   try {
+    // المخدومين بيتحمّلوا أول ما تفتح أي فصل — لو التصدير اتفتح من الرئيسية قبل كده القايمة بتبقى فاضية، فبنحمّلها الأول
+    if (anyStudentPart) await ensureStudents();
     if (includeAtt || includeVerse) {
       const expAtt = {}, expVer = {};
       const proms = [];
