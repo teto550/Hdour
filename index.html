@@ -920,7 +920,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div class="modal-header">
       <div style="flex:1;min-width:0">
         <div style="font-size:16px;font-weight:900">إضافة أشخاص للدور</div>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">دوّر بالاسم وضيف كذا خادم على طول</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">دوّر بالاسم وضيف كذا خادم على طول — حتى اللي لسه مسجلوش</div>
       </div>
       <button class="modal-close" onclick="closeRoleAddMembersModal()">✕</button>
     </div>
@@ -5192,21 +5192,45 @@ window.closeRoleAddMembersModal = () => {
   document.getElementById('role-add-members-modal').style.display = 'none';
   document.body.style.overflow = '';
   renderRoleMembersChips();
+  renderRolePendingNames();
   updateRoleEffectHint();
 };
 window.closeRoleAddMembersOutside = (e) => { if (e.target.id === 'role-add-members-modal') closeRoleAddMembersModal(); };
 window.renderRoleAddMemberResults = () => {
   const q = normalizeArabic(document.getElementById('role-add-members-search')?.value || '');
   const cont = document.getElementById('role-add-members-results');
-  const results = cachedServants
+  const escTxt = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const registered = cachedServants
     .filter(s => s.status === 'approved' && (editingRoleType === 'admin' || s.role !== 'admin') && (!q || normalizeArabic(s.name||'').includes(q)))
-    .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
-  document.getElementById('role-add-members-selected-count').textContent = editingRoleMemberIds.length;
-  cont.innerHTML = results.length ? results.map(s => {
-    const selected = editingRoleMemberIds.includes(s.id);
-    return `<div class="servant-item" onclick="toggleRoleMemberSelection('${s.id}')" style="cursor:pointer;padding:9px 12px">
-      <input type="checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();toggleRoleMemberSelection('${s.id}')" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
-      <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
+    .map(s => ({ kind:'reg', id:s.id, name:s.name||'—' }));
+  // الأسماء اللي لسه مسجلتش حساب: كل الأسماء المضافة مقدمًا في أي دور (ماعدا دور الأدمن) + اللي اتضافت في الدور ده دلوقتي
+  let pending = [];
+  if (editingRoleType !== 'admin') {
+    const regKeys = new Set(cachedServants.map(x => nameKey(x.name)));
+    pending = uniqueNames([
+      ...editingRolePendingNames,
+      ...allRoles.filter(r => !r.isAdmin).flatMap(r => r.pendingNames || [])
+    ])
+      .filter(n => !regKeys.has(nameKey(n)) && (!q || normalizeArabic(n).includes(q)))
+      .map(n => ({ kind:'pend', name:n }));
+  }
+  const results = [...registered, ...pending].sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  document.getElementById('role-add-members-selected-count').textContent = editingRoleMemberIds.length + editingRolePendingNames.length;
+  cont.innerHTML = results.length ? results.map(it => {
+    if (it.kind === 'reg') {
+      const selected = editingRoleMemberIds.includes(it.id);
+      return `<div class="servant-item" onclick="toggleRoleMemberSelection('${it.id}')" style="cursor:pointer;padding:9px 12px">
+        <input type="checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();toggleRoleMemberSelection('${it.id}')" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
+        <div class="s-info"><div class="s-name" style="font-size:13px">${escTxt(it.name)}</div></div>
+      </div>`;
+    }
+    const selected = editingRolePendingNames.some(x => nameKey(x) === nameKey(it.name));
+    const inRoles = allRoles.filter(r => !r.isAdmin && r.id !== editingRoleId && nameVariantsIn(r, it.name).length).map(r => r.name);
+    const arg = `decodeURIComponent('${pEnc(it.name)}')`;
+    return `<div class="servant-item" onclick="toggleRolePendingSelection(${arg})" style="cursor:pointer;padding:9px 12px;opacity:.85">
+      <input type="checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();toggleRolePendingSelection(${arg})" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
+      <div class="s-info"><div class="s-name" style="font-size:13px">${escTxt(it.name)}</div>${inRoles.length ? `<div style="font-size:10px;color:var(--text-dim)">مضاف في: ${escTxt(inRoles.join(' ، '))}</div>` : ''}</div>
+      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">⏳ لسه مسجلش</span>
     </div>`;
   }).join('') : `<div class="empty-state" style="padding:14px">مفيش نتايج</div>`;
 };
@@ -5214,7 +5238,18 @@ window.toggleRoleMemberSelection = (id) => {
   editingRoleMemberIds = editingRoleMemberIds.includes(id)
     ? editingRoleMemberIds.filter(x => x !== id)
     : [...editingRoleMemberIds, id];
-  document.getElementById('role-add-members-selected-count').textContent = editingRoleMemberIds.length;
+  renderRoleAddMemberResults();
+};
+window.toggleRolePendingSelection = (name) => {
+  const k = nameKey(name);
+  if (editingRolePendingNames.some(x => nameKey(x) === k)) {
+    editingRolePendingNames = editingRolePendingNames.filter(x => nameKey(x) !== k);
+    roleAutoAddedPending = roleAutoAddedPending.filter(x => nameKey(x) !== k);
+  } else {
+    editingRolePendingNames.push(name);
+    rolePurgeNames = rolePurgeNames.filter(x => nameKey(x) !== k);
+    roleDismissedPending = roleDismissedPending.filter(x => nameKey(x) !== k);
+  }
   renderRoleAddMemberResults();
 };
 window.removeRoleMember = (id) => {
