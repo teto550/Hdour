@@ -1075,7 +1075,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     </div>
     <div style="padding:16px">
       <div id="export-classes-wrap" style="display:none;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
-        <div class="section-title" style="margin-bottom:8px">الفصول</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="section-title">الفصول</div>
+          <button type="button" class="export-btn" onclick="openExportClassPick('students')">➕ إضافة فصل</button>
+        </div>
         <div id="export-classes-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
       <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
@@ -1093,7 +1096,13 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.7">لو اخترت حضور و/أو تسميع، هيتحطوا مع بعض في نفس الشيت. لو اخترت بيانات المخدومين مع أي حاجة تانية، هتتصدّر في شيت منفصل جوه نفس الملف.</p>
       <div id="export-servants-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <div class="section-title" style="margin-bottom:8px">👥 الخدام</div>
-        <div id="export-serv-classes" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+        <div id="export-serv-classes-wrap" style="display:none;margin-bottom:6px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:13px;font-weight:700;color:var(--text-dim)">الفصول</span>
+            <button type="button" class="export-btn" onclick="openExportClassPick('servants')">➕ إضافة فصل</button>
+          </div>
+          <div id="export-serv-classes" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
         <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
           <input type="checkbox" id="export-opt-serv-data" style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
           <span style="font-size:14px;font-weight:600">🧑‍🏫 بيانات الخدام</span>
@@ -1105,6 +1114,24 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <p style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.7">لو عايز الخدام بس، شيل علامة الحضور والتسميع وبيانات المخدومين اللي فوق. حضور الخدام بيتصدّر شيت لكل نشاط.</p>
       </div>
       <button class="btn-primary" onclick="runExportExcel()" style="margin-top:14px">📥 تصدير</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT CLASS PICK MODAL (اختيار الفصول للتصدير — نفس فكرة إضافة أشخاص) -->
+<div id="export-class-pick-modal" class="modal-overlay" style="display:none" onclick="closeExportClassPickOutside(event)">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:900">إضافة فصل</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">اختار الفصول اللي عايزها أو اختار كله</div>
+      </div>
+      <button class="modal-close" onclick="closeExportClassPick()">✕</button>
+    </div>
+    <div style="padding:16px">
+      <button type="button" class="export-btn" id="ecp-all-btn" onclick="toggleExportClassPickAll()" style="width:100%;margin-bottom:10px"></button>
+      <div id="ecp-list" style="max-height:55vh;overflow-y:auto"></div>
+      <button class="btn-primary" onclick="closeExportClassPick()" style="width:100%;margin-top:14px">تم (<span id="ecp-count">0</span> متحدد)</button>
     </div>
   </div>
 </div>
@@ -3831,20 +3858,62 @@ function exportClassChoices() {
   const list = allowed.length ? allClasses.filter(c => allowed.includes(c.id)) : allClasses;
   return (currentRole !== 'admin' && classScopeActive()) ? list.filter(c => c.id === currentClassTab) : list;
 }
+// ملخص الفصول المتحددة كشيبس فيها ✕ (أو شيبس واحدة "كل الفصول" لو كلهم متحددين)
+function exportClassChipsHTML(target, set, choices) {
+  if (!set.size) return `<span style="font-size:12px;color:var(--text-dim)">مفيش فصل متحدد — دوس "إضافة فصل"</span>`;
+  const chip = (label, onclick) => `<span class="filter-chip active" style="display:inline-flex;align-items:center;gap:8px">${label}<span onclick="${onclick}" style="cursor:pointer;opacity:.85;font-size:11px">✕</span></span>`;
+  if (set.size >= choices.length) return chip(`🏫 كل الفصول (${choices.length})`, `clearExportClasses('${target}')`);
+  return choices.filter(c => set.has(c.id)).map(c => chip(`${c.emoji||'📘'} ${c.name}`, `removeExportClass('${target}','${c.id}')`)).join('');
+}
 function renderExportClassPicker() {
   const choices = exportClassChoices();
   const wrap = document.getElementById('export-classes-wrap');
   if (choices.length <= 1) { wrap.style.display = 'none'; exportSelectedClasses = new Set(choices.map(c => c.id)); return; }
-  if (!exportSelectedClasses.size) exportSelectedClasses = new Set(choices.map(c => c.id)); // افتراضيًا كل الفصول متحددة
+  exportSelectedClasses = new Set([...exportSelectedClasses].filter(id => choices.some(c => c.id === id)));
   wrap.style.display = 'block';
-  document.getElementById('export-classes-list').innerHTML = choices.map(c =>
-    `<button type="button" class="filter-chip ${exportSelectedClasses.has(c.id)?'active':''}" onclick="toggleExportClass('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`
-  ).join('');
+  document.getElementById('export-classes-list').innerHTML = exportClassChipsHTML('students', exportSelectedClasses, choices);
 }
-window.toggleExportClass = (id) => {
-  if (exportSelectedClasses.has(id)) exportSelectedClasses.delete(id); else exportSelectedClasses.add(id);
-  renderExportClassPicker();
+// ===== نافذة "إضافة فصل" للتصدير (مخدومين / خدام): اختيار فصول معينة أو كله =====
+let exportClassPickTarget = null; // 'students' | 'servants'
+function exportPickSet(t) { return t === 'servants' ? exportServSelected : exportSelectedClasses; }
+function exportPickChoices(t) { return t === 'servants' ? exportServClassChoices() : exportClassChoices(); }
+function refreshExportClassUI() { renderExportClassPicker(); renderExportServScope(); }
+window.openExportClassPick = (target) => {
+  exportClassPickTarget = target;
+  renderExportClassPick();
+  document.getElementById('export-class-pick-modal').style.display = 'flex';
 };
+window.closeExportClassPick = () => {
+  document.getElementById('export-class-pick-modal').style.display = 'none';
+  exportClassPickTarget = null;
+  refreshExportClassUI();
+};
+window.closeExportClassPickOutside = (e) => { if (e.target.id === 'export-class-pick-modal') closeExportClassPick(); };
+function renderExportClassPick() {
+  const t = exportClassPickTarget; if (!t) return;
+  const choices = exportPickChoices(t), set = exportPickSet(t);
+  const all = choices.length > 0 && choices.every(c => set.has(c.id));
+  document.getElementById('ecp-all-btn').textContent = all ? '✖ إلغاء تحديد الكل' : '✔ اختيار كل الفصول';
+  document.getElementById('ecp-count').textContent = choices.filter(c => set.has(c.id)).length;
+  document.getElementById('ecp-list').innerHTML = choices.map(c => `
+    <div class="servant-item" onclick="toggleExportClassPickItem('${c.id}')" style="cursor:pointer;padding:9px 12px">
+      <input type="checkbox" ${set.has(c.id) ? 'checked' : ''} onclick="event.stopPropagation();toggleExportClassPickItem('${c.id}')" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
+      <div class="s-info"><div class="s-name" style="font-size:13px">${c.emoji||'📘'} ${c.name}</div></div>
+    </div>`).join('');
+}
+window.toggleExportClassPickItem = (id) => {
+  const set = exportPickSet(exportClassPickTarget);
+  if (set.has(id)) set.delete(id); else set.add(id);
+  renderExportClassPick();
+};
+window.toggleExportClassPickAll = () => {
+  const t = exportClassPickTarget, set = exportPickSet(t), choices = exportPickChoices(t);
+  const all = choices.every(c => set.has(c.id));
+  choices.forEach(c => { if (all) set.delete(c.id); else set.add(c.id); });
+  renderExportClassPick();
+};
+window.removeExportClass = (target, id) => { exportPickSet(target).delete(id); refreshExportClassUI(); };
+window.clearExportClasses = (target) => { exportPickSet(target).clear(); refreshExportClassUI(); };
 // المخدومين اللي هيتصدّروا فعلاً: لو فيه أكتر من فصل متاح، بنفلتر على الفصول المتحددة بس
 function exportTargetStudents() {
   const choices = exportClassChoices();
@@ -3854,8 +3923,10 @@ function exportTargetStudents() {
 }
 window.openExportModal = () => {
   closeSettingsMenu();
-  renderExportClassPicker();
-  renderExportServScope();
+  // افتراضيًا كل الفصول متحددة عند فتح النافذة
+  exportSelectedClasses = new Set(exportClassChoices().map(c => c.id));
+  exportServSelected = new Set(exportServClassChoices().map(c => c.id));
+  refreshExportClassUI();
   document.getElementById('export-modal').style.display = 'flex';
 };
 window.closeExportModal = () => { document.getElementById('export-modal').style.display = 'none'; };
@@ -4001,7 +4072,7 @@ function buildStudentsSheet() {
 }
 
 // ===== تصدير الخدام (للأدمن ومسؤول الفصل) =====
-let exportServScope = 'all'; // 'all' | <classId>
+let exportServSelected = new Set(); // الفصول المتحددة لتصدير الخدام
 function canExportServants() {
   return currentRole === 'admin' || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0);
 }
@@ -4018,20 +4089,20 @@ function renderExportServScope() {
   wrap.style.display = ok ? 'block' : 'none';
   if (!ok) return;
   const choices = exportServClassChoices();
-  if (exportServScope !== 'all' && !choices.some(c => c.id === exportServScope)) exportServScope = 'all';
-  const box = document.getElementById('export-serv-classes');
-  if (choices.length <= 1) { box.style.display = 'none'; return; }
-  box.style.display = 'flex';
-  box.innerHTML = `<button type="button" class="filter-chip ${exportServScope==='all'?'active':''}" onclick="setExportServScope('all')">كل الفصول</button>` +
-    choices.map(c => `<button type="button" class="filter-chip ${exportServScope===c.id?'active':''}" onclick="setExportServScope('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`).join('');
+  const cw = document.getElementById('export-serv-classes-wrap');
+  if (choices.length <= 1) { cw.style.display = 'none'; exportServSelected = new Set(choices.map(c => c.id)); return; }
+  exportServSelected = new Set([...exportServSelected].filter(id => choices.some(c => c.id === id)));
+  cw.style.display = 'block';
+  document.getElementById('export-serv-classes').innerHTML = exportClassChipsHTML('servants', exportServSelected, choices);
 }
-window.setExportServScope = (id) => { exportServScope = id; renderExportServScope(); };
 // الخدام اللي هيتصدّروا: الأدمن + كل الفصول = كل المعتمدين، غير كده الخدام المتوزعين على الفصل/الفصول المختارة (ومسؤول الفصل من غير نفسه)
 function exportTargetServants() {
   let list = cachedServants.filter(x => x.status === 'approved');
   if (currentRole !== 'admin') list = list.filter(x => x.id !== currentUid);
-  if (!(currentRole === 'admin' && exportServScope === 'all')) {
-    const cids = exportServScope === 'all' ? exportServClassChoices().map(c => c.id) : [exportServScope];
+  const choices = exportServClassChoices();
+  const cids = [...exportServSelected].filter(id => choices.some(c => c.id === id));
+  // الأدمن + كل الفصول متحددة = كل الخدام المعتمدين، غير كده الخدام المتوزعين على الفصول المتحددة بس
+  if (!(currentRole === 'admin' && cids.length >= choices.length)) {
     list = list.filter(x => normalizeAssignedClasses(x.assignedClass).some(c => cids.includes(c)));
   }
   return list.sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
@@ -4093,7 +4164,8 @@ window.runExportExcel = async () => {
   const includeServAtt  = servOk && !!document.getElementById('export-opt-serv-att')?.checked;
   const anyStudentPart = includeAtt || includeVerse || includeStudents;
   if (!anyStudentPart && !includeServData && !includeServAtt) { showToast('اختار حاجة واحدة على الأقل', 'error'); return; }
-  if (anyStudentPart && exportClassChoices().length > 1 && !exportSelectedClasses.size) { showToast('اختار فصل واحد على الأقل', 'error'); return; }
+  if (anyStudentPart && exportClassChoices().length > 1 && !exportSelectedClasses.size) { showToast('اختار فصل واحد على الأقل للمخدومين', 'error'); return; }
+  if ((includeServData || includeServAtt) && exportServClassChoices().length > 1 && !exportServSelected.size) { showToast('اختار فصل واحد على الأقل للخدام', 'error'); return; }
 
   closeExportModal();
   showToast('جاري تجهيز الملف…','info');
