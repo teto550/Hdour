@@ -4760,6 +4760,8 @@ window.openRoleEditor = (roleId) => {
   editingRolePendingNames = (r && Array.isArray(r.pendingNames)) ? [...r.pendingNames] : [];
   roleAutoAddedIds = [];
   roleAutoAddedPending = [];
+  rolePurgeNames = [];
+  roleDismissedPending = [];
   document.getElementById('roles-modal-title').textContent = r ? 'تعديل دور' : 'دور جديد';
   document.getElementById('role-delete-btn').style.display = r ? 'block' : 'none';
   document.getElementById('role-add-members-modal').style.display = 'none';
@@ -4793,6 +4795,8 @@ function renderRoleClassChips() {
 // ولو شلت الفصل بيتشال معاه الخدام اللي اتضافوا بسببه (إلا لو تبع فصل تاني لسه مختاره)
 let roleAutoAddedIds = [];
 let roleAutoAddedPending = []; // أسماء لسه مسجلتش اتضافت تلقائي بسبب اختيار فصل
+let rolePurgeNames = [];       // أسماء مسحها الأدمن ووافق يتمسحوا من كل الأدوار التانية كمان (بيتنفذ عند الحفظ)
+let roleDismissedPending = []; // أسماء اتمسحت في الجلسة دي — منرجعش نضيفها تلقائي لو الفصل اتختار تاني
 // أسماء مضافة مقدمًا (لسه مسجلوش) في أي دور تاني للفصل ده
 function rolePendingNamesForClass(classId) {
   const registered = new Set(cachedServants.map(x => (x.name||'').trim()));
@@ -4815,7 +4819,7 @@ window.toggleRoleClass = (classId) => {
         if (!editingRoleMemberIds.includes(id)) { editingRoleMemberIds.push(id); roleAutoAddedIds.push(id); }
       });
       rolePendingNamesForClass(classId).forEach(n => {
-        if (!editingRolePendingNames.includes(n)) { editingRolePendingNames.push(n); roleAutoAddedPending.push(n); }
+        if (!editingRolePendingNames.includes(n) && !roleDismissedPending.includes(n)) { editingRolePendingNames.push(n); roleAutoAddedPending.push(n); }
       });
     } else {
       const stillCovered = new Set(editingRoleClasses.flatMap(roleClassServantIds));
@@ -4911,11 +4915,19 @@ window.addRolePendingName = () => {
   const name = (prompt('اسم الخادم اللي لسه هيسجل؟') || '').trim();
   if (!name || editingRolePendingNames.includes(name)) return;
   editingRolePendingNames.push(name);
+  rolePurgeNames = rolePurgeNames.filter(x => x !== name);
+  roleDismissedPending = roleDismissedPending.filter(x => x !== name);
   renderRolePendingNames();
   renderRoleMembersChips();
   updateRoleEffectHint();
 };
 window.removeRolePendingName = (name) => {
+  // لو الاسم ده مضاف كمان في أدوار تانية، هيرجع يظهر تلقائي كل مرة تختار الفصل ده — فبنسأل لو عايز يتمسح من الكل
+  const others = allRoles.filter(r => r.id !== editingRoleId && (r.pendingNames || []).includes(name));
+  if (others.length && confirm(`الاسم "${name}" مضاف كمان في: ${others.map(r => r.name).join(' ، ')}\n\nتمسحه من كل الأدوار دي كمان (بعد الحفظ)؟\nموافق = يتمسح نهائي | إلغاء = يتشال من الدور ده بس`)) {
+    if (!rolePurgeNames.includes(name)) rolePurgeNames.push(name);
+  }
+  if (!roleDismissedPending.includes(name)) roleDismissedPending.push(name);
   editingRolePendingNames = editingRolePendingNames.filter(x => x !== name);
   roleAutoAddedPending = roleAutoAddedPending.filter(x => x !== name);
   renderRolePendingNames();
@@ -4957,6 +4969,14 @@ window.saveRole = async () => {
       ops.push(updateDoc(doc(db,'servants',id), { roleIds: ids, roleId: ids[0], ...derivePermsFromRoles(ids.map(i => rolesNow.find(r => r.id === i))) }));
     });
     await Promise.all(ops);
+
+    // أسماء الأدمن قرر يمسحها نهائي: بتتشال من أي دور تاني لسه شايلها (إلا لو اتضافت تاني في الدور ده)
+    for (const n of rolePurgeNames.filter(n => !editingRolePendingNames.includes(n))) {
+      for (const r of allRoles.filter(r => r.id !== roleId && (r.pendingNames || []).includes(n))) {
+        await updateDoc(doc(db,'roles',r.id), { pendingNames: arrayRemove(n) });
+      }
+    }
+    rolePurgeNames = [];
 
     showToast('تم حفظ الدور ✓', 'success');
     await loadServantsOnce(true);
