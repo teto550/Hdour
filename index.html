@@ -1528,6 +1528,18 @@ function derivePermsFromRoles(roleList) {
   roleList.forEach(r => (r.classes || []).forEach(c => { all.add(c); if (r.isSupervisor) sup.add(c); }));
   return { role: sup.size ? 'supervisor' : 'servant', assignedClass: [...all].join(','), supervisorClass: [...sup].join(',') };
 }
+// أسماء الخدام المضافين مقدمًا: بنعتبر "أحمد" و"احمد " و"أحمد  " نفس الاسم، وبنشيل التكرار (أول شكل بيظهر هو اللي بيتعرض)
+function nameKey(n) { return normalizeArabic(n).trim(); }
+function uniqueNames(list) {
+  const seen = new Set(), out = [];
+  (list || []).forEach(n => { const k = nameKey(n); if (k && !seen.has(k)) { seen.add(k); out.push(n); } });
+  return out;
+}
+// كل الأشكال المتخزنة لنفس الاسم جوه دور معين (عشان نمسحها كلها مرة واحدة)
+function nameVariantsIn(role, name) {
+  const k = nameKey(name);
+  return (role && Array.isArray(role.pendingNames) ? role.pendingNames : []).filter(x => nameKey(x) === k);
+}
 // بتحسب صلاحيات خادم واحد بعد ما أدواره اتغيرت — من غير ما تضيّع صلاحياته القديمة، وبتسحب منه بس اللي كان واخده من الدور اللي اتشال منه
 // newIds = أدواره بعد التغيير | rolesNow = كل الأدوار بعد التغيير | removedRole = الدور اللي اتشال منه (لو اتشال) بشكله القديم
 function permsAfterRoleChange(sv, newIds, rolesNow, removedRole) {
@@ -1879,8 +1891,9 @@ window.onRegClassChange = () => {
   const classId = document.getElementById('reg-class').value;
   const nameSel = document.getElementById('reg-name-select');
   if (!classId) { nameSel.innerHTML = `<option value="">— اختار فصلك الأول —</option>`; return; }
-  const names = [];
-  allRoles.forEach(r => { if (!r.isAdmin && Array.isArray(r.classes) && r.classes.includes(classId)) (r.pendingNames||[]).forEach(n => names.push(n)); });
+  const rawNames = [];
+  allRoles.forEach(r => { if (!r.isAdmin && Array.isArray(r.classes) && r.classes.includes(classId)) (r.pendingNames||[]).forEach(n => rawNames.push(n)); });
+  const names = uniqueNames(rawNames); // نفس الاسم ممكن يبقى في أكتر من دور في الفصل (مسؤول + خادم) — بيظهر مرة واحدة بس
   names.sort((a,b) => a.localeCompare(b,'ar'));
   let html = names.length
     ? `<option value="">— اختار اسمك —</option>` + names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('')
@@ -1921,7 +1934,7 @@ window.doRegister = async () => {
   if (!phone)       { err.textContent = 'اكتب رقم تليفونك';       err.style.display = 'block'; return; }
   // الاسم دايمًا مختار من القايمة الجاهزة، فبندوّر على الدور اللي هو منه عشان ناخد منه كل فصوله ونوعه بالظبط
   // نفس الاسم ممكن يبقى مضاف في أكتر من دور (مثلاً مسؤول فصل أ + خادم فصل ب) — بنجمع كل أدواره ونحسب صلاحياته منها
-  const nameRoles = allRoles.filter(r => !r.isAdmin && Array.isArray(r.classes) && (r.pendingNames||[]).includes(name));
+  const nameRoles = allRoles.filter(r => !r.isAdmin && Array.isArray(r.classes) && nameVariantsIn(r, name).length);
   const matchedRoles = nameRoles.some(r => r.classes.includes(regClass)) ? nameRoles : [];
   const matchedPerms = matchedRoles.length ? derivePermsFromRoles(matchedRoles) : { role:'servant', assignedClass: regClass, supervisorClass: '' };
   btn.disabled = true; btn.textContent = 'جاري التسجيل…';
@@ -1943,7 +1956,7 @@ window.doRegister = async () => {
     // لو الاسم ده مختار من قايمة الأسماء الجاهزة، يتمسح من القايمة فورًا عشان محدش تاني يقدر يختاره
     // (محتاج قاعدة فايرستور تسمح للمستخدم يعدّل pendingNames بتاعة roles حتى وهو لسه pending — لو القاعدة بترفض، هيتمسح بعدين لما الأدمن يقبله زي الأول)
     for (const mr of matchedRoles) {
-      try { await updateDoc(doc(db,'roles',mr.id), { pendingNames: arrayRemove(name) }); } catch(e) { console.error('تعذّر مسح الاسم من القايمة فورًا:', e); }
+      try { await updateDoc(doc(db,'roles',mr.id), { pendingNames: arrayRemove(...nameVariantsIn(mr, name)) }); } catch(e) { console.error('تعذّر مسح الاسم من القايمة فورًا:', e); }
     }
     try { await sendEmailVerification(cred.user); } catch(_) {}
     // onAuthStateChanged هيتكفل بعرض الشاشة المناسبة (انتظار أو دخول مباشر لو أدمن)
@@ -4775,7 +4788,7 @@ window.approveServant = async (id, name, roleIds) => {
   await updateDoc(doc(db,'servants',id), { status:'approved' }); loadServantsOnce(true);
   // لو اسمه كان مختار من قايمة أسماء الدور الجاهزة، بيتمسح من القايمة دلوقتي (بعد القبول) عشان محدش تاني يختاره
   if (name && roleIds) {
-    try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayRemove(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
+    try { for (const rid of String(roleIds).split(',').filter(Boolean)) { const v = nameVariantsIn(allRoles.find(x => x.id === rid), name); await updateDoc(doc(db,'roles',rid), { pendingNames: arrayRemove(...(v.length ? v : [name])) }); } loadRolesOnce(true); } catch(e) { console.error(e); }
   }
   showToast('تم قبول الخادم ✓', 'success');
 };
@@ -4896,17 +4909,17 @@ function renderRolesList() {
       <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">⏳ لسه مسجلش حساب · ${isSup ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل'}</span>
     </div>`;
   };
-  const registeredNames = new Set(cachedServants.map(s => (s.name||'').trim()));
+  const registeredNames = new Set(cachedServants.map(s => nameKey(s.name)));
   const html = rolesClassFilter.map(cid => {
     const c = classById(cid);
     // خادم بيظهر في الفصل ده لو الفصل ده من ضمن فصوله، أو لو مقيدش بفصول معينة أصلاً (شايف كل الفصول)
     const members = approved
       .filter(s => { const list = normalizeAssignedClasses(s.assignedClass); return !list.length || list.includes(cid); })
       .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
-    const pending = [...new Set(allRoles
+    const pending = uniqueNames(allRoles
       .filter(r => !r.isAdmin && Array.isArray(r.classes) && r.classes.includes(cid))
-      .flatMap(r => r.pendingNames || []))]
-      .filter(n => !registeredNames.has((n||'').trim()))
+      .flatMap(r => r.pendingNames || []))
+      .filter(n => !registeredNames.has(nameKey(n)))
       .sort((a,b) => a.localeCompare(b,'ar'));
     const total = members.length + pending.length;
     const title = `<div class="section-title" style="margin:14px 0 6px">${c?c.emoji||'📘':'📘'} ${c?c.name:cid} (${total})</div>`;
@@ -4974,11 +4987,11 @@ let rolePurgeNames = [];       // أسماء مسحها الأدمن ووافق 
 let roleDismissedPending = []; // أسماء اتمسحت في الجلسة دي — منرجعش نضيفها تلقائي لو الفصل اتختار تاني
 // أسماء مضافة مقدمًا (لسه مسجلوش) في أي دور تاني للفصل ده
 function rolePendingNamesForClass(classId) {
-  const registered = new Set(cachedServants.map(x => (x.name||'').trim()));
-  return [...new Set(allRoles
+  const registered = new Set(cachedServants.map(x => nameKey(x.name)));
+  return uniqueNames(allRoles
     .filter(r => !r.isAdmin && r.id !== editingRoleId && Array.isArray(r.classes) && r.classes.includes(classId))
-    .flatMap(r => r.pendingNames || []))]
-    .filter(n => !registered.has((n||'').trim()));
+    .flatMap(r => r.pendingNames || []))
+    .filter(n => !registered.has(nameKey(n)));
 }
 function roleClassServantIds(classId) {
   return cachedServants
@@ -4994,9 +5007,7 @@ window.toggleRoleClass = (classId) => {
       roleClassServantIds(classId).forEach(id => {
         if (!editingRoleMemberIds.includes(id)) { editingRoleMemberIds.push(id); roleAutoAddedIds.push(id); }
       });
-      rolePendingNamesForClass(classId).forEach(n => {
-        if (!editingRolePendingNames.includes(n) && !roleDismissedPending.includes(n)) { editingRolePendingNames.push(n); roleAutoAddedPending.push(n); }
-      });
+      // مبننسخش الأسماء اللي لسه مسجلتش من أدوار تانية — الاسم بيفضل في دوره الأصلي بس، عشان ميتكررش في القايمة
     } else {
       const stillCovered = new Set(editingRoleClasses.flatMap(roleClassServantIds));
       const toRemove = roleAutoAddedIds.filter(id => !stillCovered.has(id));
@@ -5088,8 +5099,11 @@ function renderRolePendingNames() {
     </div>`).join('');
 }
 window.addRolePendingName = () => {
-  const name = (prompt('اسم الخادم اللي لسه هيسجل؟') || '').trim();
-  if (!name || editingRolePendingNames.includes(name)) return;
+  const name = (prompt('اسم الخادم اللي لسه هيسجل؟') || '').replace(/\s+/g,' ').trim();
+  if (!name) return;
+  if (editingRolePendingNames.some(x => nameKey(x) === nameKey(name))) { showToast('الاسم ده مضاف فعلاً في الدور ده', 'error'); return; }
+  const dupRoles = allRoles.filter(r => r.id !== editingRoleId && !r.isAdmin && nameVariantsIn(r, name).length && (r.classes || []).some(c => editingRoleClasses.includes(c)));
+  if (dupRoles.length && !confirm(`الاسم \"${name}\" مضاف قبل كده في: ${dupRoles.map(r => r.name).join(' ، ')}\n\nتضيفه هنا كمان؟ (لو ده نفس الشخص الأفضل تشيله من الدور التاني)`)) return;
   editingRolePendingNames.push(name);
   rolePurgeNames = rolePurgeNames.filter(x => x !== name);
   roleDismissedPending = roleDismissedPending.filter(x => x !== name);
@@ -5130,7 +5144,7 @@ window.saveRole = async () => {
     }
   }
   try {
-    const data = { name, type: editingRoleType, isAdmin, isSupervisor, classes: isAdmin ? [] : editingRoleClasses, pendingNames: isAdmin ? [] : editingRolePendingNames };
+    const data = { name, type: editingRoleType, isAdmin, isSupervisor, classes: isAdmin ? [] : editingRoleClasses, pendingNames: isAdmin ? [] : uniqueNames(editingRolePendingNames) };
     let roleId = editingRoleId;
     if (roleId) await updateDoc(doc(db,'roles',roleId), data);
     else { const ref = await addDoc(collection(db,'roles'), data); roleId = ref.id; }
