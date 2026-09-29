@@ -343,6 +343,12 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .admin-card.mode-edit{border-color:var(--accent);border-style:dashed}
 .admin-card.mode-del{border-color:#e74c3c;border-style:dashed}
 .admin-back{background:none;border:none;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;cursor:pointer;padding:4px 2px;margin-bottom:6px}
+.date-pick{position:relative;display:flex;align-items:center;gap:8px;width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;margin-bottom:14px;cursor:pointer;color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;}
+.date-pick .dp-txt.empty{color:var(--text-dim);font-weight:600;}
+.date-pick input[type=date]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0!important;padding:0!important;border:0;}
+.mon-date-row .date-pick{flex:1;width:auto;margin-bottom:0;padding:9px 12px;border-radius:12px;}
+#tab-monitor .list-header .date-pick{width:auto;margin-bottom:0;padding:6px 10px;font-size:13px;}
+.cs-scope-title{font-size:17px!important;padding:8px!important;}
 </style>
 </head>
 <body>
@@ -444,9 +450,13 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <div class="admin-grid" id="admin-classes-grid"></div>
       <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
     </div>
+    <div id="tab-pick-class" style="display:none">
+      <div class="page-title-box">🏫 عايز تدخل أنهي فصل؟</div>
+      <div class="admin-grid" id="pick-class-grid"></div>
+    </div>
     <div id="tab-home" style="display:none">
       <div id="class-home-header" style="display:none">
-        <button class="admin-back" onclick="showAdminClasses()">→ رجوع</button>
+        <button class="admin-back" id="class-home-back" onclick="classHomeBack()">→ رجوع</button>
         <div class="page-title-box" id="class-home-title"></div>
       </div>
       <div class="admin-grid">
@@ -456,6 +466,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="admin-card" onclick="switchTab('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
         <button class="admin-card" id="home-card-monitor" style="display:none" onclick="switchTab('monitor')"><span class="ac-emoji">📊</span>متابعة</button>
         <button class="admin-card" id="home-card-classservants" style="display:none" onclick="switchTab('classservants')"><span class="ac-emoji">🧑‍🏫</span>خدام الفصل</button>
+        <button class="admin-card" id="home-card-allclassservants" style="display:none" onclick="switchTab('allclassservants')"><span class="ac-emoji">🏫</span>خدام الفصول</button>
       </div>
       <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
     </div>
@@ -467,6 +478,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <button class="tab" data-tab="messages" onclick="switchTab('messages')">📨 رسائل</button>
       <button class="tab" id="tab-btn-monitor" style="display:none" data-tab="monitor" onclick="switchTab('monitor')">متابعة</button>
       <button class="tab" id="tab-btn-classservants" style="display:none" data-tab="classservants" onclick="switchTab('classservants')">👥 خدام الفصل</button>
+      <button class="tab" id="tab-btn-allclassservants" style="display:none" data-tab="allclassservants" onclick="switchTab('allclassservants')">🏫 خدام الفصول</button>
     </div>
 
     <div class="page-title-box" id="section-title" style="display:none"></div>
@@ -845,6 +857,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
     <!-- CLASS SERVANTS TAB (مسؤول الفصل بس) — حضور خدام فصله هو بس -->
     <div id="tab-classservants" style="display:none">
+      <div class="page-title-box cs-scope-title" id="class-serv-scope-title"></div>
       <div class="tabs" id="class-serv-att-activity-chips" style="margin-bottom:12px">
         <button class="tab active" onclick="setClassServAttActivity('mass',this)">⛪ القداس</button>
         <button class="tab" onclick="setClassServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
@@ -1031,6 +1044,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <div id="settings-profile-section">
         <div class="section-title" style="margin-bottom:8px">ملفي</div>
         <div id="settings-class-badge" style="margin-bottom:12px"></div>
+        <label class="field-label">الاسم</label>
+        <input type="text" id="settings-name-input" class="field-input" maxlength="60" autocomplete="off">
         <label class="field-label">رقم التليفون</label>
         <input type="tel" id="settings-phone" class="field-input" dir="ltr">
         <label class="field-label">العنوان</label>
@@ -1463,6 +1478,8 @@ let todayVerses = {}, allVerses = {};  // { studentId: { id, verse } } keyed by 
 let currentUid = null, currentName = '', currentRole = 'servant', currentEmail = '';
 let currentSupervisorClass = ''; // الفصول اللي الخادم مسؤول عنها (ممكن تبقى جزء من فصوله)
 let currentAssignedClass = ''; // 'a' | 'b' | 'kg' | 'a,b' | '' — الفصول اللي الأدمن حدده للخادم من تبويب "متابعة" (فاضي = مقيدش، بيشوف كل الفصول)
+let classPicked = false;      // الخادم اللي في أكتر من فصل بيختار فصله مرة أول ما يفتح البرنامج
+let classServScope = 'class'; // 'class' = خدام الفصل الحالي بس | 'all' = خدام كل الفصول اللي المسؤول مسؤول عنها
 let currentPhone = '', currentAddress = ''; // بيانات ملفي الشخصي (شاشة الإعدادات)
 let heartbeatTimer = null;
 
@@ -1641,6 +1658,8 @@ function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsu
 // بيتنادى كل مرة قايمة الفصول تتغير (إضافة/تعديل/حذف فصل) — بيعيد بناء كل حتة في الواجهة معتمدة على الفصول
 function onClassesUpdated() {
   renderGlobalClassTabs();
+  if (document.getElementById('tab-pick-class')?.style.display === 'block') renderClassPicker();
+  { const t = document.getElementById('class-home-title'); if (t && document.getElementById('tab-home')?.style.display === 'block') t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab); }
   renderClassChips();
   renderProfClassChips();
   renderRegClassOptions();
@@ -1746,6 +1765,7 @@ window.openMyProfileModal = () => {
   document.getElementById('settings-class-badge').innerHTML = currentAssignedClass
     ? formatAssignedClasses(currentAssignedClass).split(' + ').map(l => `<span class="class-badge">${l}</span>`).join(' ')
     : `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
+  document.getElementById('settings-name-input').value = currentName || '';
   document.getElementById('settings-phone').value = currentPhone || '';
   document.getElementById('settings-address').value = currentAddress || '';
   document.getElementById('settings-profile-section').style.display = 'block';
@@ -1780,11 +1800,20 @@ window.openServantRoleFromSettings = async (roleId) => {
   openRoleEditor(roleId);
 };
 window.saveOwnSettings = async () => {
+  const name = document.getElementById('settings-name-input').value.trim().replace(/\s+/g, ' ');
   const phone = document.getElementById('settings-phone').value.trim();
   const address = document.getElementById('settings-address').value.trim();
+  if (!name) { showToast('اكتب اسمك الأول', 'error'); return; }
+  const payload = { phone, address };
+  if (name !== currentName) payload.name = name;
   try {
-    await updateDoc(doc(db,'servants',currentUid), { phone, address });
+    await updateDoc(doc(db,'servants',currentUid), payload);
     currentPhone = phone; currentAddress = address;
+    if (payload.name) {
+      currentName = name;
+      fillSettingsHeader();
+      const sv = cachedServants.find(x => x.id === currentUid); if (sv) sv.name = name;
+    }
     showToast('تم حفظ بياناتك ✓', 'success');
   } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
 };
@@ -2023,6 +2052,7 @@ onAuthStateChanged(auth, async user => {
     if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
     if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
     stopClassesListener();
+    classPicked = false;
     localStorage.removeItem('stu_cache_v1'); studentsLoaded = false;
     showAuthScreen();
     const btn = document.getElementById('login-btn');
@@ -2140,6 +2170,7 @@ function listenOwnServantDoc(uid) {
       }
     }
     currentPhone = d.phone || ''; currentAddress = d.address || '';
+    if (d.name && d.name !== currentName) { currentName = d.name; fillSettingsHeader(); }
     // لو الأدمن حدد/غيّر/شال الفصل المخصص للخادم من تبويب "متابعة"، يتفعل فورًا من غير reload
     if ((d.assignedClass || '') !== currentAssignedClass) {
       currentAssignedClass = d.assignedClass || '';
@@ -3970,10 +4001,14 @@ window.applyMonitorVisibility = () => {
   const c = document.getElementById('home-card-monitor'); if (c) c.style.display = 'none'; // الأدمن بيدخل المتابعة من كارت "الخدام" في رئيسيته
   document.getElementById('tab-btn-classservants').style.display = onSupervisor ? 'block' : 'none';
   const c2 = document.getElementById('home-card-classservants'); if (c2) c2.style.display = onSupervisor ? '' : 'none';
+  // "خدام الفصول": بيظهر للمسؤول اللي مسؤول عن أكتر من فصل، عشان يشوف خدام كل فصوله مع بعض
+  const showAllServ = onSupervisor && normalizeAssignedClasses(currentSupervisorClass).length > 1;
+  const tb2 = document.getElementById('tab-btn-allclassservants'); if (tb2) tb2.style.display = showAllServ ? 'block' : 'none';
+  const c3 = document.getElementById('home-card-allclassservants'); if (c3) c3.style.display = showAllServ ? '' : 'none';
 };
 // ===== الصفحة الرئيسية للأدمن: الفصول / الخدام =====
 function hideAdminScreens() {
-  ['tab-admin-home','tab-admin-classes'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+  ['tab-admin-home','tab-admin-classes','tab-pick-class'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
   hideRolesScreen();
 }
 // شاشة "المستخدمين والأدوار" لازم تتقفل مع أي تنقل تاني (هوم / تابات / فصول)، وإلا الشاشة الجديدة بتظهر فوقها أو تحتها
@@ -4041,14 +4076,43 @@ window.goHome = () => {
   hideAllScreens();
   const hdr = document.getElementById('class-home-header'); if (hdr) hdr.style.display = 'none';
   if (currentRole === 'admin') document.getElementById('tab-admin-home').style.display = 'block';
-  else document.getElementById('tab-home').style.display = 'block';
+  else if (needsClassPick() && !classPicked) showClassPicker();
+  else showClassHome();
   applyMonitorVisibility();
 };
-// كروت الفصل (الحضور / المخدومين / الافتقاد / الرسائل) — الأدمن بيوصلها بعد ما يختار فصل
+// الخادم المتوزع على أكتر من فصل (مش أدمن) لازم يختار الفصل اللي داخله الأول
+function needsClassPick() { return currentRole !== 'admin' && getAllowedAssignedClasses().length > 1; }
+function renderClassPicker() {
+  const grid = document.getElementById('pick-class-grid'); if (!grid) return;
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  grid.innerHTML = getAllowedAssignedClasses().map(id => `
+    <button class="admin-card" data-cid="${esc(id)}"><span class="ac-emoji">${esc(classEmoji(id))}</span>${esc(classLabel(id))}</button>`).join('');
+  grid.querySelectorAll('button[data-cid]').forEach(b => { b.onclick = () => pickClass(b.dataset.cid); });
+}
+window.showClassPicker = () => {
+  hideAllScreens();
+  const hdr = document.getElementById('class-home-header'); if (hdr) hdr.style.display = 'none';
+  renderClassPicker();
+  document.getElementById('tab-pick-class').style.display = 'block';
+  applyMonitorVisibility();
+};
+window.pickClass = (id) => {
+  classPicked = true;
+  currentClassTab = id;
+  localStorage.setItem('attendanceClassTab', id);
+  classFilter = id;
+  renderClassChips();
+  applyClassRestrictionUI();
+  showClassHome();
+};
+window.classHomeBack = () => { if (currentRole === 'admin') showAdminClasses(); else showClassPicker(); };
+// كروت الفصل (الحضور / المخدومين / الافتقاد / الرسائل) — الأدمن بيوصلها بعد ما يختار فصل، والخادم المتوزع بعد ما يختار فصله
 window.showClassHome = () => {
   hideAllScreens();
+  const canGoBack = currentRole === 'admin' || needsClassPick();
   const hdr = document.getElementById('class-home-header');
-  if (hdr) hdr.style.display = currentRole === 'admin' ? 'block' : 'none';
+  if (hdr) hdr.style.display = canGoBack ? 'block' : 'none';
+  const back = document.getElementById('class-home-back'); if (back) back.textContent = currentRole === 'admin' ? '→ رجوع' : '→ تغيير الفصل';
   const t = document.getElementById('class-home-title'); if (t) t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab);
   document.getElementById('tab-home').style.display = 'block';
   applyMonitorVisibility();
@@ -4059,6 +4123,9 @@ window.tabsHome = () => {
   else goHome();
 };
 window.switchTab = async (tab) => {
+  let tabKey = tab;
+  if (tab === 'allclassservants') { tab = 'classservants'; classServScope = 'all'; }
+  else if (tab === 'classservants') classServScope = 'class';
   if (tab !== 'attendance') { stopVoice(); stopTodayListeners(); }
   if (tab === 'monitor' && currentRole !== 'admin') return;
   if (tab === 'classservants' && currentRole !== 'supervisor') return;
@@ -4069,7 +4136,7 @@ window.switchTab = async (tab) => {
   {
     const allowedCls = getAllowedAssignedClasses();
     const single = currentRole !== 'admin' && allowedCls.length === 1;
-    const showClassBar = tab !== 'monitor' && tab !== 'classservants' && currentRole !== 'admin' && !single;
+    const showClassBar = tab !== 'monitor' && !(tab === 'classservants' && classServScope === 'all') && currentRole !== 'admin' && !single;
     document.getElementById('global-class-tabs').style.display = showClassBar ? '' : 'none';
     const titles = { attendance:'✅ الحضور', students:'🧒 المخدومين', filters:'📞 الافتقاد', messages:'📨 الرسائل' };
     const tb = document.getElementById('section-title');
@@ -4080,7 +4147,7 @@ window.switchTab = async (tab) => {
       } else tb.style.display = 'none';
     }
   }
-  document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabKey));
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
   if (tab === 'monitor') { loadMonitorTab(); return; }
   if (tab === 'classservants') { if (!servantsLoadedFlag) await loadServantsOnce(); renderClassServAttList(); return; }
@@ -4104,6 +4171,7 @@ window.switchClassTab = (cls, btn) => {
   updateStuCount();
   const input = document.getElementById('manual-input');
   if (input && input.value.trim()) onManualSearch();
+  if (document.getElementById('tab-classservants')?.style.display === 'block' && classServScope === 'class') renderClassServAttList();
 };
 
 // لو الخادم متقيد بفصول معينة من الأدمن، نقفل شريط الفصول فوق على الفصول المسموح لها فقط،
@@ -4277,6 +4345,33 @@ window.toggleServantAttendance = async (servantId, name, date) => {
 };
 
 // ===== خدام الفصل (تبويب مسؤول الفصل) — نسخة من حضور الخدام، مقصورة على خدام فصل المسؤول بس =====
+// عرض التاريخ بصيغة عربي مقروءة بدل خانة التاريخ الأصلية (اللي كانت بتظهر كلام مقلوب زي "موي/رهش/ةنس")
+// الـinput الأصلي بيفضل موجود فوق الشكل بشفافية كاملة، فالضغط عليه بيفتح منتقي التاريخ عادي
+function enhanceDateInput(inp) {
+  if (!inp || inp.dataset.dp) return;
+  inp.dataset.dp = '1';
+  const wrap = document.createElement('div');
+  wrap.className = 'date-pick';
+  inp.parentNode.insertBefore(wrap, inp);
+  wrap.innerHTML = '<span class="dp-ic">📅</span><span class="dp-txt"></span>';
+  wrap.appendChild(inp);
+  const txt = wrap.querySelector('.dp-txt');
+  const upd = () => {
+    const v = inp.value;
+    if (!v) { txt.textContent = 'اختار التاريخ'; txt.classList.add('empty'); return; }
+    const d = new Date(v + 'T00:00:00');
+    txt.textContent = isNaN(d) ? v : d.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    txt.classList.remove('empty');
+  };
+  const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  Object.defineProperty(inp, 'value', { configurable:true, get() { return desc.get.call(this); }, set(v) { desc.set.call(this, v); upd(); } });
+  inp.addEventListener('input', upd);
+  inp.addEventListener('change', upd);
+  inp.addEventListener('click', () => { try { inp.showPicker && inp.showPicker(); } catch(e) {} });
+  upd();
+}
+['class-serv-att-date','serv-att-date','activity-date'].forEach(id => enhanceDateInput(document.getElementById(id)));
+
 let classServAttActivity = 'mass';
 window.setClassServAttActivity = (activity, btn) => {
   classServAttActivity = activity;
@@ -4287,28 +4382,38 @@ window.setClassServAttActivity = (activity, btn) => {
 async function renderClassServAttList() {
   const cont = document.getElementById('class-serv-att-list');
   if (!cont) return;
-  const date = document.getElementById('class-serv-att-date')?.value || toLocalDateKey(new Date());
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const dateEl = document.getElementById('class-serv-att-date');
+  if (dateEl && !dateEl.value) dateEl.value = toLocalDateKey(new Date());
+  const date = dateEl?.value || toLocalDateKey(new Date());
+  const allMode = classServScope === 'all';
+  // المسؤول بيشوف بس الفصول اللي هو مسؤول عنها: "خدام الفصل" = الفصل اللي واقف عليه، و"خدام الفصول" = كل فصوله
+  const supervised = normalizeAssignedClasses(currentSupervisorClass);
+  const scopeClasses = allMode ? supervised : (supervised.includes(currentClassTab) ? [currentClassTab] : []);
+  const titleEl = document.getElementById('class-serv-scope-title');
+  if (titleEl) titleEl.textContent = allMode ? '🏫 خدام الفصول' : `${classEmoji(currentClassTab)} خدام ${classLabel(currentClassTab)}`;
   if (!servantsLoadedFlag) await loadServantsOnce();
-  const allowed = normalizeAssignedClasses(currentSupervisorClass); // مسؤول بس عن الفصول اللي هو مسؤول فيها، مش كل فصوله
-  let servants = cachedServants.filter(s => s.status === 'approved' && s.id !== currentUid);
-  if (allowed.length) servants = servants.filter(s => normalizeAssignedClasses(s.assignedClass).some(c => allowed.includes(c)));
-  else servants = [];
-  servants = servants.sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
-  if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خدام تانيين في فصلك</div>`; return; }
+  if (!scopeClasses.length) { cont.innerHTML = `<div class="empty-state">إنت مش مسؤول عن ${esc(classLabel(currentClassTab))} — اختار فصل إنت مسؤول عنه من فوق</div>`; return; }
   const searchQ = normalizeArabic(document.getElementById('class-serv-att-search-input')?.value || '');
-  if (searchQ) servants = servants.filter(s => normalizeArabic(s.name||'').includes(searchQ));
-  if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خادم بالاسم ده</div>`; return; }
+  const base = cachedServants.filter(s => s.status === 'approved' && s.id !== currentUid);
+  const groups = scopeClasses.map(cid => ({
+    cid,
+    list: base.filter(s => normalizeAssignedClasses(s.assignedClass).includes(cid) && (!searchQ || normalizeArabic(s.name||'').includes(searchQ)))
+              .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
+  })).filter(g => g.list.length);
+  if (!groups.length) { cont.innerHTML = `<div class="empty-state">${searchQ ? 'مفيش خادم بالاسم ده' : (allMode ? 'مفيش خدام تانيين في فصولك' : 'مفيش خدام تانيين في الفصل ده')}</div>`; return; }
   cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
   try {
     const snap = await countedGetDocs(query(collection(db,'servantAttendance'), where('date','==',date), where('activity','==',classServAttActivity)), `servantAttendance فصل (${SERV_ATT_LABELS[classServAttActivity]})`);
     const presentIds = new Set(snap.docs.map(d => d.data().servantId));
-    cont.innerHTML = servants.map(s => `
+    cont.innerHTML = groups.map(g => (allMode ? `<div class="section-title" style="margin:14px 0 8px">${esc(classEmoji(g.cid))} ${esc(classLabel(g.cid))} (${g.list.length})</div>` : '') +
+      g.list.map(s => `
       <div class="servant-item" onclick="toggleClassServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')" style="cursor:pointer">
         <div class="s-info">
-          <div class="s-name">${s.name||'—'}</div>
+          <div class="s-name">${esc(s.name)||'—'}</div>
         </div>
         <div class="serv-att-check ${presentIds.has(s.id)?'checked':''}"></div>
-      </div>`).join('');
+      </div>`).join('')).join('');
   } catch(e) {
     console.error(e);
     cont.innerHTML = `<div class="empty-state">تعذّر تحميل الحضور</div>`;
