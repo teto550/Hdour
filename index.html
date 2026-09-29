@@ -4511,7 +4511,11 @@ function renderServantProfileActions(s) {
   }
   document.getElementById('sprof-actions').innerHTML = html;
 }
-window.closeServantProfile = () => { document.getElementById('servant-profile-modal').style.display = 'none'; servantProfileId = ''; };
+window.closeServantProfile = () => {
+  document.getElementById('servant-profile-modal').style.display = 'none'; servantProfileId = '';
+  // لو الملف اتفتح من شاشة "المستخدمين والأدوار" بنفضل فيها ونحدّث القايمة (لو حاجة اتغيّرت)
+  if (document.getElementById('tab-roles')?.style.display === 'block' && document.getElementById('roles-list-view')?.style.display !== 'none') renderRolesList();
+};
 window.closeServantProfileOutside = (e) => { if (e.target.id === 'servant-profile-modal') closeServantProfile(); };
 // ===== داشبورد الخدام (تحت عنوان "الخدام" عند الأدمن) =====
 // بيستخدم البيانات المحمّلة أصلاً (cachedServants + allStudents + allClasses) وعدّادات الحضور المخزنة على كل خادم — من غير أي قراءة إضافية من فايرستور
@@ -4846,7 +4850,7 @@ function renderRolesList() {
   const approved = cachedServants.filter(s => s.status === 'approved' && s.role !== 'admin');
   const roleRowHTML = (s, cid) => {
     const label = supervisedClassesOf(s).includes(cid) ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل';
-    return `<div class="servant-item" onclick="closeRolesModal();openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
+    return `<div class="servant-item" onclick="openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
       <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
       <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">${label}</span>
     </div>`;
