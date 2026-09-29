@@ -4348,7 +4348,7 @@ function renderServantsList(list) {
 }
 // ===== ملف الخادم (بيفتح لما تدوس على اسمه في تبويب "متابعة") =====
 let servantProfileId = '';
-// شارات فصول الخادم في ملفه: كل فصل هو فيه + زرار واحد جنبه لتعديل دوره في الفصل ده بالتحديد
+// شارات فصول الخادم في ملفه: كل فصل هو فيه + دوره الحالي فيه + زرار يبدّل دوره + زرار ينقله لفصل تاني (كله للخادم ده بس، من غير ما يأثر على باقي الخدام)
 function renderServantProfileClassChips(s) {
   const box = document.getElementById('sprof-class-chips');
   const assigned = normalizeAssignedClasses(s.assignedClass);
@@ -4356,16 +4356,126 @@ function renderServantProfileClassChips(s) {
     box.innerHTML = `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
     return;
   }
-  const myRoles = servantRoleIds(s).map(rid => allRoles.find(r => r.id === rid)).filter(Boolean);
   const sup = supervisedClassesOf(s);
+  const canEdit = currentRole === 'admin' && s.role !== 'admin';
+  const free = allClasses.filter(c => !assigned.includes(c.id));
   box.innerHTML = assigned.map(cid => {
-    // الدور اللي بيغطي الفصل ده — لو مسؤول عن الفصل بنفضّل دور المسؤول، ولو فيه أدوار مكررة ناخد أول واحد
-    const inClass = myRoles.filter(r => Array.isArray(r.classes) && r.classes.includes(cid));
-    const role = (sup.includes(cid) ? inClass.find(r => r.isSupervisor) : null) || inClass[0];
-    const btn = role ? `<button class="action-btn" onclick="closeServantProfile();openServantRoleFromSettings('${role.id}')">🗂 عدّل الدور</button>` : '';
-    return `<span style="display:inline-flex;align-items:center;gap:6px">${classBadgeHTML(cid)}${btn}</span>`;
-  }).join('');
+    const isSup = sup.includes(cid);
+    const btns = canEdit ? `
+      <button class="action-btn" onclick="setServantClassRole('${s.id}','${cid}',${!isSup})">${isSup ? '🧑‍🏫 خليه خادم' : '🗝️ خليه مسؤول'}</button>
+      <button class="action-btn" onclick="openServantClassPicker('${s.id}','${cid}')">🔁 فصل تاني</button>` : '';
+    return `<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">${classBadgeHTML(cid)}<span style="font-size:11px;color:var(--text-dim)">${isSup ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل'}</span>${btns}</span>`;
+  }).join('') + (canEdit && free.length ? `<button class="action-btn" onclick="openServantClassPicker('${s.id}','')">➕ ضيف فصل</button>` : '');
 }
+
+// بيطبّق خريطة (فصول الخادم + مين مسؤول فيها) على الخادم ده لوحده: بيلاقي/يعمل دور لكل نوع (نوع + فصول بالظبط) وبيربطه بيه،
+// ومبنلمسش أي دور قديم فباقي الخدام مش بيتأثروا
+async function applyServantClassMap(sid, classes, supSet) {
+  if (!rolesLoadedFlag) await loadRolesOnce();
+  const supList = classes.filter(c => supSet.has(c));
+  const srvList = classes.filter(c => !supSet.has(c));
+  const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+  const newRoleIds = [];
+  for (const [type, cls] of [['classSupervisor', supList], ['classServant', srvList]]) {
+    if (!cls.length) continue;
+    let r = allRoles.find(x => !x.isAdmin && (x.type || (x.isSupervisor ? 'classSupervisor' : 'classServant')) === type && Array.isArray(x.classes) && sameSet(x.classes, cls));
+    if (!r) {
+      const data = { name: `${ROLE_TYPE_SHORT[type]} — ${cls.map(c => classLabel(c)).join(' + ')}`, type, isAdmin: false, isSupervisor: type === 'classSupervisor', classes: cls, pendingNames: [] };
+      const ref = await addDoc(collection(db,'roles'), data);
+      r = { id: ref.id, ...data };
+      allRoles.push(r);
+    }
+    newRoleIds.push(r.id);
+  }
+  await updateDoc(doc(db,'servants',sid), {
+    roleIds: newRoleIds, roleId: newRoleIds[0] || '',
+    role: supList.length ? 'supervisor' : 'servant',
+    assignedClass: classes.join(','), supervisorClass: supList.join(',')
+  });
+  await loadServantsOnce(true);
+  await loadRolesOnce(true);
+  openServantProfile(sid);
+}
+function servantEditable(sid) {
+  const sv = cachedServants.find(x => x.id === sid);
+  return (currentRole === 'admin' && sv && sv.role !== 'admin') ? sv : null;
+}
+
+// تغيير دور خادم واحد في فصل واحد (خادم ⇄ مسؤول)
+window.setServantClassRole = async (sid, cid, toSupervisor) => {
+  const sv = servantEditable(sid); if (!sv) return;
+  if (!confirm(`تخلي "${sv.name||''}" ${toSupervisor ? 'مسؤول فصل' : 'خادم عادي'} في ${classLabel(cid)} بس؟ باقي الخدام مش هيتأثروا`)) return;
+  try {
+    const classes = normalizeAssignedClasses(sv.assignedClass);
+    const sup = new Set(supervisedClassesOf(sv));
+    if (toSupervisor) sup.add(cid); else sup.delete(cid);
+    await applyServantClassMap(sid, classes, sup);
+    showToast('تم تغيير دوره في الفصل ده ✓', 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء تغيير الدور', 'error'); }
+};
+
+// نقل الخادم من فصل لفصل تاني (بنفس دوره في الفصل القديم)، أو إضافة فصل جديد له (fromCid فاضي)، أو شيله من فصل
+async function changeServantClass(sid, fromCid, toCid) {
+  const sv = servantEditable(sid); if (!sv) return;
+  try {
+    let classes = normalizeAssignedClasses(sv.assignedClass);
+    const sup = new Set(supervisedClassesOf(sv));
+    const wasSup = fromCid && sup.has(fromCid);
+    if (fromCid) { classes = classes.filter(c => c !== fromCid); sup.delete(fromCid); }
+    if (toCid && !classes.includes(toCid)) { classes.push(toCid); if (wasSup) sup.add(toCid); }
+    if (!classes.length) { showToast('لازم يفضل في فصل واحد على الأقل', 'error'); return; }
+    await applyServantClassMap(sid, classes, sup);
+    showToast(!toCid ? 'اتشال من الفصل ✓' : (fromCid ? 'اتنقل للفصل التاني ✓' : 'اتضاف للفصل ✓'), 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء تغيير الفصل', 'error'); }
+}
+// نافذة اختيار الفصل: fromCid = الفصل الحالي (نقل) أو '' (إضافة فصل)
+window.openServantClassPicker = (sid, fromCid) => {
+  const sv = servantEditable(sid); if (!sv) return;
+  const assigned = normalizeAssignedClasses(sv.assignedClass);
+  const options = allClasses.filter(c => !assigned.includes(c.id));
+  document.getElementById('class-picker-overlay')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'class-picker-overlay'; ov.className = 'modal-overlay';
+  ov.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:400';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const box = document.createElement('div');
+  box.className = 'modal-box'; box.style.cssText = 'width:100%;padding:18px';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:16px;font-weight:900;margin-bottom:6px';
+  title.textContent = fromCid ? `نقل ${sv.name||''} من ${classLabel(fromCid)} إلى:` : `إضافة ${sv.name||''} لفصل:`;
+  box.appendChild(title);
+  if (fromCid) {
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:12px;color:var(--text-dim);margin-bottom:12px';
+    hint.textContent = 'هيفضل بنفس دوره (خادم/مسؤول). باقي الخدام مش هيتأثروا.';
+    box.appendChild(hint);
+  }
+  const chips = document.createElement('div');
+  chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin:12px 0';
+  if (!options.length) chips.innerHTML = '<div class="empty-state" style="padding:10px">مفيش فصول تانية متاحة</div>';
+  options.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'filter-chip'; b.textContent = `${c.emoji||'📘'} ${c.name}`;
+    b.onclick = () => { ov.remove(); changeServantClass(sid, fromCid, c.id); };
+    chips.appendChild(b);
+  });
+  box.appendChild(chips);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+  if (fromCid && assigned.length > 1) {
+    const rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'del-btn'; rm.textContent = '🗑 شيله من الفصل ده';
+    rm.onclick = () => { if (confirm(`تشيل "${sv.name||''}" من ${classLabel(fromCid)}؟`)) { ov.remove(); changeServantClass(sid, fromCid, ''); } };
+    row.appendChild(rm);
+  }
+  const cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'action-btn'; cancel.textContent = 'إلغاء';
+  cancel.onclick = () => ov.remove();
+  row.appendChild(cancel);
+  box.appendChild(row);
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+};
 window.openServantProfile = (id) => {
   const s = cachedServants.find(x => x.id === id);
   if (!s) return;
@@ -4378,8 +4488,6 @@ window.openServantProfile = (id) => {
   document.getElementById('sprof-prep').textContent = s.prepCount||0;
   const assigned = normalizeAssignedClasses(s.assignedClass);
   renderServantProfileClassChips(s);
-  // أدوار الخادم محتاجة تبقى متحمّلة عشان نعرف أنهي دور بتاع أنهي فصل — لو لسه ما اتحمّلتش نحمّلها ونعيد الرسم
-  if (!rolesLoadedFlag && servantRoleIds(s).length) loadRolesOnce().then(() => { if (servantProfileId === s.id) renderServantProfileClassChips(s); });
   const contactLines = [];
   if (s.email) contactLines.push(`📧 <span dir="ltr">${s.email}</span>`);
   if (s.phone) contactLines.push(`📞 <span dir="ltr">${s.phone}</span>`);
