@@ -1528,6 +1528,37 @@ function derivePermsFromRoles(roleList) {
   roleList.forEach(r => (r.classes || []).forEach(c => { all.add(c); if (r.isSupervisor) sup.add(c); }));
   return { role: sup.size ? 'supervisor' : 'servant', assignedClass: [...all].join(','), supervisorClass: [...sup].join(',') };
 }
+// بتحسب صلاحيات خادم واحد بعد ما أدواره اتغيرت — من غير ما تضيّع صلاحياته القديمة، وبتسحب منه بس اللي كان واخده من الدور اللي اتشال منه
+// newIds = أدواره بعد التغيير | rolesNow = كل الأدوار بعد التغيير | removedRole = الدور اللي اتشال منه (لو اتشال) بشكله القديم
+function permsAfterRoleChange(sv, newIds, rolesNow, removedRole) {
+  const list = newIds.map(i => rolesNow.find(r => r.id === i)).filter(Boolean);
+  if (list.some(r => r.isAdmin)) return derivePermsFromRoles(list);
+  const oldClasses = normalizeAssignedClasses(sv.assignedClass);
+  const oldSup = supervisedClassesOf(sv);
+  const unchanged = { role: sv.role || 'servant', assignedClass: oldClasses.join(','), supervisorClass: oldSup.join(',') };
+  // أدمن متعيّن مباشرة (مش من دور): مبنمسهوش إلا لو اتشال من دور أدمن صراحةً
+  if (sv.role === 'admin') {
+    if (removedRole && removedRole.isAdmin) return list.length ? derivePermsFromRoles(list) : { role:'servant', assignedClass:'', supervisorClass:'' };
+    return { role:'admin', assignedClass: '', supervisorClass: '' };
+  }
+  if (removedRole) {
+    if (list.length) return derivePermsFromRoles(list);
+    if (removedRole.isSupervisor) {
+      // اتشال من دور مسؤول فصل وملوش أدوار تانية: بنسحب المسؤولية بس، وبيفضل خادم في نفس فصوله
+      const gone = new Set(removedRole.classes || []);
+      const sup = oldSup.filter(c => !gone.has(c));
+      return { role: sup.length ? 'supervisor' : 'servant', assignedClass: unchanged.assignedClass, supervisorClass: sup.join(',') };
+    }
+    return unchanged;
+  }
+  const hadRoles = servantRoleIds(sv).some(i => rolesNow.some(r => r.id === i));
+  if (hadRoles) return derivePermsFromRoles(list);
+  // خادم قديم من غير أدوار: بنضيف الدور الجديد على صلاحياته الحالية بدل ما نستبدلها
+  const d = derivePermsFromRoles(list);
+  const all = oldClasses.length ? [...new Set([...oldClasses, ...normalizeAssignedClasses(d.assignedClass)])] : []; // فاضي = كل الفصول، يفضل زي ما هو
+  const sup = [...new Set([...oldSup, ...normalizeAssignedClasses(d.supervisorClass)])];
+  return { role: sup.length ? 'supervisor' : 'servant', assignedClass: all.join(','), supervisorClass: sup.join(',') };
+}
 // كل فصول الكي جي (id بيبدأ بـ kg أو الاسم بيبدأ بـ "كي جي") ليها نفس الإيموجي 👶 بغض النظر عن المتخزن في فايرستور
 const KG_CLASS_EMOJI = '👶';
 function unifyKgEmoji(c) {
@@ -4857,10 +4888,14 @@ function renderRolesList() {
   };
   // أسماء خدام مضافة مقدمًا في أدوار الفصل ده ولسه مسجلوش — بتظهر تحت الفصل برضه (وبتختفي أول ما يسجل الخادم ويتمسح الاسم من الدور)
   const escTxt = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const pendingRowHTML = (n) => `<div class="servant-item" style="padding:9px 12px;opacity:.75">
+  const pendingRowHTML = (n, cid) => {
+    // مسؤولية الاسم في الفصل ده: مسؤول فصل لو مضاف في دور مسؤول لنفس الفصل، غير كده خادم فصل
+    const isSup = allRoles.some(r => !r.isAdmin && r.isSupervisor && Array.isArray(r.classes) && r.classes.includes(cid) && (r.pendingNames || []).includes(n));
+    return `<div class="servant-item" style="padding:9px 12px;opacity:.75">
       <div class="s-info"><div class="s-name" style="font-size:13px">${escTxt(n)}</div></div>
-      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">⏳ لسه مسجلش</span>
+      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">⏳ لسه مسجلش حساب · ${isSup ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل'}</span>
     </div>`;
+  };
   const registeredNames = new Set(cachedServants.map(s => (s.name||'').trim()));
   const html = rolesClassFilter.map(cid => {
     const c = classById(cid);
@@ -4876,7 +4911,7 @@ function renderRolesList() {
     const total = members.length + pending.length;
     const title = `<div class="section-title" style="margin:14px 0 6px">${c?c.emoji||'📘':'📘'} ${c?c.name:cid} (${total})</div>`;
     if (!total) return title + `<div class="empty-state" style="padding:10px">مفيش خدام في الفصل ده</div>`;
-    return title + members.map(m => roleRowHTML(m, cid)).join('') + pending.map(pendingRowHTML).join('');
+    return title + members.map(m => roleRowHTML(m, cid)).join('') + pending.map(n => pendingRowHTML(n, cid)).join('');
   }).join('');
   document.getElementById('roles-unassigned-list').innerHTML = html;
 }
@@ -4905,7 +4940,17 @@ window.openRoleEditor = (roleId) => {
 };
 window.closeRoleEditor = () => { showRolesListView(); renderRolesList(); };
 
-window.setRoleType = (type) => { editingRoleType = type; renderRoleTypeChips(); renderRoleClassChips(); updateRoleEffectHint(); };
+window.setRoleType = (type) => {
+  editingRoleType = type;
+  // لو غيّرت النوع لمسؤول/أدمن: بنشيل أي خدام اتضافوا تلقائي بسبب اختيار الفصل — الصلاحيات دي لازم تتدي لناس بالاسم بس
+  if (type !== 'classServant') {
+    editingRoleMemberIds = editingRoleMemberIds.filter(id => !roleAutoAddedIds.includes(id));
+    editingRolePendingNames = editingRolePendingNames.filter(n => !roleAutoAddedPending.includes(n));
+    roleAutoAddedIds = []; roleAutoAddedPending = [];
+    renderRoleMembersChips(); renderRolePendingNames();
+  }
+  renderRoleTypeChips(); renderRoleClassChips(); updateRoleEffectHint();
+};
 function renderRoleTypeChips() {
   document.getElementById('role-type-chips').innerHTML = Object.keys(ROLE_TYPE_LABELS).map(t =>
     `<button type="button" class="filter-chip ${editingRoleType===t?'active':''}" onclick="setRoleType('${t}')">${ROLE_TYPE_LABELS[t]}</button>`).join('');
@@ -4943,7 +4988,8 @@ function roleClassServantIds(classId) {
 window.toggleRoleClass = (classId) => {
   const wasActive = editingRoleClasses.includes(classId);
   editingRoleClasses = wasActive ? editingRoleClasses.filter(x => x !== classId) : [...editingRoleClasses, classId];
-  if (!editingRoleId) {
+  // الإضافة التلقائية لكل خدام الفصل بتحصل لدور "خادم فصل" بس — مسؤول الفصل والأدمن بيتضاف ليهم ناس بالاسم بس
+  if (!editingRoleId && editingRoleType === 'classServant') {
     if (!wasActive) {
       roleClassServantIds(classId).forEach(id => {
         if (!editingRoleMemberIds.includes(id)) { editingRoleMemberIds.push(id); roleAutoAddedIds.push(id); }
@@ -4986,7 +5032,7 @@ window.renderRoleAddMemberResults = () => {
   const q = normalizeArabic(document.getElementById('role-add-members-search')?.value || '');
   const cont = document.getElementById('role-add-members-results');
   const results = cachedServants
-    .filter(s => s.status === 'approved' && (!q || normalizeArabic(s.name||'').includes(q)))
+    .filter(s => s.status === 'approved' && (editingRoleType === 'admin' || s.role !== 'admin') && (!q || normalizeArabic(s.name||'').includes(q)))
     .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
   document.getElementById('role-add-members-selected-count').textContent = editingRoleMemberIds.length;
   cont.innerHTML = results.length ? results.map(s => {
@@ -5071,6 +5117,18 @@ window.saveRole = async () => {
   const isSupervisor = editingRoleType === 'classSupervisor';
   const classesLabel = isAdmin ? '' : editingRoleClasses.map(c => classLabel(c)).join(' + ');
   const name = isAdmin ? 'أدمن' : `${ROLE_TYPE_SHORT[editingRoleType]} — ${classesLabel}`;
+  // حماية: أي دور مسؤول/أدمن لازم تشوف بالظبط مين هياخد الصلاحية قبل الحفظ
+  const oldRole = editingRoleId ? allRoles.find(r => r.id === editingRoleId) : null;
+  if (isAdmin || isSupervisor) {
+    const prevIds = editingRoleId ? cachedServants.filter(s => servantInRole(s, editingRoleId)).map(s => s.id) : [];
+    const wasPrivileged = !!(oldRole && (oldRole.isAdmin || oldRole.isSupervisor));
+    const affected = editingRoleMemberIds.filter(id => wasPrivileged ? !prevIds.includes(id) : true);
+    if (affected.length) {
+      const names = affected.map(id => (cachedServants.find(x => x.id === id)?.name) || '؟');
+      const shown = names.slice(0, 15).join(' ، ') + (names.length > 15 ? ` … (+${names.length - 15})` : '');
+      if (!confirm(`الصلاحية دي (${ROLE_TYPE_SHORT[editingRoleType]}) هتتدي لـ ${names.length} شخص:\n\n${shown}\n\nمتأكد؟`)) return;
+    }
+  }
   try {
     const data = { name, type: editingRoleType, isAdmin, isSupervisor, classes: isAdmin ? [] : editingRoleClasses, pendingNames: isAdmin ? [] : editingRolePendingNames };
     let roleId = editingRoleId;
@@ -5087,8 +5145,8 @@ window.saveRole = async () => {
     removed.forEach(id => {
       const sv = cachedServants.find(x => x.id === id); if (!sv) return;
       const ids = liveIds(servantRoleIds(sv).filter(x => x !== roleId));
-      const upd = { roleIds: ids, roleId: ids[0] || '' };
-      if (ids.length) Object.assign(upd, derivePermsFromRoles(ids.map(i => rolesNow.find(r => r.id === i))));
+      // بنسحب منه بس اللي كان واخده من الدور ده (مسؤولية/أدمن)، وبنسيب باقي صلاحياته
+      const upd = { roleIds: ids, roleId: ids[0] || '', ...permsAfterRoleChange(sv, ids, rolesNow, oldRole || { id: roleId, ...data }) };
       ops.push(updateDoc(doc(db,'servants',id), upd));
     });
     // الأعضاء: الدور بيتضاف لأدوارهم (مش بيستبدلها)، فالخادم يقدر يبقى مسؤول في فصل وخادم في فصل تاني
@@ -5096,7 +5154,7 @@ window.saveRole = async () => {
       const sv = cachedServants.find(x => x.id === id); if (!sv) return;
       const ids = liveIds(servantRoleIds(sv));
       if (!ids.includes(roleId)) ids.push(roleId);
-      ops.push(updateDoc(doc(db,'servants',id), { roleIds: ids, roleId: ids[0], ...derivePermsFromRoles(ids.map(i => rolesNow.find(r => r.id === i))) }));
+      ops.push(updateDoc(doc(db,'servants',id), { roleIds: ids, roleId: ids[0], ...permsAfterRoleChange(sv, ids, rolesNow) }));
     });
     await Promise.all(ops);
 
@@ -5118,12 +5176,13 @@ window.saveRole = async () => {
 window.deleteRoleConfirm = async () => {
   if (!editingRoleId) return;
   const r = allRoles.find(x => x.id === editingRoleId);
-  if (!confirm(`هتحذف دور "${r?.name||''}"؟ الأعضاء بتوعه مش هيتحذفوا، بس هيفضلوا بالصلاحيات اللي كانت عندهم آخر مرة`)) return;
+  if (!confirm(`هتحذف دور "${r?.name||''}"؟ الأعضاء بتوعه مش هيتحذفوا، بس هتتسحب منهم صلاحية الدور ده (مسؤول فصل / أدمن) وهيفضلوا خدام في فصولهم`)) return;
   try {
     const delId = editingRoleId;
+    const rolesLeft = allRoles.filter(x => x.id !== delId);
     await Promise.all(cachedServants.filter(s => servantInRole(s, delId)).map(sv => {
-      const ids = servantRoleIds(sv).filter(x => x !== delId);
-      return updateDoc(doc(db,'servants',sv.id), { roleIds: ids, roleId: ids[0] || '' });
+      const ids = servantRoleIds(sv).filter(x => x !== delId && rolesLeft.some(rr => rr.id === x));
+      return updateDoc(doc(db,'servants',sv.id), { roleIds: ids, roleId: ids[0] || '', ...permsAfterRoleChange(sv, ids, rolesLeft, r || { id: delId }) });
     }));
     await deleteDoc(doc(db,'roles',editingRoleId));
     showToast('تم حذف الدور', 'info');
