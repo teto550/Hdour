@@ -3974,6 +3974,12 @@ window.applyMonitorVisibility = () => {
 // ===== الصفحة الرئيسية للأدمن: الفصول / الخدام =====
 function hideAdminScreens() {
   ['tab-admin-home','tab-admin-classes'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+  hideRolesScreen();
+}
+// شاشة "المستخدمين والأدوار" لازم تتقفل مع أي تنقل تاني (هوم / تابات / فصول)، وإلا الشاشة الجديدة بتظهر فوقها أو تحتها
+function hideRolesScreen() {
+  const r = document.getElementById('tab-roles'); if (r) r.style.display = 'none';
+  document.getElementById('servant-profile-modal') && (document.getElementById('servant-profile-modal').style.display = 'none');
 }
 let adminClassMode = null; // null | 'edit' | 'del'
 window.setAdminClassMode = (m) => {
@@ -4024,6 +4030,7 @@ function hideAllScreens() {
   stopTodayListeners();
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
   hideAdminScreens();
+  hideRolesScreen();
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
   document.getElementById('tab-home').style.display = 'none';
