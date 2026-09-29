@@ -1512,6 +1512,12 @@ const CLASS_PALETTE = [
   {bg:'rgba(230,126,34,0.12)',  border:'rgba(230,126,34,0.3)',  text:'#e67e22'},
   {bg:'rgba(52,152,219,0.12)',  border:'rgba(52,152,219,0.3)',  text:'#3498db'},
 ];
+// كل فصول الكي جي (id بيبدأ بـ kg أو الاسم بيبدأ بـ "كي جي") ليها نفس الإيموجي 👶 بغض النظر عن المتخزن في فايرستور
+const KG_CLASS_EMOJI = '👶';
+function unifyKgEmoji(c) {
+  const isKg = /^kg/i.test(c.id || '') || /^\s*كي\s*جي/.test(c.name || '');
+  return isKg ? { ...c, emoji: KG_CLASS_EMOJI } : c;
+}
 function classById(id) { return allClasses.find(c => c.id === id); }
 function classLabel(sec) { if (!sec) return 'بدون فصل'; const c = classById(sec); return c ? c.name : sec; }
 function classEmoji(sec) { if (!sec) return '؟'; const c = classById(sec); return c ? (c.emoji || '📘') : '❔'; }
@@ -1565,7 +1571,7 @@ function startClassesListener() {
   classesUnsub = onSnapshot(collection(db,'classes'), snap => {
     countSnapshotReads('classes (live)', snap);
     allClasses = snap.docs
-      .map(d => ({ id:d.id, ...d.data() }))
+      .map(d => unifyKgEmoji({ id:d.id, ...d.data() }))
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
     if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
     if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('attendanceClassTab')) ? localStorage.getItem('attendanceClassTab') : allClasses[0].id;
@@ -1813,7 +1819,7 @@ async function loadRegisterClassOptions() {
   sel.innerHTML = `<option value="">جاري تحميل الفصول…</option>`;
   try {
     const snap = await countedGetDocs(collection(db,'classes'), 'classes (فورم التسجيل)');
-    allClasses = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+    allClasses = snap.docs.map(d => unifyKgEmoji({ id:d.id, ...d.data() }))
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
     sel.innerHTML = allClasses.length ? classSelectOptionsHTML(true, 'تحديد الفصل') : `<option value="">لا يوجد فصول متاحة، كلم الأدمن</option>`;
   } catch(e) {
@@ -4706,6 +4712,7 @@ window.openRoleEditor = (roleId) => {
   editingRoleClasses = (r && Array.isArray(r.classes)) ? [...r.classes] : [];
   editingRoleMemberIds = editingRoleId ? cachedServants.filter(s => s.roleId === editingRoleId).map(s => s.id) : [];
   editingRolePendingNames = (r && Array.isArray(r.pendingNames)) ? [...r.pendingNames] : [];
+  roleAutoAddedIds = [];
   document.getElementById('roles-modal-title').textContent = r ? 'تعديل دور' : 'دور جديد';
   document.getElementById('role-delete-btn').style.display = r ? 'block' : 'none';
   document.getElementById('role-add-members-modal').style.display = 'none';
@@ -4735,8 +4742,30 @@ function renderRoleClassChips() {
     return `<button type="button" class="filter-chip ${active?'active':''}" onclick="toggleRoleClass('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
   }).join('');
 }
+// في الدور الجديد بس: أول ما تختار فصل، خدام الفصل ده بيتضافوا لخانة الأعضاء تلقائي (وتقدر تشيل أي حد بالـ ✕)،
+// ولو شلت الفصل بيتشال معاه الخدام اللي اتضافوا بسببه (إلا لو تبع فصل تاني لسه مختاره)
+let roleAutoAddedIds = [];
+function roleClassServantIds(classId) {
+  return cachedServants
+    .filter(s => s.status === 'approved' && s.role !== 'admin' && normalizeAssignedClasses(s.assignedClass).includes(classId))
+    .map(s => s.id);
+}
 window.toggleRoleClass = (classId) => {
-  editingRoleClasses = editingRoleClasses.includes(classId) ? editingRoleClasses.filter(x => x !== classId) : [...editingRoleClasses, classId];
+  const wasActive = editingRoleClasses.includes(classId);
+  editingRoleClasses = wasActive ? editingRoleClasses.filter(x => x !== classId) : [...editingRoleClasses, classId];
+  if (!editingRoleId) {
+    if (!wasActive) {
+      roleClassServantIds(classId).forEach(id => {
+        if (!editingRoleMemberIds.includes(id)) { editingRoleMemberIds.push(id); roleAutoAddedIds.push(id); }
+      });
+    } else {
+      const stillCovered = new Set(editingRoleClasses.flatMap(roleClassServantIds));
+      const toRemove = roleAutoAddedIds.filter(id => !stillCovered.has(id));
+      editingRoleMemberIds = editingRoleMemberIds.filter(id => !toRemove.includes(id));
+      roleAutoAddedIds = roleAutoAddedIds.filter(id => !toRemove.includes(id));
+    }
+    renderRoleMembersChips();
+  }
   renderRoleClassChips();
   updateRoleEffectHint();
 };
@@ -4779,6 +4808,7 @@ window.toggleRoleMemberSelection = (id) => {
 };
 window.removeRoleMember = (id) => {
   editingRoleMemberIds = editingRoleMemberIds.filter(x => x !== id);
+  roleAutoAddedIds = roleAutoAddedIds.filter(x => x !== id);
   renderRoleMembersChips();
   updateRoleEffectHint();
 };
