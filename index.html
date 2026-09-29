@@ -4348,6 +4348,24 @@ function renderServantsList(list) {
 }
 // ===== ملف الخادم (بيفتح لما تدوس على اسمه في تبويب "متابعة") =====
 let servantProfileId = '';
+// شارات فصول الخادم في ملفه: كل فصل هو فيه + زرار واحد جنبه لتعديل دوره في الفصل ده بالتحديد
+function renderServantProfileClassChips(s) {
+  const box = document.getElementById('sprof-class-chips');
+  const assigned = normalizeAssignedClasses(s.assignedClass);
+  if (!assigned.length) {
+    box.innerHTML = `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
+    return;
+  }
+  const myRoles = servantRoleIds(s).map(rid => allRoles.find(r => r.id === rid)).filter(Boolean);
+  const sup = supervisedClassesOf(s);
+  box.innerHTML = assigned.map(cid => {
+    // الدور اللي بيغطي الفصل ده — لو مسؤول عن الفصل بنفضّل دور المسؤول، ولو فيه أدوار مكررة ناخد أول واحد
+    const inClass = myRoles.filter(r => Array.isArray(r.classes) && r.classes.includes(cid));
+    const role = (sup.includes(cid) ? inClass.find(r => r.isSupervisor) : null) || inClass[0];
+    const btn = role ? `<button class="action-btn" onclick="closeServantProfile();openServantRoleFromSettings('${role.id}')">🗂 عدّل الدور</button>` : '';
+    return `<span style="display:inline-flex;align-items:center;gap:6px">${classBadgeHTML(cid)}${btn}</span>`;
+  }).join('');
+}
 window.openServantProfile = (id) => {
   const s = cachedServants.find(x => x.id === id);
   if (!s) return;
@@ -4359,9 +4377,9 @@ window.openServantProfile = (id) => {
   document.getElementById('sprof-meeting').textContent = s.meetingCount||0;
   document.getElementById('sprof-prep').textContent = s.prepCount||0;
   const assigned = normalizeAssignedClasses(s.assignedClass);
-  document.getElementById('sprof-class-chips').innerHTML =
-    (assigned.length ? assigned.map(cid => classBadgeHTML(cid)).join(' ') : `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`)
-    + servantRoleIds(s).map((rid, i, arr) => `<button class="action-btn" onclick="closeServantProfile();openServantRoleFromSettings('${rid}')">🗂 ${arr.length > 1 ? 'عدّل ' + (allRoles.find(r => r.id === rid)?.name || 'دور ' + (i+1)) : 'عدّل من الدور'}</button>`).join('');
+  renderServantProfileClassChips(s);
+  // أدوار الخادم محتاجة تبقى متحمّلة عشان نعرف أنهي دور بتاع أنهي فصل — لو لسه ما اتحمّلتش نحمّلها ونعيد الرسم
+  if (!rolesLoadedFlag && servantRoleIds(s).length) loadRolesOnce().then(() => { if (servantProfileId === s.id) renderServantProfileClassChips(s); });
   const contactLines = [];
   if (s.email) contactLines.push(`📧 <span dir="ltr">${s.email}</span>`);
   if (s.phone) contactLines.push(`📞 <span dir="ltr">${s.phone}</span>`);
