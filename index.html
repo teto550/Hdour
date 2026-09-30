@@ -1090,7 +1090,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <option value="90" selected>آخر 3 شهور</option>
           <option value="180">آخر 6 شهور</option>
           <option value="365">آخر سنة</option>
-          <option value="all">كل السجل (بيستهلك قراءات كتير)</option>
+          <option value="all">كل السجل</option>
         </select>
       </div>
       <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
@@ -4335,8 +4335,6 @@ window.runExportExcel = async () => {
   if (anyStudentPart && exportClassChoices().length > 1 && !exportSelectedClasses.size) { showToast('اختار فصل واحد على الأقل للمخدومين', 'error'); return; }
   if ((includeServData || includeServAtt) && exportServClassChoices().length > 1 && !exportServSelected.size) { showToast('اختار فصل واحد على الأقل للخدام', 'error'); return; }
 
-  if ((includeAtt || includeVerse || includeServAtt) && document.getElementById('export-range')?.value === 'all'
-      && !confirm('تصدير كل السجل هيقرا آلاف المستندات ويستهلك من حصة Firebase اليومية. تكمل؟')) return;
   closeExportModal();
   showToast('جاري تجهيز الملف…','info');
 
