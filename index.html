@@ -1083,6 +1083,16 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         </div>
         <div id="export-classes-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
+      <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div class="section-title" style="margin-bottom:8px">الفترة (للحضور والتسميع وحضور الخدام)</div>
+        <select id="export-range" class="field-input">
+          <option value="30">آخر شهر</option>
+          <option value="90" selected>آخر 3 شهور</option>
+          <option value="180">آخر 6 شهور</option>
+          <option value="365">آخر سنة</option>
+          <option value="all">كل السجل (بيستهلك قراءات كتير)</option>
+        </select>
+      </div>
       <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
         <input type="checkbox" id="export-opt-att" checked style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
         <span style="font-size:14px;font-weight:600">✓ سجل الحضور</span>
@@ -2465,9 +2475,12 @@ window.addStudent = async () => {
   toggleAddStudentForm();
 };
 
+const canDeleteStudent = () => currentRole === 'admin' || isPrimaryAdmin(currentEmail);
 window.deleteStudent = async (id, name) => {
+  if (!canDeleteStudent()) { showToast('حذف المخدومين للأدمن بس', 'error'); return; }
   if (!confirm(`هتحذف "${name}"؟`)) return;
-  await deleteDoc(doc(db,'students',id)); bumpStudentsRev(true);
+  try { await deleteDoc(doc(db,'students',id)); } catch(e) { console.error(e); showToast('مقدرتش أحذف — مفيش صلاحية', 'error'); return; }
+  bumpStudentsRev(true);
   allStudents = allStudents.filter(s => s.id !== id);
   delete todayAttendance[id];
   updateStats(); renderTodayList(); renderStudentsList();
@@ -2620,7 +2633,7 @@ function renderStudentsList() {
       </div>
       <button class="action-btn" onclick="openProfile('${s.id}')">👤</button>
       <button class="action-btn" onclick="openEditModal('${s.id}')">✏️</button>
-      <button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>
+      ${canDeleteStudent() ? `<button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>` : ''}
     </div>`;
   }).join('');
 }
@@ -4303,6 +4316,13 @@ function buildServantsAttSheet(activity, byDate) {
   return styleSimpleSheet(ws, head.length, rows.length, [26, 22, ...dates.map(() => 11), 10]);
 }
 
+// فلتر الفترة بيتحط على الاستعلام نفسه (date >= من) عشان القراءات تتحسب على الفترة بس، مش السجل كله
+function exportRangeQuery(col) {
+  const v = document.getElementById('export-range')?.value || '90';
+  if (v === 'all') return collection(db, col);
+  const d = new Date(); d.setDate(d.getDate() - parseInt(v, 10));
+  return query(collection(db, col), where('date', '>=', toLocalDateKey(d)));
+}
 window.runExportExcel = async () => {
   const includeAtt = document.getElementById('export-opt-att').checked;
   const includeVerse = document.getElementById('export-opt-verse').checked;
@@ -4315,6 +4335,8 @@ window.runExportExcel = async () => {
   if (anyStudentPart && exportClassChoices().length > 1 && !exportSelectedClasses.size) { showToast('اختار فصل واحد على الأقل للمخدومين', 'error'); return; }
   if ((includeServData || includeServAtt) && exportServClassChoices().length > 1 && !exportServSelected.size) { showToast('اختار فصل واحد على الأقل للخدام', 'error'); return; }
 
+  if ((includeAtt || includeVerse || includeServAtt) && document.getElementById('export-range')?.value === 'all'
+      && !confirm('تصدير كل السجل هيقرا آلاف المستندات ويستهلك من حصة Firebase اليومية. تكمل؟')) return;
   closeExportModal();
   showToast('جاري تجهيز الملف…','info');
 
@@ -4328,8 +4350,8 @@ window.runExportExcel = async () => {
     if (includeAtt || includeVerse) {
       const expAtt = {}, expVer = {};
       const proms = [];
-      if (includeAtt) proms.push(countedGetDocs(collection(db,'attendance'), 'attendance (تصدير إكسل)').then(a => a.docs.forEach(x => { const d = x.data(); (expAtt[d.date] ||= {})[d.studentId] = x.id; })));
-      if (includeVerse) proms.push(countedGetDocs(collection(db,'verses'), 'verses (تصدير إكسل)').then(v => v.docs.forEach(x => { const d = x.data(); (expVer[d.date] ||= {})[d.studentId] = { id:x.id, verse:d.verse||'' }; })));
+      if (includeAtt) proms.push(countedGetDocs(exportRangeQuery('attendance'), 'attendance (تصدير إكسل)').then(a => a.docs.forEach(x => { const d = x.data(); (expAtt[d.date] ||= {})[d.studentId] = x.id; })));
+      if (includeVerse) proms.push(countedGetDocs(exportRangeQuery('verses'), 'verses (تصدير إكسل)').then(v => v.docs.forEach(x => { const d = x.data(); (expVer[d.date] ||= {})[d.studentId] = { id:x.id, verse:d.verse||'' }; })));
       await Promise.all(proms);
       const sheetName = includeAtt && includeVerse ? 'حضور وتسميع' : (includeAtt ? 'حضور' : 'تسميع');
       XLSX.utils.book_append_sheet(wb, buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse), sheetName);
@@ -4347,7 +4369,7 @@ window.runExportExcel = async () => {
         nameParts.push('خدام');
       }
       if (includeServAtt) {
-        const snap = await countedGetDocs(collection(db,'servantAttendance'), 'servantAttendance (تصدير إكسل)');
+        const snap = await countedGetDocs(exportRangeQuery('servantAttendance'), 'servantAttendance (تصدير إكسل)');
         const byAct = {};
         snap.docs.forEach(x => { const d = x.data(); if (!d.activity || !d.date || !d.servantId) return; ((byAct[d.activity] ||= {})[d.date] ||= {})[d.servantId] = true; });
         let added = 0;
