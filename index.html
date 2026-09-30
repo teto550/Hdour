@@ -1278,6 +1278,44 @@ function countDocSnapshotReads(label, snap) {
   if (snap.exists && snap.exists()) countReads(label, 1);
 }
 
+// ===== كاش كبير على الجهاز (IndexedDB) =====
+// localStorage حجمه حوالي 5MB بس، والمخدومين بصورهم (base64 جوه المستند) بيعدّوه بسرعة، فالحفظ كان بيفشل بصمت
+// وكل خادم كان بيقرا كل المخدومين من فايرستور في كل فتحة. IndexedDB مساحته أكبر بكتير.
+const _idbP = (() => {
+  try {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('stmina-cache', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  } catch(e) { return Promise.reject(e); }
+})();
+_idbP.catch(() => {});
+async function idbGet(key) {
+  try {
+    const idb = await _idbP;
+    return await new Promise((res, rej) => {
+      const q = idb.transaction('kv').objectStore('kv').get(key);
+      q.onsuccess = () => res(q.result ?? null);
+      q.onerror = () => rej(q.error);
+    });
+  } catch(e) { return null; }
+}
+async function idbSet(key, val) {
+  try {
+    const idb = await _idbP;
+    await new Promise((res, rej) => {
+      const tx = idb.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(val, key);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+      tx.onabort = () => rej(tx.error);
+    });
+    return true;
+  } catch(e) { return false; }
+}
+
 // توحيد النصوص العربية للبحث: يشيل التشكيل، الحروف الخفية (من إكسل)، ويوحّد أشكال الحروف المتشابهة
 function normalizeArabic(str) {
   return (str || '')
@@ -2339,11 +2377,15 @@ function tsMs(t) {
 }
 function saveStudentsCache(rev, delRev) {
   const maxUpd = allStudents.reduce((m, s) => Math.max(m, tsMs(s.updatedAt)), 0);
-  try { localStorage.setItem(STU_KEY, JSON.stringify({ rev, delRev, ts: Date.now(), maxUpd, list: allStudents })); } catch(e) {}
+  const payload = JSON.stringify({ rev, delRev, ts: Date.now(), maxUpd, list: allStudents });
+  idbSet(STU_KEY, payload).then(ok => {
+    if (ok) { try { localStorage.removeItem(STU_KEY); } catch(e) {} }
+    else { try { localStorage.setItem(STU_KEY, payload); } catch(e) {} }
+  });
 }
 window.forceRefreshStudents = async () => { await loadStudents(true); showToast('تم تحديث المخدومين ✓','success'); };
 async function loadStudents(force = false) {
-  let cached = null; try { cached = JSON.parse(localStorage.getItem(STU_KEY) || 'null'); } catch(e) {}
+  let cached = null; try { cached = JSON.parse((await idbGet(STU_KEY)) || localStorage.getItem(STU_KEY) || 'null'); } catch(e) {}
   let rev = null, delRev = 0;
   try { const m = await getDoc(doc(db,'config','meta')); const d = m.exists() ? m.data() : {}; rev = d.studentsRev || 0; delRev = d.studentsDelRev || 0; } catch(e) {}
   // كاش سليم = نفس عدّاد الحذف (لو حد اتحذف بنحمّل من الأول). ولو رقم التعديلات اتغيّر بنجيب المتغيّر بس مش الكل
@@ -2965,12 +3007,27 @@ window.renderWaTab = () => {
 // ===== ATTENDANCE =====
 let recentAttWeeks = 0;
 const filterWeeks = () => Math.max(parseInt(absenceFilter)||0, parseInt(attendanceFilter)||0, parseInt(waAbsenceFilter)||0, parseInt(waAttendanceFilter)||0) + 2;
+const ATT_CACHE_KEY = 'att_recent_cache_v1';
 async function ensureRecentAttendance(weeks) {
   weeks = Math.max(weeks || 4, 4);
   if (recentAttWeeks >= weeks) return;
   const d = new Date(); d.setDate(d.getDate() - weeks*7);
-  const snap = await countedGetDocs(query(collection(db,'attendance'), where('date','>=', toLocalDateKey(d))), 'attendance (نطاق زمني)');
-  snap.docs.forEach(x => { const v = x.data(); if (!allAttendance[v.date]) allAttendance[v.date] = {}; allAttendance[v.date][v.studentId] = x.id; });
+  const fromKey = toLocalDateKey(d), nowKey = todayKey();
+  // الأسابيع اللي فاتت مبتتغيّرش، فبنخزّنها على الجهاز ونقرا من آخر جلسة اتزامنت بس (جلسة النهارده تقريبًا)
+  // بدل ما نقرا كل الأسابيع من فايرستور في كل فتحة. وبنعمل تحميل كامل تاني كل 7 أيام للأمان.
+  let c = null; try { c = JSON.parse((await idbGet(ATT_CACHE_KEY)) || 'null'); } catch(e) {}
+  const fresh = !!(c && c.data && c.from && c.from <= fromKey && c.through && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
+  const data = fresh ? c.data : {};
+  const qFrom = fresh ? c.through : fromKey;
+  const snap = await countedGetDocs(query(collection(db,'attendance'), where('date','>=', qFrom)), 'attendance (نطاق زمني)');
+  for (const k of Object.keys(data)) if (k >= qFrom) delete data[k]; // الأيام اللي هنقراها تاني بتتستبدل بالكامل (لو حد اتشال حضوره)
+  snap.docs.forEach(x => { const v = x.data(); if (!data[v.date]) data[v.date] = {}; data[v.date][v.studentId] = x.id; });
+  for (const k in data) {
+    if (k < fromKey) continue; // بنضيف للذاكرة الفترة المطلوبة بس زي الأول بالظبط (عدّاد الحضور في الفلتر بيعتمد عليها)
+    if (!allAttendance[k]) allAttendance[k] = {};
+    Object.assign(allAttendance[k], data[k]);
+  }
+  idbSet(ATT_CACHE_KEY, JSON.stringify({ from: fresh ? c.from : fromKey, through: nowKey, fullTs: fresh ? c.fullTs : Date.now(), data }));
   recentAttWeeks = weeks;
 }
 const studentHist = {};
