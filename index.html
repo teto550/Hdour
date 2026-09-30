@@ -412,6 +412,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 <!-- APP -->
 <div id="app-screen">
   <div class="top-bar">
+    <button class="icon-btn" id="top-back-btn" onclick="goBack()" title="رجوع" style="display:none;width:44px;height:44px;font-size:22px;border-radius:14px;margin-left:8px;flex:0 0 auto">→</button>
     <div style="flex:1;min-width:0">
       <div class="top-bar-title" style="display:flex;align-items:center;gap:8px">
         <img src="icon-193.png" style="width:26px;height:26px;border-radius:6px;object-fit:cover">خدمة البابا اثناسيوس
@@ -1213,7 +1214,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, arrayUnion, arrayRemove }
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, Timestamp, writeBatch, increment, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
@@ -1746,7 +1747,7 @@ function classScope(list) { return classScopeActive() ? list.filter(s => s.class
 function effectiveClassFilter() {
   if (!currentClassTab || !classById(currentClassTab)) return classFilter;
   const grp = babyKgClasses();
-  if (grp.some(c => c.id === currentClassTab)) return grp.some(c => c.id === classFilter) ? classFilter : currentClassTab;
+  if (grp.some(c => c.id === currentClassTab)) return (classFilter === 'none' || grp.some(c => c.id === classFilter)) ? classFilter : currentClassTab;
   return currentClassTab;
 }
 function renderClassChips() {
@@ -1755,7 +1756,7 @@ function renderClassChips() {
   const grp = babyKgClasses();
   const show = !!currentClassTab && grp.some(c => c.id === currentClassTab);
   cont.style.display = show ? '' : 'none';
-  cont.innerHTML = show ? classChipsHTML(effectiveClassFilter(), 'setClassFilter', { classes: grp }) : '';
+  cont.innerHTML = show ? classChipsHTML(effectiveClassFilter(), 'setClassFilter', { classes: grp, includeNone: true }) : '';
 }
 function renderProfClassChips(activeId) {
   const cont = document.getElementById('prof-class-chips');
@@ -2121,7 +2122,7 @@ onAuthStateChanged(auth, async user => {
     if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
     stopClassesListener();
     classPicked = false;
-    localStorage.removeItem('stu_cache_v1'); studentsLoaded = false;
+    localStorage.removeItem('stu_cache_v1'); localStorage.removeItem('stu_cache_v2'); studentsLoaded = false;
     showAuthScreen();
     const btn = document.getElementById('login-btn');
     btn.disabled = false; btn.textContent = 'دخول';
@@ -2316,39 +2317,61 @@ window.toggleAddStudentForm = () => {
 
 // ===== STUDENTS =====
 let studentsLoaded = false;
-const STU_KEY = 'stu_cache_v1';
+const STU_KEY = 'stu_cache_v2'; // v2: كاش بيتحدّث بالتغييرات بس (updatedAt) بدل إعادة تحميل الكل
 async function ensureStudents() { if (!studentsLoaded) await loadStudents(); }
-// أي كتابة على students بتزوّد الرقم ده عشان كل الأجهزة تعرف إن الكاش قديم
-let bumpTimer = null;
-function bumpStudentsRev() {
-  try { localStorage.removeItem(STU_KEY); } catch(e) {}
+// أي كتابة على students بتزوّد الرقم ده عشان كل الأجهزة تعرف إن فيه تغيير (والحذف له عدّاد لوحده لأنه مش بيظهر في تحديث التغييرات)
+let bumpTimer = null, bumpDel = false;
+function bumpStudentsRev(deleted = false) {
+  if (deleted) bumpDel = true;
   clearTimeout(bumpTimer);
   // بنجمّع أي كتابات ورا بعض (زي إضافة مجموعة للجروب) في كتابة واحدة على config/meta
   bumpTimer = setTimeout(async () => {
-    try {
-      await setDoc(doc(db,'config','meta'), { studentsRev: increment(1) }, { merge:true });
-      const m = await getDoc(doc(db,'config','meta'));
-      // الجهاز اللي كتب بيحفظ نسخته الحالية بالرقم الجديد عشان ميحمّلش المخدومين تاني
-      localStorage.setItem(STU_KEY, JSON.stringify({ rev: m.data().studentsRev || 0, ts: Date.now(), list: allStudents }));
-    } catch(e) {}
+    const upd = { studentsRev: increment(1) };
+    if (bumpDel) upd.studentsDelRev = increment(1);
+    bumpDel = false;
+    try { await setDoc(doc(db,'config','meta'), upd, { merge:true }); } catch(e) {}
   }, 2000);
+}
+function tsMs(t) {
+  if (!t) return 0;
+  if (typeof t.toMillis === 'function') return t.toMillis();
+  return (t.seconds || 0) * 1000 + Math.floor((t.nanoseconds || 0) / 1e6);
+}
+function saveStudentsCache(rev, delRev) {
+  const maxUpd = allStudents.reduce((m, s) => Math.max(m, tsMs(s.updatedAt)), 0);
+  try { localStorage.setItem(STU_KEY, JSON.stringify({ rev, delRev, ts: Date.now(), maxUpd, list: allStudents })); } catch(e) {}
 }
 window.forceRefreshStudents = async () => { await loadStudents(true); showToast('تم تحديث المخدومين ✓','success'); };
 async function loadStudents(force = false) {
   let cached = null; try { cached = JSON.parse(localStorage.getItem(STU_KEY) || 'null'); } catch(e) {}
-  let rev = null;
-  try { const m = await getDoc(doc(db,'config','meta')); rev = m.exists() ? (m.data().studentsRev || 0) : 0; } catch(e) {}
-  const ok = cached && !force && (rev !== null ? cached.rev === rev : (Date.now() - cached.ts < 12*3600*1000));
-  if (ok) { allStudents = cached.list; }
-  else {
+  let rev = null, delRev = 0;
+  try { const m = await getDoc(doc(db,'config','meta')); const d = m.exists() ? m.data() : {}; rev = d.studentsRev || 0; delRev = d.studentsDelRev || 0; } catch(e) {}
+  // كاش سليم = نفس عدّاد الحذف (لو حد اتحذف بنحمّل من الأول). ولو رقم التعديلات اتغيّر بنجيب المتغيّر بس مش الكل
+  const usable = cached && !force && Array.isArray(cached.list) && (rev !== null ? cached.delRev === delRev : (Date.now() - cached.ts < 12*3600*1000));
+  if (usable && (rev === null || cached.rev === rev)) {
+    allStudents = cached.list;
+  } else if (usable) {
+    try {
+      const since = Timestamp.fromMillis(Math.max(0, (cached.maxUpd || 0) - 60000)); // هامش دقيقة للأمان
+      const snap = await countedGetDocs(query(collection(db,'students'), where('updatedAt','>=', since)), 'students (تحديث بالتغييرات بس)');
+      const map = new Map(cached.list.map(x => [x.id, x]));
+      snap.docs.forEach(d => map.set(d.id, { id:d.id, ...d.data() }));
+      allStudents = [...map.values()].sort((a, b) => (a.name || '') < (b.name || '') ? -1 : ((a.name || '') > (b.name || '') ? 1 : 0));
+      saveStudentsCache(rev, delRev);
+    } catch(e) {
+      console.error(e);
+      const snap = await countedGetDocs(query(collection(db,'students'), orderBy('name')), 'students');
+      allStudents = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      saveStudentsCache(rev, delRev);
+    }
+  } else {
     const snap = await countedGetDocs(query(collection(db,'students'), orderBy('name')), 'students');
     allStudents = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    try { localStorage.setItem(STU_KEY, JSON.stringify({ rev, ts: Date.now(), list: allStudents })); } catch(e) {}
+    saveStudentsCache(rev, delRev);
   }
   studentsLoaded = true;
-  // تبويب "المخدومين" بيعرض كل الفصول لكل خادم (مع إمكانية فلترة فصله بس من الشاشة)،
-  // أما الشاشات التانية (الحضور، الرسائل، التصدير) فبتفضل مقفولة على فصل الخادم عن طريق
-  // visibleClasses / ownClassStudents() في كل واحدة منها لوحدها
+  // تبويب "المخدومين" بيعرض مخدومين الفصل الحالي بس (وفلتر الفصول للتلات فصول بيبي/كي جي)،
+  // والشاشات التانية (الحضور، الرسائل، التصدير) بتتقفل على فصل الخادم عن طريق classScope / ownClassStudents
   updateStuCount();
   renderStudentsList();
 }
@@ -2368,7 +2391,8 @@ window.addStudent = async () => {
     address: document.getElementById('new-address').value.trim() || '',
     gender:  document.getElementById('new-gender').value || '',
     phones,
-    createdAt: serverTimestamp()
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
   };
   // لو الخادم مقيد بفصول معينة، أي مخدوم جديد بيضيفه يتحط أوتوماتيك في الفصل الحالي اللى شافه في الواجهة عشان يبقى ضمن الفصول المسموح له
   if (currentRole !== 'admin' && allowed.length) data.classSection = targetClass;
@@ -2390,7 +2414,7 @@ window.addStudent = async () => {
 
 window.deleteStudent = async (id, name) => {
   if (!confirm(`هتحذف "${name}"؟`)) return;
-  await deleteDoc(doc(db,'students',id)); bumpStudentsRev();
+  await deleteDoc(doc(db,'students',id)); bumpStudentsRev(true);
   allStudents = allStudents.filter(s => s.id !== id);
   delete todayAttendance[id];
   updateStats(); renderTodayList(); renderStudentsList();
@@ -2406,7 +2430,7 @@ window.cleanAllNames = async () => {
   if (!toFix.length) { showToast('كل الأسامي سليمة ✓', 'success'); return; }
   if (!confirm(`فيه ${toFix.length} اسم هيتم توحيد حروفه (أ/إ/آ ← ا، ومسافات/حروف مخفية). تصحّحهم دلوقتي؟`)) return;
   for (const x of toFix) {
-    await updateDoc(doc(db,'students', x.id), { name: x.newName }); bumpStudentsRev();
+    await updateDoc(doc(db,'students', x.id), { name: x.newName, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(s => s.id === x.id);
     if (idx !== -1) allStudents[idx].name = x.newName;
   }
@@ -2436,7 +2460,7 @@ window.guessAllGenders = async () => {
     for (let i = 0; i < candidates.length; i += 450) {
       const chunk = candidates.slice(i, i + 450);
       const batch = writeBatch(db);
-      chunk.forEach(x => batch.update(doc(db,'students', x.id), { gender: x.guess }));
+      chunk.forEach(x => batch.update(doc(db,'students', x.id), { gender: x.guess, updatedAt: serverTimestamp() }));
       await batch.commit(); bumpStudentsRev();
     }
     candidates.forEach(x => {
@@ -2594,7 +2618,7 @@ function getWaPhone(s) {
 // تحديد رقم معين كرقم الواتساب الرسمي لهذا المخدوم
 window.markWaPhone = async (id, idx) => {
   try {
-    await updateDoc(doc(db,'students',id), { waPhoneIndex: idx }); bumpStudentsRev();
+    await updateDoc(doc(db,'students',id), { waPhoneIndex: idx, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const s = allStudents.find(x => x.id === id);
     if (s) s.waPhoneIndex = idx;
     showToast('تم تحديد رقم الواتساب ✓', 'success');
@@ -2821,7 +2845,7 @@ window.toggleWaRecipient = (id, checked) => {
 
 window.toggleWaGroupAdded = async (id, value) => {
   try {
-    await updateDoc(doc(db,'students',id), { waGroupAdded: value }); bumpStudentsRev();
+    await updateDoc(doc(db,'students',id), { waGroupAdded: value, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(s => s.id === id);
     if (idx !== -1) allStudents[idx].waGroupAdded = value;
     renderWaRecipientsList();
@@ -2834,7 +2858,7 @@ window.toggleWaGroupAdded = async (id, value) => {
 async function markWaGroupAdded(list) {
   for (const s of list) {
     if (s.waGroupAdded) continue;
-    await updateDoc(doc(db,'students',s.id), { waGroupAdded: true }); bumpStudentsRev();
+    await updateDoc(doc(db,'students',s.id), { waGroupAdded: true, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(x => x.id === s.id);
     if (idx !== -1) allStudents[idx].waGroupAdded = true;
   }
@@ -3251,7 +3275,7 @@ window.onManualSearch = () => {
 // أول مرة يترقى فيها ولد: نحفظله الفصل (أ/ب) وبعدين نعرض خانة الحضور العادية بدل زرار الاختيار
 window.assignClassSection = async (id, section) => {
   try {
-    await updateDoc(doc(db,'students',id), { classSection: section }); bumpStudentsRev();
+    await updateDoc(doc(db,'students',id), { classSection: section, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(x => x.id === id);
     if (idx !== -1) allStudents[idx].classSection = section;
     const s = allStudents[idx];
@@ -3474,7 +3498,7 @@ window.handleProfilePhotoChange = async (e) => {
   try {
     showToast('جاري رفع الصورة…', 'info');
     const dataUrl = await resizeImageToDataURL(file, 320, 0.7);
-    await updateDoc(doc(db,'students',id), { photo: dataUrl });
+    await updateDoc(doc(db,'students',id), { photo: dataUrl, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(x => x.id === id);
     if (idx !== -1) allStudents[idx] = { ...allStudents[idx], photo: dataUrl };
     if (currentProfileId === id) renderProfAvatar(allStudents[idx] || { photo: dataUrl, name: '' });
@@ -3567,7 +3591,7 @@ window.setStudentClassFromProfile = async (section) => {
   const id = currentProfileId;
   if (!id) return;
   try {
-    await updateDoc(doc(db,'students',id), { classSection: section }); bumpStudentsRev();
+    await updateDoc(doc(db,'students',id), { classSection: section, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(x => x.id === id);
     if (idx !== -1) allStudents[idx].classSection = section;
     renderProfClassChips(section);
@@ -3856,9 +3880,18 @@ window.voicePickStudent = async (id) => {
 let exportSelectedClasses = new Set();
 // الفصول اللي الخادم أصلاً يقدر يشوفها (لو أدمن أو مسموحله بكل الفصول بترجع كل الفصول)
 function exportClassChoices() {
+  // الأدمن كل الفصول. الخادم/المسؤول اللي متوزع على فصل أو أكتر: فصوله هو كلها (يختار منها أو كلها).
+  // اللي مش متوزع على فصل معيّن: فصله الحالي بس (إلا لو هو في بيبي/كي جي).
   const allowed = getAllowedAssignedClasses();
-  const list = allowed.length ? allClasses.filter(c => allowed.includes(c.id)) : allClasses;
-  return (currentRole !== 'admin' && classScopeActive()) ? list.filter(c => c.id === currentClassTab) : list;
+  if (currentRole === 'admin') return allClasses;
+  if (allowed.length) return allClasses.filter(c => allowed.includes(c.id));
+  return classScopeActive() ? allClasses.filter(c => c.id === currentClassTab) : allClasses;
+}
+function exportBaseStudents() {
+  const allowed = getAllowedAssignedClasses();
+  if (currentRole === 'admin') return allStudents;
+  if (allowed.length) return allStudents.filter(s => allowed.includes(s.classSection));
+  return classScope(allStudents);
 }
 // ملخص الفصول المتحددة كشيبس فيها ✕ (أو شيبس واحدة "كل الفصول" لو كلهم متحددين)
 function exportClassChipsHTML(target, set, choices) {
@@ -3919,7 +3952,7 @@ window.clearExportClasses = (target) => { exportPickSet(target).clear(); refresh
 // المخدومين اللي هيتصدّروا فعلاً: لو فيه أكتر من فصل متاح، بنفلتر على الفصول المتحددة بس
 function exportTargetStudents() {
   const choices = exportClassChoices();
-  const base = ownClassStudents();
+  const base = exportBaseStudents();
   if (choices.length <= 1) return base;
   return base.filter(s => exportSelectedClasses.has(s.classSection));
 }
@@ -4306,7 +4339,7 @@ window.goHome = () => {
   hideAllScreens();
   const hdr = document.getElementById('class-home-header'); if (hdr) hdr.style.display = 'none';
   if (currentRole === 'admin') document.getElementById('tab-admin-home').style.display = 'block';
-  else if (needsClassPick() && !classPicked) showClassPicker();
+  else if (needsClassPick()) showClassPicker(); // الرئيسية للي عنده أكتر من فصل = يختار فصل من فصوله
   else showClassHome();
   applyMonitorVisibility();
 };
@@ -4347,6 +4380,40 @@ window.showClassHome = () => {
   document.getElementById('tab-home').style.display = 'block';
   applyMonitorVisibility();
 };
+// ===== زرار الرجوع فوق: تاب (حضور/مخدومين/…) ← كروت الفصل ← اختيار الفصل (أو الفصول للأدمن) =====
+function navLevel() {
+  const shown = id => document.getElementById(id)?.style.display === 'block';
+  if (shown('tab-admin-home')) return 'adminHome';
+  if (shown('tab-admin-classes')) return 'adminClasses';
+  if (shown('tab-pick-class')) return 'picker';
+  if (shown('tab-home')) return 'classHome';
+  if (['attendance','students','filters','messages','monitor','classservants'].some(t => shown('tab-' + t))) return 'tab';
+  return '';
+}
+function updateBackBtn() {
+  const b = document.getElementById('top-back-btn'); if (!b) return;
+  const lvl = navLevel();
+  const canGoBack = currentRole === 'admin' || needsClassPick();
+  const show = lvl === 'tab' || lvl === 'adminClasses' || (lvl === 'classHome' && canGoBack);
+  b.style.display = show ? 'flex' : 'none';
+}
+window.goBack = () => {
+  closeSettingsMenu();
+  const lvl = navLevel();
+  if (lvl === 'tab') {
+    if (currentRole === 'admin' && document.getElementById('tab-monitor').style.display === 'block') goHome();
+    else showClassHome(); // يرجع لكروت الفصل (حضور/مخدومين/…) من غير ما يعدّي على كل الفصول
+  }
+  else if (lvl === 'classHome') classHomeBack();
+  else if (lvl === 'adminClasses') goHome();
+};
+{
+  let backRaf = 0;
+  const schedule = () => { cancelAnimationFrame(backRaf); backRaf = requestAnimationFrame(updateBackBtn); };
+  const host = document.querySelector('.app-content');
+  if (host) new MutationObserver(schedule).observe(host, { subtree: true, attributes: true, attributeFilter: ['style'] });
+  schedule();
+}
 // زرار 🏠 في شريط التابات: الأدمن يرجع لكروت الفصل اللي فيه، والباقي للرئيسية
 window.tabsHome = () => {
   if (currentRole === 'admin' && currentClassTab && document.getElementById('tab-monitor').style.display !== 'block') showClassHome();
@@ -4441,7 +4508,7 @@ window.applyClassRestrictionUI = applyClassRestrictionUI;
 window.loadMonitorTab = async () => {
   if (currentRole !== 'admin') return;
   renderMonitorClassChips();
-  await loadServantsOnce(true);
+  await loadServantsFresh();
   const di = document.getElementById('activity-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
   document.getElementById('activity-list').innerHTML = `<div class="empty-state">اختار التاريخ واضغط "عرض"</div>`;
   const sd = document.getElementById('serv-att-date'); if (sd && !sd.value) sd.value = toLocalDateKey(new Date());
@@ -4677,6 +4744,17 @@ let cachedServants = [];
 let servantsLoadedFlag = false;
 // بيجيب قايمة الخدام من فايرستور مرة واحدة بس لكل جلسة (وبيعيد استخدام نفس النسخة في "متابعة" وشاشة الإعدادات/الأدوار
 // من غير قراءة تانية) — مرّر force=true بعد أي تعديل فعلي (قبول/رفض/ترقية...) عشان يجيب النسخة الجديدة
+let servantsLoadedAt = 0;
+// تحميل الخدام من الكاش لو اتحمّلوا من أقل من 5 دقايق (بدل 70 قراءة في كل فتحة)
+function loadServantsFresh(maxAgeMs = 5 * 60 * 1000) {
+  return loadServantsOnce(!servantsLoadedFlag || (Date.now() - servantsLoadedAt) > maxAgeMs);
+}
+// بعد أي إجراء على خادم بنعدّل النسخة اللي على الجهاز مباشرة بدل ما نحمّل الـ70 خادم تاني (patch=null يعني حذف)
+function patchServantLocal(id, patch) {
+  if (patch === null) cachedServants = cachedServants.filter(x => x.id !== id);
+  else cachedServants = cachedServants.map(x => x.id === id ? { ...x, ...patch } : x);
+  return loadServantsOnce(); // بيعرض من الكاش
+}
 async function loadServantsOnce(force) {
   if (servantsLoadedFlag && !force) { renderPendingList(cachedServants.filter(x => x.status === 'pending')); renderServantsList(cachedServants.filter(x => x.status === 'approved')); renderSettingsPeopleList(); return; }
   const pendingEl = document.getElementById('pending-list');
@@ -4684,7 +4762,7 @@ async function loadServantsOnce(force) {
   try {
     const snap = await countedGetDocs(collection(db,'servants'), 'servants (متابعة)');
     cachedServants = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    servantsLoadedFlag = true;
+    servantsLoadedFlag = true; servantsLoadedAt = Date.now();
     renderPendingList(cachedServants.filter(x => x.status === 'pending'));
     renderServantsList(cachedServants.filter(x => x.status === 'approved'));
     renderSettingsPeopleList();
@@ -4803,12 +4881,13 @@ async function applyServantClassMap(sid, classes, supSet) {
     }
     newRoleIds.push(r.id);
   }
-  await updateDoc(doc(db,'servants',sid), {
+  const svPatch = {
     roleIds: newRoleIds, roleId: newRoleIds[0] || '',
     role: supList.length ? 'supervisor' : 'servant',
     assignedClass: classes.join(','), supervisorClass: supList.join(',')
-  });
-  await loadServantsOnce(true);
+  };
+  await updateDoc(doc(db,'servants',sid), svPatch);
+  await patchServantLocal(sid, svPatch);
   await loadRolesOnce(true);
   openServantProfile(sid);
 }
@@ -5287,7 +5366,7 @@ window.renderActivityList = async function() {
 // ملحوظة: قايمة الخدام هنا مش بث لحظي (onSnapshot)، دي قراءة مرة واحدة متخزنة في cachedServants —
 // عشان كده كل عملية تغيير هنا لازم تعمل loadServantsOnce(true) عشان تجيب النسخة الجديدة من السيرفر
 window.approveServant = async (id, name, roleIds) => {
-  await updateDoc(doc(db,'servants',id), { status:'approved' }); loadServantsOnce(true);
+  await updateDoc(doc(db,'servants',id), { status:'approved' }); patchServantLocal(id, { status:'approved' });
   // لو اسمه كان مختار من قايمة أسماء الدور الجاهزة، بيتمسح من القايمة دلوقتي (بعد القبول) عشان محدش تاني يختاره
   if (name && roleIds) {
     try { for (const rid of String(roleIds).split(',').filter(Boolean)) { const v = nameVariantsIn(allRoles.find(x => x.id === rid), name); await updateDoc(doc(db,'roles',rid), { pendingNames: arrayRemove(...(v.length ? v : [name])) }); } loadRolesOnce(true); } catch(e) { console.error(e); }
@@ -5296,7 +5375,7 @@ window.approveServant = async (id, name, roleIds) => {
 };
 window.rejectServant = async (id, name, roleIds) => {
   if (!confirm(`هترفض طلب "${name}"؟`)) return;
-  await deleteDoc(doc(db,'servants',id)); loadServantsOnce(true);
+  await deleteDoc(doc(db,'servants',id)); patchServantLocal(id, null);
   // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
   if (name && roleIds) {
     try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
@@ -5305,7 +5384,7 @@ window.rejectServant = async (id, name, roleIds) => {
 };
 window.deleteServant = async (id, name, roleIds) => {
   if (!confirm(`هتحذف الخادم "${name}"؟ هيفقد صلاحية الدخول للتطبيق فورًا حتى لو داخل بيسجل حضور دلوقتي`)) return;
-  await deleteDoc(doc(db,'servants',id)); loadServantsOnce(true);
+  await deleteDoc(doc(db,'servants',id)); patchServantLocal(id, null);
   // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
   if (name && roleIds) {
     try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
@@ -5314,12 +5393,12 @@ window.deleteServant = async (id, name, roleIds) => {
 };
 window.promoteServant = async (id, name) => {
   if (!confirm(`هتخلي "${name}" أدمن؟ هيقدر يشوف تبويب "متابعة" ويوافق على الخدام ويحذفهم زيك بالظبط`)) return;
-  await updateDoc(doc(db,'servants',id), { role:'admin' }); loadServantsOnce(true);
+  await updateDoc(doc(db,'servants',id), { role:'admin' }); patchServantLocal(id, { role:'admin' });
   showToast(`${name} بقى أدمن ✓`, 'success');
 };
 window.demoteServant = async (id, name) => {
   if (!confirm(`هتشيل "${name}" من الأدمن؟ هيرجع خادم عادي فورًا ومش هيقدر يدخل تبويب "متابعة" تاني`)) return;
-  await updateDoc(doc(db,'servants',id), { role:'servant' }); loadServantsOnce(true);
+  await updateDoc(doc(db,'servants',id), { role:'servant' }); patchServantLocal(id, { role:'servant' });
   showToast(`تم تنزيل ${name} من الأدمن`, 'info');
 };
 
@@ -5816,7 +5895,7 @@ window.saveEditStudent = async () => {
     visitNotes
   };
   try {
-    await updateDoc(doc(db,'students',id), data); bumpStudentsRev();
+    await updateDoc(doc(db,'students',id), { ...data, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(s => s.id === id);
     if (idx !== -1) allStudents[idx] = { ...allStudents[idx], ...data };
     renderStudentsList();
