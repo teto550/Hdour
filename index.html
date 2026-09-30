@@ -405,7 +405,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
   <div style="font-size:50px;margin-bottom:14px">⏳</div>
   <div class="auth-title" id="pending-title">في انتظار الموافقة</div>
   <div class="auth-sub" id="pending-msg" style="max-width:320px;text-align:center;margin-bottom:24px;line-height:1.7"></div>
-  <button id="resend-verify-btn" class="btn-primary" style="max-width:240px;margin-bottom:10px;display:none" onclick="resendVerification()">📧 إعادة إرسال رابط التأكيد</button>
   <button class="btn-primary" style="max-width:200px" onclick="doLogout()">تسجيل خروج</button>
 </div>
 
@@ -2115,6 +2114,7 @@ window.doRegister = async () => {
 
 window.doLogout = async () => {
   stopHeartbeat();
+  stopPendingSelfWatch(); stopPendingRequestsListener();
   if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
   if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
   await signOut(auth);
@@ -2133,27 +2133,12 @@ function showPendingScreen(title, msg) {
   document.getElementById('pending-screen').style.display  = 'flex';
   document.getElementById('pending-title').textContent = title;
   document.getElementById('pending-msg').textContent   = msg;
-  const resendBtn = document.getElementById('resend-verify-btn');
-  resendBtn.style.display = (auth.currentUser && !auth.currentUser.emailVerified) ? 'block' : 'none';
 }
-
-window.resendVerification = async () => {
-  const btn = document.getElementById('resend-verify-btn');
-  if (!auth.currentUser) return;
-  btn.disabled = true; btn.textContent = 'جاري الإرسال…';
-  try {
-    await sendEmailVerification(auth.currentUser);
-    btn.textContent = '✓ اتبعت، شيك على الإيميل';
-  } catch(e) {
-    btn.textContent = '📧 إعادة إرسال رابط التأكيد';
-    showToast('حصل خطأ أثناء الإرسال', 'error');
-  }
-  btn.disabled = false;
-};
 
 onAuthStateChanged(auth, async user => {
   stopHeartbeat();
   if (!user) {
+    stopPendingSelfWatch(); stopPendingRequestsListener();
     if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
     if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
     if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
@@ -2166,6 +2151,12 @@ onAuthStateChanged(auth, async user => {
     btn.disabled = false; btn.textContent = 'دخول';
     return;
   }
+  await handleSignedInUser(user);
+});
+
+// بيتنادى من onAuthStateChanged، وكمان أول ما طلب الانضمام يتقبل (من غير reload)
+async function handleSignedInUser(user) {
+  stopPendingSelfWatch();
   try {
     const ref = doc(db,'servants',user.uid);
     let snap = await getDoc(ref);
@@ -2207,6 +2198,7 @@ onAuthStateChanged(auth, async user => {
     const data = snap.data();
     if (data.status === 'pending') {
       showPendingScreen('في انتظار الموافقة', 'طلبك اتبعت للأدمن وقيد المراجعة، هيتفعل حسابك بمجرد الموافقة ✋');
+      watchOwnPendingStatus(user);
       return;
     }
     if (data.status !== 'approved') {
@@ -2224,13 +2216,30 @@ onAuthStateChanged(auth, async user => {
     applyMonitorVisibility();
     startHeartbeat();
     listenOwnServantDoc(user.uid);
+    if (currentRole === 'admin') startPendingRequestsListener();
     startClassesListener();
     initApp();
   } catch(e) {
     console.error(e);
     showAuthScreen();
   }
-});
+}
+
+// الخادم اللي لسه بانتظار الموافقة: قراءة واحدة + تحديث لحظي على مستنده هو بس، فأول ما الأدمن يقبله يدخل لوحده
+let pendingSelfUnsub = null;
+function stopPendingSelfWatch() { if (pendingSelfUnsub) { pendingSelfUnsub(); pendingSelfUnsub = null; } }
+function watchOwnPendingStatus(user) {
+  stopPendingSelfWatch();
+  pendingSelfUnsub = onSnapshot(doc(db,'servants',user.uid), snap => {
+    if (!snap.exists()) {
+      if (snap.metadata.fromCache) return;
+      stopPendingSelfWatch();
+      showPendingScreen('تم إيقاف الحساب', 'حسابك اتحذف أو اتوقف. لو ده حصل غلط كلم الأدمن.');
+      return;
+    }
+    if (snap.data().status === 'approved') { stopPendingSelfWatch(); handleSignedInUser(user); }
+  }, err => console.error('pending self listener error:', err));
+}
 
 // ===== HEARTBEAT (أونلاين/أوفلاين) =====
 function startHeartbeat() { /* اتلغى: مفيش متابعة أونلاين لحظية عشان نوفر الـ reads */ }
@@ -2263,6 +2272,7 @@ function listenOwnServantDoc(uid) {
       currentRole = d.role;
       roleOrClassChanged = true;
       applyMonitorVisibility();
+      if (currentRole === 'admin') startPendingRequestsListener(); else stopPendingRequestsListener();
       if (currentRole === 'admin') {
         showToast('مبروك! الأدمن الأساسي خلاك أدمن 👑', 'success');
       } else if (currentRole === 'supervisor') {
@@ -2306,6 +2316,7 @@ function listenOwnServantDoc(uid) {
 }
 
 async function forceLogout() {
+  stopPendingRequestsListener();
   if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
   if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
   if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
@@ -2759,7 +2770,7 @@ function waHasPhone(s) { return !!getWaPhone(s); }
 
 function waRecipientsSource() {
   let list = [...classScope(ownClassStudents())]; // الرسائل تفضل لمخدومين فصل الخادم بس
-  const dates = Object.keys(allAttendance).sort();
+  const dates = attSessionDates();
   if (waBdayMonth > 0) {
     list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === waBdayMonth);
   }
@@ -2843,11 +2854,26 @@ window.setWaGroupFilter = (val, btn) => {
   renderWaRecipientsList();
 };
 
+window.renderWaRecipientsList = renderWaRecipientsList;
 function renderWaRecipientsList() {
   const cont = document.getElementById('wa-recipients-list');
-  if ((waAbsenceFilter !== 'all' || waAttendanceFilter !== 'all') && recentAttWeeks < filterWeeks()) {
-    ensureRecentAttendance(filterWeeks()).then(() => { waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id)); renderWaRecipientsList(); });
+  const waNeedAtt = waAbsenceFilter !== 'all' || waAttendanceFilter !== 'all';
+  if (waNeedAtt && recentAttWeeks < filterWeeks()) {
+    cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+    ensureRecentAttendance(filterWeeks()).then(() => { waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id)); renderWaRecipientsList(); })
+      .catch(e => { console.error(e); cont.innerHTML = '<div class="empty-state">تعذّر تحميل بيانات الحضور<br><button class="action-btn" style="margin-top:10px" onclick="renderWaRecipientsList()">🔄 حاول تاني</button></div>'; });
     return;
+  }
+  if (waNeedAtt && attIsStale() && !attRefreshBusy) {
+    attRefreshBusy = true;
+    const prevIds = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+    ensureRecentAttendance(filterWeeks()).then(() => {
+      attRefreshBusy = false;
+      const nextIds = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+      nextIds.forEach(id => { if (!prevIds.has(id)) waChecked.add(id); });
+      waChecked = new Set([...waChecked].filter(id => nextIds.has(id)));
+      renderWaRecipientsList();
+    }).catch(() => { attRefreshBusy = false; });
   }
   const list = waRecipientsSource();
   if (!list.length) {
@@ -3006,11 +3032,34 @@ window.renderWaTab = () => {
 
 // ===== ATTENDANCE =====
 let recentAttWeeks = 0;
+// تاريخ بيتحسب "جلسة" لو فيه حضور فعلي مسجّل فيه بس (مفتاح النهارده الفاضي كان بيخلي الكل غايب/الفلتر يتلخبط)
+function attSessionDates() { return Object.keys(allAttendance).filter(d => allAttendance[d] && Object.keys(allAttendance[d]).length).sort(); }
+// آخر مرة حضور النهارده اتزامن فيها مع السيرفر — لو عدّى أكتر من دقيقتين ومفيش بث لحظي شغال بنجدّده (قراءة حضور النهارده بس)
+let todayAttSyncAt = 0, attRefreshBusy = false;
+const ATT_TTL = 2 * 60 * 1000;
+const attIsStale = () => !todayAttendanceUnsub && (Date.now() - todayAttSyncAt) > ATT_TTL;
+async function refreshTodayAttendanceIfStale() {
+  if (!attIsStale()) return;
+  const today = todayKey();
+  const snap = await countedGetDocs(todayQuery('attendance', today), 'attendance (اليوم - تجديد للفلاتر)');
+  const prev = allAttendance[today] || {}, fresh = {};
+  snap.docs.forEach(d => { fresh[d.data().studentId] = d.id; });
+  for (const id in prev) if (outsideAllowed(id) && !fresh[id]) fresh[id] = prev[id];
+  if (Object.keys(fresh).length) allAttendance[today] = fresh; else delete allAttendance[today];
+  todayAttSyncAt = Date.now();
+}
 const filterWeeks = () => Math.max(parseInt(absenceFilter)||0, parseInt(attendanceFilter)||0, parseInt(waAbsenceFilter)||0, parseInt(waAttendanceFilter)||0) + 2;
 const ATT_CACHE_KEY = 'att_recent_cache_v1';
-async function ensureRecentAttendance(weeks) {
+// الاستدعاءات بتتنفذ ورا بعض (مش بالتوازي) عشان تبويب الافتقاد والرسائل ميتخانقوش على allAttendance
+let attLoadP = Promise.resolve();
+function ensureRecentAttendance(weeks) {
+  const run = attLoadP.catch(() => {}).then(() => _ensureRecentAttendance(weeks));
+  attLoadP = run;
+  return run;
+}
+async function _ensureRecentAttendance(weeks) {
   weeks = Math.max(weeks || 4, 4);
-  if (recentAttWeeks >= weeks) return;
+  if (recentAttWeeks >= weeks) { await refreshTodayAttendanceIfStale(); return; }
   const d = new Date(); d.setDate(d.getDate() - weeks*7);
   const fromKey = toLocalDateKey(d), nowKey = todayKey();
   // الأسابيع اللي فاتت مبتتغيّرش، فبنخزّنها على الجهاز ونقرا من آخر جلسة اتزامنت بس (جلسة النهارده تقريبًا)
@@ -3024,9 +3073,10 @@ async function ensureRecentAttendance(weeks) {
   snap.docs.forEach(x => { const v = x.data(); if (!data[v.date]) data[v.date] = {}; data[v.date][v.studentId] = x.id; });
   for (const k in data) {
     if (k < fromKey) continue; // بنضيف للذاكرة الفترة المطلوبة بس زي الأول بالظبط (عدّاد الحضور في الفلتر بيعتمد عليها)
-    if (!allAttendance[k]) allAttendance[k] = {};
-    Object.assign(allAttendance[k], data[k]);
+    if (k === nowKey && todayAttendanceUnsub) continue; // البث اللحظي أحدث من القراءة دي
+    allAttendance[k] = { ...data[k] }; // استبدال كامل (مش دمج) عشان أي حضور اتشال ميفضلش ظاهر
   }
+  todayAttSyncAt = Date.now();
   idbSet(ATT_CACHE_KEY, JSON.stringify({ from: fresh ? c.from : fromKey, through: nowKey, fullTs: fresh ? c.fullTs : Date.now(), data }));
   recentAttWeeks = weeks;
 }
@@ -3090,7 +3140,7 @@ function startTodayListeners() {
   if (!todayVersesUnsub) migrateLegacyVerses().then(() => { if (!todayVersesUnsub) listenTodayVerses(); });
 }
 function stopTodayListeners() {
-  if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
+  if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; todayAttSyncAt = Date.now(); }
   if (todayVersesUnsub)     { todayVersesUnsub();     todayVersesUnsub     = null; }
 }
 function listenTodayAttendance() {
@@ -3206,6 +3256,7 @@ window.removeAttendance = async (studentId) => {
   if (docId) await deleteDoc(doc(db,'attendance',docId));
   delete todayAttendance[studentId];
   delete todayAttendanceTime[studentId];
+  if (allAttendance[todayKey()]) delete allAttendance[todayKey()][studentId];
   updateStats(); renderTodayList();
   onManualSearch();
   showToast('تم حذف الحضور', 'success');
@@ -3440,14 +3491,19 @@ window.setNoteFilter = (v, btn) => {
   renderFilterList();
 };
 
+window.renderFilterList = renderFilterList;
 function renderFilterList() {
   const cont = document.getElementById('filter-list');
   if ((absenceFilter !== 'all' || attendanceFilter !== 'all') && recentAttWeeks < filterWeeks()) {
     cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
-    ensureRecentAttendance(filterWeeks()).then(renderFilterList).catch(()=>{ cont.innerHTML = '<div class="empty-state">تعذّر التحميل</div>'; });
+    ensureRecentAttendance(filterWeeks()).then(renderFilterList).catch(()=>{ cont.innerHTML = '<div class="empty-state">تعذّر التحميل<br><button class="action-btn" style="margin-top:10px" onclick="renderFilterList()">🔄 حاول تاني</button></div>'; });
     return;
   }
-  const dates = Object.keys(allAttendance).sort();
+  if ((absenceFilter !== 'all' || attendanceFilter !== 'all') && attIsStale() && !attRefreshBusy) {
+    attRefreshBusy = true;
+    ensureRecentAttendance(filterWeeks()).then(() => { attRefreshBusy = false; renderFilterList(); }).catch(() => { attRefreshBusy = false; });
+  }
+  const dates = attSessionDates();
   let list = [...allStudents];
   const allowed = getAllowedAssignedClasses();
   if (currentRole !== 'admin' && allowed.length) {
@@ -4565,11 +4621,12 @@ window.applyClassRestrictionUI = applyClassRestrictionUI;
 window.loadMonitorTab = async () => {
   if (currentRole !== 'admin') return;
   renderMonitorClassChips();
+  // الأدمن لما يفتح "الخدام" يفتحله تبويب "الخدام" (مش الحضور) تلقائي
+  switchMonitorSubTab('servants');
   await loadServantsFresh();
   const di = document.getElementById('activity-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
   document.getElementById('activity-list').innerHTML = `<div class="empty-state">اختار التاريخ واضغط "عرض"</div>`;
   const sd = document.getElementById('serv-att-date'); if (sd && !sd.value) sd.value = toLocalDateKey(new Date());
-  renderServAttList();
 };
 
 // ===== حضور الخدام (القداس / مدارس الأحد / اجتماع الخدام / التحضير) =====
@@ -4827,6 +4884,52 @@ async function loadServantsOnce(force) {
     console.error(e);
     if (pendingEl) pendingEl.innerHTML = `<div class="empty-state">تعذّر تحميل الطلبات</div>`;
   }
+}
+
+// بث لحظي على طلبات الانضمام المعلقة بس (عادةً صفر أو كام مستند) — أي طلب جديد يظهر عند الأدمن فورًا من غير reload،
+// والقراءات بتبقى بس على الطلب الجديد أو اللي اتحسم، مش على كل الخدام
+let pendingReqUnsub = null, pendingReqSeenServer = false;
+function stopPendingRequestsListener() {
+  if (pendingReqUnsub) { pendingReqUnsub(); pendingReqUnsub = null; }
+  pendingReqSeenServer = false;
+}
+function refreshPendingUI() {
+  renderPendingList(cachedServants.filter(x => x.status === 'pending'));
+  if (servantsLoadedFlag && document.getElementById('monitor-subtab-servants')?.style.display === 'block') renderServantsList(cachedServants.filter(x => x.status === 'approved'));
+  if (servantsLoadedFlag) renderSettingsPeopleList();
+}
+// تعديل النسخة المحلية بس (من غير ما نحمّل قايمة الخدام كلها) وبعدين تحديث الشاشة
+function patchCachedOnly(id, patch) {
+  if (patch === null) cachedServants = cachedServants.filter(x => x.id !== id);
+  else cachedServants = cachedServants.map(x => x.id === id ? { ...x, ...patch } : x);
+  refreshPendingUI();
+}
+async function resolvePendingRemoved(id, lastData) {
+  const c = cachedServants.find(x => x.id === id);
+  if (!c || c.status !== 'pending') return; // اتعالج محليًا (قبول/رفض من الجهاز ده)
+  if (lastData && lastData.status && lastData.status !== 'pending') { patchCachedOnly(id, lastData); return; }
+  try {
+    const sn = await getDoc(doc(db,'servants',id));
+    patchCachedOnly(id, sn.exists() ? { ...sn.data() } : null);
+  } catch(e) { patchCachedOnly(id, null); }
+}
+function startPendingRequestsListener() {
+  if (pendingReqUnsub || currentRole !== 'admin') return;
+  pendingReqUnsub = onSnapshot(query(collection(db,'servants'), where('status','==','pending')), snap => {
+    countSnapshotReads('servants (طلبات الانضمام - live)', snap);
+    const initial = !pendingReqSeenServer;
+    if (!snap.metadata.fromCache) pendingReqSeenServer = true;
+    let newcomers = 0;
+    snap.docChanges().forEach(ch => {
+      const id = ch.doc.id, data = { id, ...ch.doc.data() };
+      if (ch.type === 'removed') { resolvePendingRemoved(id, ch.doc.data()); return; }
+      const i = cachedServants.findIndex(x => x.id === id);
+      if (i >= 0) cachedServants[i] = { ...cachedServants[i], ...data };
+      else { cachedServants.push(data); if (ch.type === 'added') newcomers++; }
+    });
+    if (!initial && newcomers) showToast(newcomers > 1 ? `📥 وصل ${newcomers} طلبات انضمام جديدة` : '📥 وصل طلب انضمام جديد', 'info');
+    refreshPendingUI();
+  }, err => console.error('pending requests listener error:', err));
 }
 
 function renderPendingList(list) {
