@@ -4376,17 +4376,17 @@ function styleSimpleSheet(ws, ncols, nrows, wch) {
   ws['!freeze'] = { xSplit:0, ySplit:1, topLeftCell: XLSX.utils.encode_cell({r:1,c:0}), activePane:'bottomLeft', state:'frozen' };
   return ws;
 }
-function buildServantsDataSheet() {
+function buildServantsDataSheet(massCounts = {}) {
   const roleLabel = x => x.role === 'admin' ? 'أدمن' : (x.role === 'supervisor' ? 'مسؤول فصل' : 'خادم');
-  const head = ['الاسم','التليفون','الإيميل','العنوان','الدور','الفصول','مسؤول عن','مدارس أحد (عدد)','اجتماع خدام (عدد)','تحضير (عدد)'];
+  const head = ['الاسم','التليفون','الإيميل','العنوان','الدور','الفصول','مسؤول عن','قداس (عدد)','مدارس أحد (عدد)','اجتماع خدام (عدد)','تحضير (عدد)'];
   const rows = exportTargetServants().map(x => [
     x.name || '', x.phone || '', x.email || '', x.address || '', roleLabel(x),
     normalizeAssignedClasses(x.assignedClass).map(classLabel).join('، '),
     supervisedClassesOf(x).map(classLabel).join('، '),
-    x.sscCount || 0, x.meetingCount || 0, x.prepCount || 0
+    massCounts[x.id] || 0, x.sscCount || 0, x.meetingCount || 0, x.prepCount || 0
   ]);
   const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
-  return styleSimpleSheet(ws, head.length, rows.length, [26,16,28,26,12,24,20,14,14,12]);
+  return styleSimpleSheet(ws, head.length, rows.length, [26,16,28,26,12,24,20,12,14,14,12]);
 }
 // شيت حضور خدام لنشاط واحد: صف لكل خادم وعمود لكل تاريخ + إجمالي. بيرجع null لو مفيش أي حضور للنشاط ده
 function buildServantsAttSheet(activity, byDate) {
@@ -4452,7 +4452,11 @@ window.runExportExcel = async () => {
     if (includeServData || includeServAtt) {
       if (!servantsLoadedFlag) await loadServantsOnce();
       if (includeServData) {
-        XLSX.utils.book_append_sheet(wb, buildServantsDataSheet(), 'الخدام');
+        // القداس مفيش له عدّاد جوه مستند الخادم زي باقي الأنشطة، فبنعدّه من سجلات الحضور
+        const massCounts = {};
+        const ms = await countedGetDocs(query(collection(db,'servantAttendance'), where('activity','==','mass')), 'servantAttendance قداس (تصدير بيانات الخدام)');
+        ms.docs.forEach(x => { const id = x.data().servantId; if (id) massCounts[id] = (massCounts[id] || 0) + 1; });
+        XLSX.utils.book_append_sheet(wb, buildServantsDataSheet(massCounts), 'الخدام');
         nameParts.push('خدام');
       }
       if (includeServAtt) {
