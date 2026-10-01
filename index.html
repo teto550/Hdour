@@ -2057,23 +2057,24 @@ function toLocalDateKey(d) {
   return `${y}-${m}-${day}`;
 }
 
-// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع (الأسبوع بيبدأ خميس ويخلص أربع)
-// الحضور: بيبدأ يوم الخميس ويتصفّر يوم الأربع (الأربع بيتحسب على خميس اللي بعده)
+// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع
+// الحضور: الخميس والجمعة بيتسجلوا على نفس الأسبوع، ويوم السبت الصبح الحضور بيتصفّر (السبت → الأربع بيتحسبوا على خميس اللي جاي)
 const todayKey = () => {
   const d = new Date();
-  d.setDate(d.getDate() + 1);
+  d.setDate(d.getDate() + 5);
   d.setDate(d.getDate() - ((d.getDay() - 4 + 7) % 7));
   return toLocalDateKey(d);
 };
-// الآيات: بتتسجل من الأربع للسبت بس، وعلى حضور الأسبوع اللي فات (تاريخ خميس الأسبوع اللي خلص الأربع) مش الأسبوع الجديد.
-// الأحد → الثلاثاء: التسجيل مقفول والقايمة فاضية (بتتحسب على أربع اللي جاي)
+// الآيات: بتتسجل وتفضل موجودة من الأربع الصبح للجمعة بالليل بس، وعلى حضور الأسبوع اللي فات (مش الأسبوع الجديد).
+// السبت → الثلاثاء: التسجيل مقفول والقايمة فاضية (المفتاح بيبقى هو مفتاح الأسبوع الجاري اللي لسه معندوش آيات)
+const verseOpen = () => { const w = new Date().getDay(); return w >= 3 && w <= 5; }; // أربع(3) → جمعة(5)
 const verseKey = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 3 - d.getDay());
+  if (!verseOpen()) return todayKey();
+  const d = new Date(todayKey() + 'T00:00:00');
+  d.setDate(d.getDate() - 7);
   return toLocalDateKey(d);
 };
-const verseOpen = () => new Date().getDay() >= 3; // أربع(3) → سبت(6)
-const VERSE_CLOSED_MSG = 'تسجيل الآية من الأربع للسبت بس';
+const VERSE_CLOSED_MSG = 'تسجيل الآية من الأربع للجمعة بس';
 
 // ===== AUTH =====
 window.switchAuthTab = (which) => {
@@ -3535,6 +3536,8 @@ window.assignClassSection = async (id, section) => {
     if (!already) await markPresent(id);
     showToast(`✅ ${s?.name || ''} — ${classLabel(section)} وتم تسجيل الحضور`, 'success');
     navigator.vibrate?.([60,30,60]);
+    // لو الفصل اللي اتحدد غير التاب المفتوح، نفتح تاب الفصل ده عشان الحضور يبان فورًا في قايمة اليوم والإحصائيات
+    if (section && section !== currentClassTab) switchClassTab(section, document.getElementById('class-tab-' + section));
     renderStudentsList();
     updateStats();
     renderTodayList();
