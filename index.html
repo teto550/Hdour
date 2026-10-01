@@ -1586,6 +1586,52 @@ function getAllowedAssignedClasses(raw = currentAssignedClass) {
   const allowed = normalizeAssignedClasses(raw);
   return currentRole === 'admin' || !allowed.length ? [] : allowed;
 }
+// نطاق قراءة الخادم: فصوله بس. ولو واحد منهم بيبي كلاس 1/2 أو كي جي 1 → التلات فصول دول + المخدومين اللي لسه متقسموش ('')
+// لحد ما التقسيم يخلص. الأدمن والخادم من غير فصل = [] (من غير تقييد)
+let adminAllClasses = false, adminAutoAll = false;
+function readScopeClasses() {
+  if (currentRole === 'admin') {
+    if (adminAllClasses || !currentClassTab || !classById(currentClassTab)) return [];
+    const grp = babyKgClasses().map(c => c.id);
+    return grp.includes(currentClassTab) ? [...grp, ''] : [currentClassTab];
+  }
+  const al = getAllowedAssignedClasses();
+  if (!al.length) return [];
+  const grp = babyKgClasses().map(c => c.id);
+  return [...new Set(al.some(id => grp.includes(id)) ? [...al, ...grp, ''] : al)].slice(0, 30);
+}
+async function waitClassesReady() { for (let i = 0; i < 40 && !allClasses.length; i++) await new Promise(r => setTimeout(r, 100)); }
+let lastReadScopeKey = '';
+function onAdminScopeChanged() {
+  if (currentRole !== 'admin') return;
+  const sk = readScopeClasses().join(',');
+  if (sk === lastReadScopeKey) return;
+  lastReadScopeKey = sk;
+  if (todayAttendanceUnsub || todayVersesUnsub) restartTodayListeners();
+  if (studentsLoaded) loadStudents().then(() => { updateStats(); renderTodayList(); updateStuCount(); renderStudentsList();
+    if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
+    if (document.getElementById('tab-messages')?.style.display === 'block') renderWaTab(); });
+}
+function renderAdminAllChip() {
+  const b = document.getElementById('class-tab-all'); if (!b) return;
+  b.classList.toggle('active', adminAllClasses && !adminAutoAll);
+}
+window.toggleAdminAllClasses = () => {
+  adminAllClasses = !(adminAllClasses && !adminAutoAll); adminAutoAll = false;
+  renderAdminAllChip(); onAdminScopeChanged();
+  showToast(adminAllClasses ? '🌐 بيقرا كل الفصول' : 'بيقرا الفصل المختار بس', 'info');
+};
+// الداشبورد والتصدير وأدوات التنضيف محتاجة كل الفصول: بنحمّلها مؤقتًا ونرجع للفصل أول ما الأدمن يغيّر الفصل
+async function ensureAllClassesForAdmin() {
+  if (currentRole !== 'admin' || adminAllClasses) return;
+  adminAllClasses = true; adminAutoAll = true; lastReadScopeKey = '';
+  showToast('جاري تحميل كل الفصول…', 'info');
+  await loadStudents();
+}
+function adminClassChanged() {
+  if (adminAutoAll) { adminAllClasses = false; adminAutoAll = false; }
+  renderAdminAllChip(); onAdminScopeChanged();
+}
 function isAssignedClassRestricted() {
   return currentRole !== 'admin' && getAllowedAssignedClasses().length > 0;
 }
@@ -1742,10 +1788,16 @@ function startClassesListener() {
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
     if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
     if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('attendanceClassTab')) ? localStorage.getItem('attendanceClassTab') : allClasses[0].id;
+    const sk = readScopeClasses().join(',');
+    if (sk !== lastReadScopeKey) {
+      lastReadScopeKey = sk;
+      if (todayAttendanceUnsub || todayVersesUnsub) restartTodayListeners();
+      if (studentsLoaded) loadStudents().then(() => { updateStats(); renderTodayList(); });
+    }
     onClassesUpdated();
   }, err => console.error('classes listener error:', err));
 }
-function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; classesSeedChecked = false; }
+function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; lastReadScopeKey = ''; classesSeedChecked = false; }
 // بيتنادى كل مرة قايمة الفصول تتغير (إضافة/تعديل/حذف فصل) — بيعيد بناء كل حتة في الواجهة معتمدة على الفصول
 function onClassesUpdated() {
   renderGlobalClassTabs();
@@ -1772,8 +1824,8 @@ function renderGlobalClassTabs() {
   bar.innerHTML = allClasses.map(c => {
     const p = classPalette(c.id);
     return `<button class="class-tab" id="class-tab-${c.id}" style="--tab-grad:linear-gradient(135deg,${p.text},${p.text}cc)" onclick="switchClassTab('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
-  }).join('');
-  applyClassRestrictionUI();
+  }).join('') + (currentRole === 'admin' ? `<button class="class-tab" id="class-tab-all" style="--tab-grad:linear-gradient(135deg,#6b7280,#4b5563)" onclick="toggleAdminAllClasses()">🌐 كل الفصول</button>` : '');
+  applyClassRestrictionUI(); renderAdminAllChip();
 }
 // الفصول الوحيدة اللي ليها فلتر فصول في تبويب المخدومين: بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1
 // (لحد ما باقي المخدومين يتوزعوا عليهم). أي فصل تاني بيعرض مخدومينه بس من غير فلتر.
@@ -2376,7 +2428,7 @@ window.toggleAddStudentForm = () => {
 
 // ===== STUDENTS =====
 let studentsLoaded = false;
-const STU_KEY = 'stu_cache_v2'; // v2: كاش بيتحدّث بالتغييرات بس (updatedAt) بدل إعادة تحميل الكل
+const STU_KEY0 = 'stu_cache_v2'; let STU_KEY = STU_KEY0; // v2: كاش بيتحدّث بالتغييرات بس (updatedAt) بدل إعادة تحميل الكل
 async function ensureStudents() { if (!studentsLoaded) await loadStudents(); }
 // أي كتابة على students بتزوّد الرقم ده عشان كل الأجهزة تعرف إن فيه تغيير (والحذف له عدّاد لوحده لأنه مش بيظهر في تحديث التغييرات)
 let bumpTimer = null, bumpDel = false;
@@ -2396,9 +2448,9 @@ function tsMs(t) {
   if (typeof t.toMillis === 'function') return t.toMillis();
   return (t.seconds || 0) * 1000 + Math.floor((t.nanoseconds || 0) / 1e6);
 }
-function saveStudentsCache(rev, delRev) {
-  const maxUpd = allStudents.reduce((m, s) => Math.max(m, tsMs(s.updatedAt)), 0);
-  const payload = JSON.stringify({ rev, delRev, ts: Date.now(), maxUpd, list: allStudents });
+function saveStudentsCache(rev, delRev, scope = '', maxUpdSeen = 0) {
+  const maxUpd = allStudents.reduce((m, s) => Math.max(m, tsMs(s.updatedAt)), maxUpdSeen);
+  const payload = JSON.stringify({ rev, delRev, scope, ts: Date.now(), maxUpd, list: allStudents });
   idbSet(STU_KEY, payload).then(ok => {
     if (ok) { try { localStorage.removeItem(STU_KEY); } catch(e) {} }
     else { try { localStorage.setItem(STU_KEY, payload); } catch(e) {} }
@@ -2406,11 +2458,24 @@ function saveStudentsCache(rev, delRev) {
 }
 window.forceRefreshStudents = async () => { await loadStudents(true); showToast('تم تحديث المخدومين ✓','success'); };
 async function loadStudents(force = false) {
+  await waitClassesReady();
+  let rev = null, delRev = 0, classFieldMig = false;
+  try { const m = await getDoc(doc(db,'config','meta')); const d = m.exists() ? m.data() : {}; rev = d.studentsRev || 0; delRev = d.studentsDelRev || 0; classFieldMig = !!d.classFieldMig; } catch(e) {}
+  // الخادم بيقرا مخدومين نطاقه بس. المخدومين اللي لسه من غير فصل مش بيتجابوا بالاستعلام قبل ما الأدمن يعمل ترحيل واحد (classSection:'')، فلحد وقتها بنقرا الكل زي الأول
+  let scope = readScopeClasses();
+  if (!classFieldMig) scope = [];
+  const scopeKey = scope.join(',');
+  STU_KEY = scopeKey ? STU_KEY0 + '@' + scopeKey : STU_KEY0;
   let cached = null; try { cached = JSON.parse((await idbGet(STU_KEY)) || localStorage.getItem(STU_KEY) || 'null'); } catch(e) {}
-  let rev = null, delRev = 0;
-  try { const m = await getDoc(doc(db,'config','meta')); const d = m.exists() ? m.data() : {}; rev = d.studentsRev || 0; delRev = d.studentsDelRev || 0; } catch(e) {}
-  // كاش سليم = نفس عدّاد الحذف (لو حد اتحذف بنحمّل من الأول). ولو رقم التعديلات اتغيّر بنجيب المتغيّر بس مش الكل
-  const usable = cached && !force && Array.isArray(cached.list) && (rev !== null ? cached.delRev === delRev : (Date.now() - cached.ts < 12*3600*1000));
+  const inScope = x => !scope.length || scope.includes(x.classSection || '');
+  const byName = (a, b) => (a.name || '') < (b.name || '') ? -1 : ((a.name || '') > (b.name || '') ? 1 : 0);
+  const fullLoad = async () => {
+    const col = collection(db,'students');
+    const snap = await countedGetDocs(scope.length ? query(col, where('classSection','in', scope)) : query(col, orderBy('name')), scope.length ? 'students (نطاق الخادم)' : 'students');
+    allStudents = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort(byName);
+    saveStudentsCache(rev, delRev, scopeKey);
+  };
+  const usable = cached && !force && Array.isArray(cached.list) && (cached.scope || '') === scopeKey && (rev !== null ? cached.delRev === delRev : (Date.now() - cached.ts < 12*3600*1000));
   if (usable && (rev === null || cached.rev === rev)) {
     allStudents = cached.list;
   } else if (usable) {
@@ -2418,25 +2483,33 @@ async function loadStudents(force = false) {
       const since = Timestamp.fromMillis(Math.max(0, (cached.maxUpd || 0) - 60000)); // هامش دقيقة للأمان
       const snap = await countedGetDocs(query(collection(db,'students'), where('updatedAt','>=', since)), 'students (تحديث بالتغييرات بس)');
       const map = new Map(cached.list.map(x => [x.id, x]));
-      snap.docs.forEach(d => map.set(d.id, { id:d.id, ...d.data() }));
-      allStudents = [...map.values()].sort((a, b) => (a.name || '') < (b.name || '') ? -1 : ((a.name || '') > (b.name || '') ? 1 : 0));
-      saveStudentsCache(rev, delRev);
-    } catch(e) {
-      console.error(e);
-      const snap = await countedGetDocs(query(collection(db,'students'), orderBy('name')), 'students');
-      allStudents = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-      saveStudentsCache(rev, delRev);
-    }
+      let seen = cached.maxUpd || 0;
+      snap.docs.forEach(d => { const x = { id:d.id, ...d.data() }; seen = Math.max(seen, tsMs(x.updatedAt)); if (inScope(x)) map.set(d.id, x); else map.delete(d.id); });
+      allStudents = [...map.values()].sort(byName);
+      saveStudentsCache(rev, delRev, scopeKey, seen);
+    } catch(e) { console.error(e); await fullLoad(); }
   } else {
-    const snap = await countedGetDocs(query(collection(db,'students'), orderBy('name')), 'students');
-    allStudents = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    saveStudentsCache(rev, delRev);
+    await fullLoad();
   }
+  if (currentRole === 'admin' && !classFieldMig && rev !== null && !scope.length) migrateClassField();
   studentsLoaded = true;
   // تبويب "المخدومين" بيعرض مخدومين الفصل الحالي بس (وفلتر الفصول للتلات فصول بيبي/كي جي)،
   // والشاشات التانية (الحضور، الرسائل، التصدير) بتتقفل على فصل الخادم عن طريق classScope / ownClassStudents
   updateStuCount();
   renderStudentsList();
+}
+
+async function migrateClassField() {
+  try {
+    const missing = allStudents.filter(x => x.classSection === undefined || x.classSection === null);
+    for (let i = 0; i < missing.length; i += 400) {
+      const b = writeBatch(db);
+      missing.slice(i, i + 400).forEach(x => b.update(doc(db,'students',x.id), { classSection: '' }));
+      await b.commit();
+    }
+    missing.forEach(x => { x.classSection = ''; });
+    await setDoc(doc(db,'config','meta'), { classFieldMig: true }, { merge:true });
+  } catch(e) { console.error('class field migration failed:', e); }
 }
 
 window.addStudent = async () => {
@@ -2455,7 +2528,8 @@ window.addStudent = async () => {
     gender:  document.getElementById('new-gender').value || '',
     phones,
     createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
+    classSection: ''
   };
   // لو الخادم مقيد بفصول معينة، أي مخدوم جديد بيضيفه يتحط أوتوماتيك في الفصل الحالي اللى شافه في الواجهة عشان يبقى ضمن الفصول المسموح له
   if (currentRole !== 'admin' && allowed.length) data.classSection = targetClass;
@@ -2490,6 +2564,7 @@ window.deleteStudent = async (id, name) => {
 
 // تنظيف الأسماء المخزّنة من حروف مخفية/همزات مختلفة (بتيجي غالبًا من استيراد إكسل)
 window.cleanAllNames = async () => {
+  await ensureAllClassesForAdmin();
   const toFix = allStudents
     .map(s => ({ id: s.id, oldName: s.name, newName: canonicalizeName(s.name) }))
     .filter(x => x.oldName !== x.newName);
@@ -2507,6 +2582,7 @@ window.cleanAllNames = async () => {
 // بيدور على كل مخدوم "النوع" بتاعه لسه فاضي، ويخمّنه من الاسم زي التخمين اللي بيحصل وقت الإضافة،
 // ويحفظ التخمينات اللي عرف يحددها دفعة واحدة (batch) — واللي مش عارف يحددها بيسيبها فاضية عشان تحددها بإيدك
 window.guessAllGenders = async () => {
+  await ensureAllClassesForAdmin();
   const candidates = allStudents
     .filter(s => !s.gender)
     .map(s => ({ id: s.id, name: s.name, guess: guessGenderFromName(s.name) }))
@@ -3070,18 +3146,30 @@ function ensureRecentAttendance(weeks) {
   attLoadP = run;
   return run;
 }
+let recentAttScope = null;
 async function _ensureRecentAttendance(weeks) {
   weeks = Math.max(weeks || 4, 4);
+  { const k = readScopeClasses().join(','); if (recentAttScope !== null && recentAttScope !== k) recentAttWeeks = 0; recentAttScope = k; }
   if (recentAttWeeks >= weeks) { await refreshTodayAttendanceIfStale(); return; }
   const d = new Date(); d.setDate(d.getDate() - weeks*7);
   const fromKey = toLocalDateKey(d), nowKey = todayKey();
   // الأسابيع اللي فاتت مبتتغيّرش، فبنخزّنها على الجهاز ونقرا من آخر جلسة اتزامنت بس (جلسة النهارده تقريبًا)
   // بدل ما نقرا كل الأسابيع من فايرستور في كل فتحة. وبنعمل تحميل كامل تاني كل 7 أيام للأمان.
-  let c = null; try { c = JSON.parse((await idbGet(ATT_CACHE_KEY)) || 'null'); } catch(e) {}
-  const fresh = !!(c && c.data && c.from && c.from <= fromKey && c.through && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
+  const scopeKey0 = readScopeClasses().join(',');
+  let c = null; try { c = JSON.parse((await idbGet(ATT_CACHE_KEY + '@' + scopeKey0)) || 'null'); } catch(e) {}
+  const scope = readScopeClasses(), scopeKey = scope.join(',');
+  const fresh = !!(c && c.data && c.from && c.from <= fromKey && c.through && (c.scope || '') === scopeKey && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
   const data = fresh ? c.data : {};
   const qFrom = fresh ? c.through : fromKey;
-  const snap = await countedGetDocs(query(collection(db,'attendance'), where('date','>=', qFrom)), 'attendance (نطاق زمني)');
+  let snap, usedKey = scopeKey;
+  try {
+    snap = await countedGetDocs(scope.length ? query(collection(db,'attendance'), where('date','>=', qFrom), where('classSection','in', scope)) : query(collection(db,'attendance'), where('date','>=', qFrom)), 'attendance (نطاق زمني)');
+  } catch(e) {
+    // الـ index المركب (classSection + date) لسه مش متعمل: بنرجع للقراءة القديمة ولينك إنشاء الـ index بيظهر في الـ console
+    if (!scope.length) throw e;
+    console.warn('أنشئ index مركب لـ attendance (classSection + date):', e && e.message);
+    snap = await countedGetDocs(query(collection(db,'attendance'), where('date','>=', qFrom)), 'attendance (نطاق زمني - بدون index)'); usedKey = '';
+  }
   for (const k of Object.keys(data)) if (k >= qFrom) delete data[k]; // الأيام اللي هنقراها تاني بتتستبدل بالكامل (لو حد اتشال حضوره)
   snap.docs.forEach(x => { const v = x.data(); if (!data[v.date]) data[v.date] = {}; data[v.date][v.studentId] = x.id; });
   for (const k in data) {
@@ -3090,7 +3178,7 @@ async function _ensureRecentAttendance(weeks) {
     allAttendance[k] = { ...data[k] }; // استبدال كامل (مش دمج) عشان أي حضور اتشال ميفضلش ظاهر
   }
   todayAttSyncAt = Date.now();
-  idbSet(ATT_CACHE_KEY, JSON.stringify({ from: fresh ? c.from : fromKey, through: nowKey, fullTs: fresh ? c.fullTs : Date.now(), data }));
+  idbSet(ATT_CACHE_KEY + '@' + scopeKey0, JSON.stringify({ from: fresh ? c.from : fromKey, through: nowKey, fullTs: fresh ? c.fullTs : Date.now(), scope: usedKey, data }));
   recentAttWeeks = weeks;
 }
 const studentHist = {};
@@ -3121,13 +3209,13 @@ async function loadAllAttendance() {
 const clsOf = id => (allStudents.find(x => x.id === id)?.classSection) || '';
 // الخادم المقيّد بفصول بيسمع حضور وآيات فصوله بس (مش كل الفصول) عشان الـ reads متزيدش مع زيادة الفصول
 function todayQuery(col, today) {
-  const al = getAllowedAssignedClasses();
+  const al = readScopeClasses();
   const f = [where('date','==', today)];
-  if (al.length) f.push(where('classSection','in', al.slice(0,30)));
+  if (al.length) f.push(where('classSection','in', al));
   return query(collection(db,col), ...f);
 }
 // تسجيلات الخادم لمخدومين من فصول تانية مش داخلة في الاستعلام، فبنحتفظ بيها محليًا عشان متختفيش من الشاشة
-const outsideAllowed = id => { const al = getAllowedAssignedClasses(); return al.length > 0 && !al.includes(clsOf(id)); };
+const outsideAllowed = id => { const al = readScopeClasses(); return al.length > 0 && !al.includes(clsOf(id)); };
 function restartTodayListeners() {
   if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
   if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
@@ -4324,6 +4412,7 @@ function exportRangeQuery(col) {
   return query(collection(db, col), where('date', '>=', toLocalDateKey(d)));
 }
 window.runExportExcel = async () => {
+  await ensureAllClassesForAdmin();
   const includeAtt = document.getElementById('export-opt-att').checked;
   const includeVerse = document.getElementById('export-opt-verse').checked;
   const includeStudents = document.getElementById('export-opt-students').checked;
@@ -4452,6 +4541,7 @@ window.openClassFromAdmin = (id) => {
   currentClassTab = id;
   localStorage.setItem('attendanceClassTab', id);
   classFilter = id;
+  adminClassChanged();
   renderClassChips();
   applyClassRestrictionUI();
   showClassHome();
@@ -4497,6 +4587,7 @@ window.pickClass = (id) => {
   currentClassTab = id;
   localStorage.setItem('attendanceClassTab', id);
   classFilter = id;
+  adminClassChanged();
   renderClassChips();
   applyClassRestrictionUI();
   showClassHome();
@@ -4595,6 +4686,7 @@ window.switchClassTab = (cls, btn) => {
   currentClassTab = cls;
   localStorage.setItem('attendanceClassTab', cls);
   classFilter = cls;
+  adminClassChanged();
   renderClassChips();
   if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
   if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
@@ -4623,6 +4715,7 @@ function applyClassRestrictionUI() {
   const bar = document.getElementById('global-class-tabs');
   if (bar) {
     bar.querySelectorAll('.class-tab').forEach(b => {
+      if (b.id === 'class-tab-all') { b.style.display = currentRole === 'admin' ? '' : 'none'; b.classList.toggle('active', adminAllClasses && !adminAutoAll); return; }
       const cls = b.id.replace('class-tab-', '');
       const visible = !restricted || allowed.includes(cls);
       b.style.display = visible ? '' : 'none';
@@ -5459,6 +5552,7 @@ function buildDashboardHTML() {
 }
 
 window.openDashboard = async () => {
+  await ensureAllClassesForAdmin();
   const boxes = document.querySelectorAll('#dash-options input[type=checkbox]');
   if (boxes.length) saveDashPrefs(Array.from(boxes).filter(b => b.checked).map(b => b.value));
   closeDashModal();
