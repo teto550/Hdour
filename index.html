@@ -866,10 +866,21 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <!-- CLASS SERVANTS TAB (مسؤول الفصل بس) — حضور خدام فصله هو بس -->
     <div id="tab-classservants" style="display:none">
       <div class="page-title-box cs-scope-title" id="class-serv-scope-title"></div>
-      <div id="sup-pending-section" style="display:none;margin-bottom:18px">
-        <div class="list-header"><span class="section-title">📥 طلبات انضمام لفصولك (<span id="sup-pending-count">0</span>)</span></div>
-        <div id="sup-pending-list"></div>
+      <div class="tabs" id="class-serv-subtabs" style="margin-bottom:12px">
+        <button class="tab active" id="class-serv-subtab-btn-servants" onclick="switchClassServSub('servants')">👥 الخدام</button>
+        <button class="tab" id="class-serv-subtab-btn-att" onclick="switchClassServSub('att')">✅ الحضور</button>
       </div>
+      <div id="class-serv-sub-servants">
+        <div id="sup-pending-section" style="display:none;margin-bottom:18px">
+          <div class="list-header"><span class="section-title">📥 طلبات انضمام لفصولك (<span id="sup-pending-count">0</span>)</span></div>
+          <div id="sup-pending-list"></div>
+        </div>
+        <div class="search-box" style="margin:0 0 10px">
+          <input type="text" id="class-serv-list-search" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="renderClassServList()" autocomplete="off">
+        </div>
+        <div id="class-serv-list"></div>
+      </div>
+      <div id="class-serv-sub-att" style="display:none">
       <div class="tabs" id="class-serv-att-activity-chips" style="margin-bottom:12px">
         <button class="tab active" onclick="setClassServAttActivity('mass',this)">⛪ القداس</button>
         <button class="tab" onclick="setClassServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
@@ -881,6 +892,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <input type="text" id="class-serv-att-search-input" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="renderClassServAttList()" autocomplete="off">
       </div>
       <div id="class-serv-att-list"></div>
+      </div>
     </div>
 
     <!-- ROLES TAB (المستخدمين والأدوار) -->
@@ -2375,7 +2387,7 @@ function listenOwnServantDoc(uid) {
       roleOrClassChanged = true;
       if (canHandleRequests()) startPendingRequestsListener(); else stopPendingRequestsListener();
       renderSupPending();
-      if (document.getElementById('tab-classservants')?.style.display === 'block') renderClassServAttList();
+      if (document.getElementById('tab-classservants')?.style.display === 'block') { renderClassServAttList(); renderClassServList(); }
     }
     if (roleOrClassChanged) {
       applyClassRestrictionUI();
@@ -4699,7 +4711,7 @@ window.switchTab = async (tab) => {
   document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabKey));
   ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
   if (tab === 'monitor') { loadMonitorTab(); return; }
-  if (tab === 'classservants') { if (!servantsLoadedFlag) await loadServantsOnce(); renderClassServAttList(); return; }
+  if (tab === 'classservants') { switchClassServSub('servants'); if (!servantsLoadedFlag) await loadServantsOnce(); renderClassServList(); return; }
   await ensureStudents();
   if (tab === 'attendance') { startTodayListeners(); updateStats(); renderTodayList(); }
   if (tab === 'students')  { renderClassChips(); renderStudentsList(); }
@@ -4936,6 +4948,46 @@ window.setClassServAttActivity = (activity, btn) => {
   if (btn) btn.classList.add('active');
   renderClassServAttList();
 };
+// ===== شاشة "الخدام" عند مسؤول الفصل: تبويب "الخدام" (بيفتح الأول) + تبويب "الحضور" =====
+window.switchClassServSub = (which) => {
+  document.getElementById('class-serv-subtab-btn-servants')?.classList.toggle('active', which === 'servants');
+  document.getElementById('class-serv-subtab-btn-att')?.classList.toggle('active', which === 'att');
+  const a = document.getElementById('class-serv-sub-servants'); if (a) a.style.display = which === 'servants' ? 'block' : 'none';
+  const b = document.getElementById('class-serv-sub-att');      if (b) b.style.display = which === 'att' ? 'block' : 'none';
+  if (which === 'servants') renderClassServList(); else renderClassServAttList();
+};
+// قايمة الخدام اللي المسؤول مسؤول عنهم بس (فصوله)، متجمعة بالفصل لو عنده أكتر من فصل — عرض فقط من غير أزرار إدارة
+function renderClassServList() {
+  const cont = document.getElementById('class-serv-list');
+  if (!cont || currentRole !== 'supervisor') return;
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const titleEl = document.getElementById('class-serv-scope-title'); if (titleEl) titleEl.textContent = '🏫 خدام الفصول';
+  const supervised = normalizeAssignedClasses(currentSupervisorClass);
+  if (!supervised.length) { cont.innerHTML = `<div class="empty-state">إنت مش مسؤول عن أي فصل</div>`; return; }
+  if (!servantsLoadedFlag) { cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`; return; }
+  const q = normalizeArabic(document.getElementById('class-serv-list-search')?.value || '');
+  const base = cachedServants.filter(x => x.status === 'approved' && x.id !== currentUid);
+  const groups = supervised.map(cid => ({
+    cid,
+    list: base.filter(x => normalizeAssignedClasses(x.assignedClass).includes(cid) && (!q || normalizeArabic(x.name||'').includes(q)))
+              .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
+  })).filter(g => g.list.length);
+  if (!groups.length) { cont.innerHTML = `<div class="empty-state">${q ? 'مفيش خادم بالاسم ده' : 'مفيش خدام معتمدين في فصولك لسه'}</div>`; return; }
+  const multi = supervised.length > 1;
+  cont.innerHTML = groups.map(g => (multi ? `<div class="section-title" style="margin:14px 0 8px">${esc(classEmoji(g.cid))} ${esc(classLabel(g.cid))} (${g.list.length})</div>` : '') +
+    g.list.map(x => `
+      <div class="servant-item mon-row">
+        ${servantAvatarHTML(x)}
+        <div class="s-info">
+          <div class="mon-name">${esc(x.name)||'—'}${servantRoleChip(x)}</div>
+          <div class="mon-badges">${servantClassBadges(x)}</div>
+          <div class="mon-stats">
+            <span class="mon-stat-chip ${x.sscCount?'has':''}">📖 مدارس أحد <b>${x.sscCount||0}</b></span>
+            <span class="mon-stat-chip ${x.meetingCount?'has':''}">🤝 اجتماع <b>${x.meetingCount||0}</b></span>
+          </div>
+        </div>
+      </div>`).join('')).join('');
+}
 async function renderClassServAttList() {
   const cont = document.getElementById('class-serv-att-list');
   if (!cont) return;
@@ -5104,6 +5156,7 @@ function renderSupPending() {
 }
 function renderPendingList(list) {
   renderSupPending();
+  renderClassServList();
   const ps = document.getElementById('pending-section'); if (ps) ps.style.display = list.length ? '' : 'none';
   document.getElementById('pending-count').textContent = list.length;
   { const mp = document.getElementById('mon-stat-pending'); if (mp) mp.textContent = list.length; }
