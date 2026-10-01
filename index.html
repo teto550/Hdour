@@ -2065,12 +2065,15 @@ const todayKey = () => {
   d.setDate(d.getDate() - ((d.getDay() - 4 + 7) % 7));
   return toLocalDateKey(d);
 };
-// الآيات: بتتسجل من الأربع وتفضل ظاهرة الخميس، وتتصفّر يوم الجمعة (الجمعة → الثلاثاء بيتحسبوا على أربع اللي جاي)
+// الآيات: بتتسجل من الأربع للسبت بس، وعلى حضور الأسبوع اللي فات (تاريخ خميس الأسبوع اللي خلص الأربع) مش الأسبوع الجديد.
+// الأحد → الثلاثاء: التسجيل مقفول والقايمة فاضية (بتتحسب على أربع اللي جاي)
 const verseKey = () => {
-  const d = new Date(), day = d.getDay();
-  d.setDate(d.getDate() + (day === 4 ? -1 : (3 - day + 7) % 7));
+  const d = new Date();
+  d.setDate(d.getDate() - 3 - d.getDay());
   return toLocalDateKey(d);
 };
+const verseOpen = () => new Date().getDay() >= 3; // أربع(3) → سبت(6)
+const VERSE_CLOSED_MSG = 'تسجيل الآية من الأربع للسبت بس';
 
 // ===== AUTH =====
 window.switchAuthTab = (which) => {
@@ -3245,19 +3248,34 @@ function restartTodayListeners() {
   if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
   startTodayListeners();
 }
-// نقل صامت لمرة واحدة: آيات الأربع 23/09 كانت متحفظة على تاريخ الخميس القديم 17/09
+// نقل صامت لمرة واحدة: آيات الأربع 30/09 كانت متحفظة على تاريخ الأربع، ودلوقتي بتتحسب على حضور الأسبوع اللي فات (خميس 24/09)
 async function migrateLegacyVerses() {
-  if (verseKey() !== '2026-09-23' || localStorage.getItem('vmig_0923')) return;
+  if (localStorage.getItem('vmig_0930')) return;
   try {
-    const snap = await countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-17')), 'verses (نقل تاريخ قديم - مرة واحدة)');
-    const since = new Date('2026-09-23T00:00:00').getTime();
-    const docs = snap.docs.filter(d => tsToMillis(d.data().timestamp) >= since);
+    const snap = await countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-30')), 'verses (نقل تاريخ قديم - مرة واحدة)');
+    const docs = snap.docs;
     for (let i = 0; i < docs.length; i += 400) {
       const b = writeBatch(db);
-      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-23', classSection: d.data().classSection ?? clsOf(d.data().studentId) }));
+      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-24', classSection: d.data().classSection ?? clsOf(d.data().studentId) }));
       await b.commit();
     }
-    localStorage.setItem('vmig_0923', '1');
+    localStorage.setItem('vmig_0930', '1');
+  } catch(e) { console.error(e); }
+  // آيات الأربع 23/09 → خميس 17/09 (حضور أسبوعها). اللي ليه آية متسجلة أصلًا على 17/09 بنسيب آيته زي ما هي عشان ميتكررش
+  if (localStorage.getItem('vmig_0923b')) return;
+  try {
+    const [s23, s17] = await Promise.all([
+      countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-23')), 'verses (نقل تاريخ قديم 23/09 - مرة واحدة)'),
+      countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-17')), 'verses (نقل تاريخ قديم 17/09 - مرة واحدة)')
+    ]);
+    const had = new Set(s17.docs.map(d => d.data().studentId));
+    const docs = s23.docs.filter(d => !had.has(d.data().studentId));
+    for (let i = 0; i < docs.length; i += 400) {
+      const b = writeBatch(db);
+      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-17' }));
+      await b.commit();
+    }
+    localStorage.setItem('vmig_0923b', '1');
   } catch(e) { console.error(e); }
 }
 function startTodayListeners() {
@@ -3340,6 +3358,7 @@ async function markPresent(studentId) {
 
 // ===== VERSE (independent from attendance) =====
 window.showVerseModal = async function(studentId) {
+  if (!verseOpen()) { showToast(VERSE_CLOSED_MSG, 'error'); return; }
   const today = verseKey();
   if (todayVerses[studentId]) return; // already marked
   try {
@@ -4078,6 +4097,7 @@ async function processVoiceName(altTexts) {
 
 // بيسجل "سماع آية" بالصوت (زي showVerseModal بالظبط) لكن من غير ما يعتمد على إن العنصر النشط في شاشة البحث اليدوي
 async function registerVerseVoice(studentId) {
+  if (!verseOpen()) { showToast(VERSE_CLOSED_MSG, 'error'); return; }
   const today = verseKey();
   if (todayVerses[studentId]) return;
   try {
