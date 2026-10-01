@@ -445,7 +445,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div id="tab-sup-home" style="display:none">
       <div class="admin-grid">
         <button class="admin-card" onclick="supOpenClasses()"><span class="ac-emoji">🏫</span>الفصول</button>
-        <button class="admin-card" onclick="switchTab('allclassservants')"><span class="ac-emoji">👥</span>الخدام</button>
+        <button class="admin-card" onclick="switchTab('allclassservants')"><span class="ac-emoji">👥</span>الخدام<span id="sup-pending-badge" style="display:none;margin-top:6px;background:var(--danger);color:#fff;border-radius:12px;padding:1px 9px;font-size:12px;font-weight:800"></span></button>
       </div>
     </div>
     <div id="tab-admin-classes" style="display:none">
@@ -866,6 +866,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <!-- CLASS SERVANTS TAB (مسؤول الفصل بس) — حضور خدام فصله هو بس -->
     <div id="tab-classservants" style="display:none">
       <div class="page-title-box cs-scope-title" id="class-serv-scope-title"></div>
+      <div id="sup-pending-section" style="display:none;margin-bottom:18px">
+        <div class="list-header"><span class="section-title">📥 طلبات انضمام لفصولك (<span id="sup-pending-count">0</span>)</span></div>
+        <div id="sup-pending-list"></div>
+      </div>
       <div class="tabs" id="class-serv-att-activity-chips" style="margin-bottom:12px">
         <button class="tab active" onclick="setClassServAttActivity('mass',this)">⛪ القداس</button>
         <button class="tab" onclick="setClassServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
@@ -2265,7 +2269,7 @@ async function handleSignedInUser(user) {
     explicitAuthAction = false;
     const data = snap.data();
     if (data.status === 'pending') {
-      showPendingScreen('في انتظار الموافقة', 'طلبك اتبعت للأدمن وقيد المراجعة، هيتفعل حسابك بمجرد الموافقة ✋');
+      showPendingScreen('في انتظار الموافقة', 'طلبك اتبعت للأدمن ومسؤول فصلك وقيد المراجعة، هيتفعل حسابك بمجرد الموافقة ✋');
       watchOwnPendingStatus(user);
       return;
     }
@@ -2284,7 +2288,7 @@ async function handleSignedInUser(user) {
     applyMonitorVisibility();
     startHeartbeat();
     listenOwnServantDoc(user.uid);
-    if (currentRole === 'admin') startPendingRequestsListener();
+    if (canHandleRequests()) startPendingRequestsListener();
     startClassesListener();
     initApp();
   } catch(e) {
@@ -2340,7 +2344,7 @@ function listenOwnServantDoc(uid) {
       currentRole = d.role;
       roleOrClassChanged = true;
       applyMonitorVisibility();
-      if (currentRole === 'admin') startPendingRequestsListener(); else stopPendingRequestsListener();
+      if (canHandleRequests()) startPendingRequestsListener(); else stopPendingRequestsListener();
       if (currentRole === 'admin') {
         showToast('مبروك! الأدمن الأساسي خلاك أدمن 👑', 'success');
       } else if (currentRole === 'supervisor') {
@@ -2369,6 +2373,8 @@ function listenOwnServantDoc(uid) {
     if (supStr !== currentSupervisorClass) {
       currentSupervisorClass = supStr;
       roleOrClassChanged = true;
+      if (canHandleRequests()) startPendingRequestsListener(); else stopPendingRequestsListener();
+      renderSupPending();
       if (document.getElementById('tab-classservants')?.style.display === 'block') renderClassServAttList();
     }
     if (roleOrClassChanged) {
@@ -5049,7 +5055,7 @@ async function resolvePendingRemoved(id, lastData) {
   } catch(e) { patchCachedOnly(id, null); }
 }
 function startPendingRequestsListener() {
-  if (pendingReqUnsub || currentRole !== 'admin') return;
+  if (pendingReqUnsub || !canHandleRequests()) return;
   pendingReqUnsub = onSnapshot(query(collection(db,'servants'), where('status','==','pending')), snap => {
     countSnapshotReads('servants (طلبات الانضمام - live)', snap);
     const initial = !pendingReqSeenServer;
@@ -5060,14 +5066,44 @@ function startPendingRequestsListener() {
       if (ch.type === 'removed') { resolvePendingRemoved(id, ch.doc.data()); return; }
       const i = cachedServants.findIndex(x => x.id === id);
       if (i >= 0) cachedServants[i] = { ...cachedServants[i], ...data };
-      else { cachedServants.push(data); if (ch.type === 'added') newcomers++; }
+      else { cachedServants.push(data); if (ch.type === 'added' && canHandleRequest(data)) newcomers++; }
     });
     if (!initial && newcomers) showToast(newcomers > 1 ? `📥 وصل ${newcomers} طلبات انضمام جديدة` : '📥 وصل طلب انضمام جديد', 'info');
     refreshPendingUI();
   }, err => console.error('pending requests listener error:', err));
 }
 
+// مين يقدر يقبل/يرفض طلبات الانضمام: الأدمن (كل الطلبات) + مسؤول الفصل (طلبات الفصول اللي هو مسؤول عنها بس)
+function canHandleRequests() { return currentRole === 'admin' || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0); }
+function canHandleRequest(s) {
+  if (currentRole === 'admin') return true;
+  if (currentRole !== 'supervisor') return false;
+  const sup = normalizeAssignedClasses(currentSupervisorClass);
+  return normalizeAssignedClasses(s && s.assignedClass).some(c => sup.includes(c));
+}
+function renderSupPending() {
+  const sec = document.getElementById('sup-pending-section'); if (!sec) return;
+  const mine = currentRole === 'supervisor' ? cachedServants.filter(x => x.status === 'pending' && canHandleRequest(x)) : [];
+  const badge = document.getElementById('sup-pending-badge');
+  if (badge) { badge.textContent = mine.length ? `📥 ${mine.length}` : ''; badge.style.display = mine.length ? 'inline-block' : 'none'; }
+  sec.style.display = mine.length ? '' : 'none';
+  const cnt = document.getElementById('sup-pending-count'); if (cnt) cnt.textContent = mine.length;
+  const cont = document.getElementById('sup-pending-list'); if (!cont) return;
+  const q = n => String(n||'').replace(/'/g, "\\'");
+  cont.innerHTML = mine.map(s => `
+    <div class="servant-item" style="flex-wrap:wrap">
+      <div class="s-avatar">${(s.name||'؟').trim()[0]||'؟'}</div>
+      <div class="s-info">
+        <div class="s-name">${s.name||'—'} ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
+        <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}${s.phone ? ' · '+s.phone : ''}</div>
+        ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
+      </div>
+      <button class="export-btn" onclick="approveServant('${s.id}','${q(s.name)}','${servantRoleIds(s).join(',')}')">✓ قبول</button>
+      <button class="del-btn" onclick="rejectServant('${s.id}','${q(s.name)}','${servantRoleIds(s).join(',')}')">✕ رفض</button>
+    </div>`).join('');
+}
 function renderPendingList(list) {
+  renderSupPending();
   const ps = document.getElementById('pending-section'); if (ps) ps.style.display = list.length ? '' : 'none';
   document.getElementById('pending-count').textContent = list.length;
   { const mp = document.getElementById('mon-stat-pending'); if (mp) mp.textContent = list.length; }
@@ -5662,7 +5698,11 @@ window.renderActivityList = async function() {
 // ملحوظة: قايمة الخدام هنا مش بث لحظي (onSnapshot)، دي قراءة مرة واحدة متخزنة في cachedServants —
 // عشان كده كل عملية تغيير هنا لازم تعمل loadServantsOnce(true) عشان تجيب النسخة الجديدة من السيرفر
 window.approveServant = async (id, name, roleIds) => {
-  await updateDoc(doc(db,'servants',id), { status:'approved' }); patchServantLocal(id, { status:'approved' });
+  if (!canHandleRequest(cachedServants.find(x => x.id === id))) { showToast('الطلب ده مش من فصولك', 'error'); return; }
+  if (!rolesLoadedFlag) { try { await loadRolesOnce(); } catch(e) {} }
+  try { await updateDoc(doc(db,'servants',id), { status:'approved' }); }
+  catch(e) { console.error(e); showToast('مش مسموحلك تقبل الطلب ده — راجع صلاحيات Firestore', 'error'); return; }
+  patchServantLocal(id, { status:'approved' });
   // لو اسمه كان مختار من قايمة أسماء الدور الجاهزة، بيتمسح من القايمة دلوقتي (بعد القبول) عشان محدش تاني يختاره
   if (name && roleIds) {
     try { for (const rid of String(roleIds).split(',').filter(Boolean)) { const v = nameVariantsIn(allRoles.find(x => x.id === rid), name); await updateDoc(doc(db,'roles',rid), { pendingNames: arrayRemove(...(v.length ? v : [name])) }); } loadRolesOnce(true); } catch(e) { console.error(e); }
@@ -5670,8 +5710,12 @@ window.approveServant = async (id, name, roleIds) => {
   showToast('تم قبول الخادم ✓', 'success');
 };
 window.rejectServant = async (id, name, roleIds) => {
+  if (!canHandleRequest(cachedServants.find(x => x.id === id))) { showToast('الطلب ده مش من فصولك', 'error'); return; }
   if (!confirm(`هترفض طلب "${name}"؟`)) return;
-  await deleteDoc(doc(db,'servants',id)); patchServantLocal(id, null);
+  if (!rolesLoadedFlag) { try { await loadRolesOnce(); } catch(e) {} }
+  try { await deleteDoc(doc(db,'servants',id)); }
+  catch(e) { console.error(e); showToast('مش مسموحلك ترفض الطلب ده — راجع صلاحيات Firestore', 'error'); return; }
+  patchServantLocal(id, null);
   // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
   if (name && roleIds) {
     try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
