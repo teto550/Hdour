@@ -442,6 +442,12 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="admin-card" onclick="switchTab('monitor')"><span class="ac-emoji">👥</span>الخدام</button>
       </div>
     </div>
+    <div id="tab-sup-home" style="display:none">
+      <div class="admin-grid">
+        <button class="admin-card" onclick="supOpenClasses()"><span class="ac-emoji">🏫</span>الفصول</button>
+        <button class="admin-card" onclick="switchTab('allclassservants')"><span class="ac-emoji">👥</span>الخدام</button>
+      </div>
+    </div>
     <div id="tab-admin-classes" style="display:none">
       <button class="admin-back" onclick="goHome()">→ رجوع</button>
       <div class="admin-mode-bar">
@@ -2338,7 +2344,7 @@ function listenOwnServantDoc(uid) {
       if (currentRole === 'admin') {
         showToast('مبروك! الأدمن الأساسي خلاك أدمن 👑', 'success');
       } else if (currentRole === 'supervisor') {
-        showToast('اتحددتلك مسؤولية فصل — بقى عندك تبويب "خدام الفصل" 🗝️', 'success');
+        showToast('اتحددتلك مسؤولية فصل — بقى عندك "الخدام" في الرئيسية 🗝️', 'success');
       } else {
         showToast('اتغيّر دورك بواسطة الأدمن الأساسي', 'info');
       }
@@ -4488,16 +4494,16 @@ window.applyMonitorVisibility = () => {
   const onSupervisor = currentRole === 'supervisor';
   document.getElementById('tab-btn-monitor').style.display = 'none';
   const c = document.getElementById('home-card-monitor'); if (c) c.style.display = 'none'; // الأدمن بيدخل المتابعة من كارت "الخدام" في رئيسيته
-  document.getElementById('tab-btn-classservants').style.display = onSupervisor ? 'block' : 'none';
-  const c2 = document.getElementById('home-card-classservants'); if (c2) c2.style.display = onSupervisor ? '' : 'none';
+  // المسؤول بيدخل الخدام من الرئيسية (كارت "الخدام")، مش من جوه الفصل
+  document.getElementById('tab-btn-classservants').style.display = 'none';
+  const c2 = document.getElementById('home-card-classservants'); if (c2) c2.style.display = 'none';
   // "خدام الفصول": بيظهر للمسؤول اللي مسؤول عن أكتر من فصل، عشان يشوف خدام كل فصوله مع بعض
-  const showAllServ = onSupervisor && normalizeAssignedClasses(currentSupervisorClass).length > 1;
-  const tb2 = document.getElementById('tab-btn-allclassservants'); if (tb2) tb2.style.display = showAllServ ? 'block' : 'none';
-  const c3 = document.getElementById('home-card-allclassservants'); if (c3) c3.style.display = showAllServ ? '' : 'none';
+  const tb2 = document.getElementById('tab-btn-allclassservants'); if (tb2) tb2.style.display = 'none';
+  const c3 = document.getElementById('home-card-allclassservants'); if (c3) c3.style.display = 'none';
 };
 // ===== الصفحة الرئيسية للأدمن: الفصول / الخدام =====
 function hideAdminScreens() {
-  ['tab-admin-home','tab-admin-classes','tab-pick-class'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+  ['tab-admin-home','tab-sup-home','tab-admin-classes','tab-pick-class'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
   hideRolesScreen();
 }
 // شاشة "المستخدمين والأدوار" لازم تتقفل مع أي تنقل تاني (هوم / تابات / فصول)، وإلا الشاشة الجديدة بتظهر فوقها أو تحتها
@@ -4566,11 +4572,15 @@ window.goHome = () => {
   hideAllScreens();
   const hdr = document.getElementById('class-home-header'); if (hdr) hdr.style.display = 'none';
   if (currentRole === 'admin') document.getElementById('tab-admin-home').style.display = 'block';
+  else if (hasSupHome()) document.getElementById('tab-sup-home').style.display = 'block'; // المسؤول: الفصول / الخدام زي الأدمن
   else if (needsClassPick()) showClassPicker(); // الرئيسية للي عنده أكتر من فصل = يختار فصل من فصوله
   else showClassHome();
   applyMonitorVisibility();
 };
 // الخادم المتوزع على أكتر من فصل (مش أدمن) لازم يختار الفصل اللي داخله الأول
+// المسؤول عن فصل (أو أكتر) بيبقى عنده رئيسية فيها "الفصول" و"الخدام" زي الأدمن
+function hasSupHome() { return currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0; }
+window.supOpenClasses = () => { if (needsClassPick()) showClassPicker(); else showClassHome(); };
 function needsClassPick() { return currentRole !== 'admin' && getAllowedAssignedClasses().length > 1; }
 function renderClassPicker() {
   const grid = document.getElementById('pick-class-grid'); if (!grid) return;
@@ -4596,14 +4606,18 @@ window.pickClass = (id) => {
   applyClassRestrictionUI();
   showClassHome();
 };
-window.classHomeBack = () => { if (currentRole === 'admin') showAdminClasses(); else showClassPicker(); };
+window.classHomeBack = () => {
+  if (currentRole === 'admin') showAdminClasses();
+  else if (hasSupHome() && !needsClassPick()) goHome();
+  else showClassPicker();
+};
 // كروت الفصل (الحضور / المخدومين / الافتقاد / الرسائل) — الأدمن بيوصلها بعد ما يختار فصل، والخادم المتوزع بعد ما يختار فصله
 window.showClassHome = () => {
   hideAllScreens();
-  const canGoBack = currentRole === 'admin' || needsClassPick();
+  const canGoBack = currentRole === 'admin' || needsClassPick() || hasSupHome();
   const hdr = document.getElementById('class-home-header');
   if (hdr) hdr.style.display = canGoBack ? 'block' : 'none';
-  const back = document.getElementById('class-home-back'); if (back) back.textContent = currentRole === 'admin' ? '→ رجوع' : '→ تغيير الفصل';
+  const back = document.getElementById('class-home-back'); if (back) back.textContent = (currentRole === 'admin' || (hasSupHome() && !needsClassPick())) ? '→ رجوع' : '→ تغيير الفصل';
   const t = document.getElementById('class-home-title'); if (t) t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab);
   document.getElementById('tab-home').style.display = 'block';
   applyMonitorVisibility();
@@ -4612,6 +4626,7 @@ window.showClassHome = () => {
 function navLevel() {
   const shown = id => document.getElementById(id)?.style.display === 'block';
   if (shown('tab-admin-home')) return 'adminHome';
+  if (shown('tab-sup-home')) return 'supHome';
   if (shown('tab-admin-classes')) return 'adminClasses';
   if (shown('tab-pick-class')) return 'picker';
   if (shown('tab-home')) return 'classHome';
@@ -4621,8 +4636,8 @@ function navLevel() {
 function updateBackBtn() {
   const b = document.getElementById('top-back-btn'); if (!b) return;
   const lvl = navLevel();
-  const canGoBack = currentRole === 'admin' || needsClassPick();
-  const show = lvl === 'tab' || lvl === 'adminClasses' || (lvl === 'classHome' && canGoBack);
+  const canGoBack = currentRole === 'admin' || needsClassPick() || hasSupHome();
+  const show = lvl === 'tab' || lvl === 'adminClasses' || lvl === 'picker' && hasSupHome() || (lvl === 'classHome' && canGoBack);
   b.style.display = show ? 'flex' : 'none';
 }
 window.goBack = () => {
@@ -4630,9 +4645,11 @@ window.goBack = () => {
   const lvl = navLevel();
   if (lvl === 'tab') {
     if (currentRole === 'admin' && document.getElementById('tab-monitor').style.display === 'block') goHome();
+    else if (hasSupHome() && document.getElementById('tab-classservants').style.display === 'block') goHome(); // خدام المسؤول ← رئيسيته
     else showClassHome(); // يرجع لكروت الفصل (حضور/مخدومين/…) من غير ما يعدّي على كل الفصول
   }
   else if (lvl === 'classHome') classHomeBack();
+  else if (lvl === 'picker' && hasSupHome()) goHome();
   else if (lvl === 'adminClasses') goHome();
 };
 {
@@ -4645,6 +4662,7 @@ window.goBack = () => {
 // زرار 🏠 في شريط التابات: الأدمن يرجع لكروت الفصل اللي فيه، والباقي للرئيسية
 window.tabsHome = () => {
   if (currentRole === 'admin' && currentClassTab && document.getElementById('tab-monitor').style.display !== 'block') showClassHome();
+  else if (hasSupHome() && document.getElementById('tab-classservants').style.display !== 'block' && currentClassTab) showClassHome();
   else goHome();
 };
 window.switchTab = async (tab) => {
