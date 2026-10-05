@@ -2075,12 +2075,11 @@ function toLocalDateKey(d) {
   return `${y}-${m}-${day}`;
 }
 
-// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع (الأسبوع بيبدأ خميس ويخلص أربع)
-// الحضور: بيبدأ يوم الخميس ويتصفّر يوم الأربع (الأربع بيتحسب على خميس اللي بعده)
+// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع (الأسبوع بيبدأ سبت الصبح ويخلص جمعة بالليل)
+// الحضور: بيتصفّر كل يوم سبت الصبح (سبت → أربع بيتحسبوا على الخميس اللي جاي)
 const todayKey = () => {
   const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setDate(d.getDate() - ((d.getDay() - 4 + 7) % 7));
+  d.setDate(d.getDate() - ((d.getDay() + 1) % 7) + 5); // رجوع لأقرب سبت، وبعدين 5 أيام لقدام = خميس الأسبوع ده
   return toLocalDateKey(d);
 };
 // الآيات: أسبوعها من السبت الصبح لحد الجمعة بالليل، والقايمة بترجع فاضية كل يوم سبت.
@@ -3305,9 +3304,11 @@ function stopTodayListeners() {
   if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; todayAttSyncAt = Date.now(); }
   if (todayVersesUnsub)     { todayVersesUnsub();     todayVersesUnsub     = null; }
 }
+let attListenKey = null;
 function listenTodayAttendance() {
   if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
   const today = todayKey();
+  attListenKey = today;
   todayAttendanceUnsub = onSnapshot(
     todayQuery('attendance', today),
     snap => {
@@ -3398,6 +3399,11 @@ async function _ensureRecentVerses(weeks) {
 
 // لو الموقع فاضل مفتوح عدّى سبت: بنصفّر قايمة التسميع ونسمع على أسبوع التسميع الجديد
 setInterval(() => {
+  if (todayAttendanceUnsub && attListenKey && todayKey() !== attListenKey) {
+    todayAttendance = {}; todayAttendanceTime = {};
+    listenTodayAttendance();
+    updateStats(); renderTodayList();
+  }
   if (todayVersesUnsub && verseListenKey && verseKey() !== verseListenKey) {
     todayVerses = {}; todayVerseTime = {};
     listenTodayVerses();
