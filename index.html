@@ -647,6 +647,24 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         </details>
       </div>
 
+      <div class="filter-bar" style="margin-bottom:10px">
+        <details class="filter-acc">
+          <summary class="filter-acc-header">
+            <span class="section-title">📖 التسميع</span>
+            <span class="filter-acc-right"><span class="filter-acc-value" id="verse-value">الكل</span><span class="filter-acc-chevron">⌄</span></span>
+          </summary>
+          <div class="filter-acc-body">
+            <div class="filter-row" id="verse-chips">
+              <button class="filter-chip active" onclick="setVerseFilter('all',this)">الكل</button>
+              <button class="filter-chip" onclick="setVerseFilter(1,this)">سمع آخر مرة</button>
+              <button class="filter-chip" onclick="setVerseFilter(2,this)">سمع آخر مرتين</button>
+              <button class="filter-chip" onclick="setVerseFilter(3,this)">سمع آخر 3 مرات</button>
+              <button class="filter-chip" onclick="setVerseFilter(4,this)">سمع آخر 4 مرات</button>
+            </div>
+          </div>
+        </details>
+      </div>
+
       <div class="filter-bar" style="margin-bottom:16px">
         <details class="filter-acc">
           <summary class="filter-acc-header">
@@ -1669,7 +1687,7 @@ let editGenderManuallySet = false; // نفس الفكرة بس في مودال �
 let ownServantUnsub = null; // بث لحظي على مستند الخادم بتاعي نفسه — عشان لو الأدمن الأساسي غيّر صلاحيتي أو حذفني، أتأثر فورًا من غير ما أعمل reload
 let servantsUnsub = null;   // بث لحظي على قائمة الخدام في تبويب المتابعة — عشان أي تغيير (قبول/رفض/ترقية/حذف) يظهر لكل الأدمنز فورًا
 let explicitAuthAction = false; // بيتحط true بس لما الخادم يدوس زرار "دخول" بنفسه، عشان نفرّق بين جلسة محمولة من موقع تاني على نفس الدومين ودخول مقصود فعلاً
-let bdayMonth = 0, absenceFilter = 'all', attendanceFilter = 'all', noteFilter = 'all';
+let bdayMonth = 0, absenceFilter = 'all', attendanceFilter = 'all', verseFilter = 'all', noteFilter = 'all';
 let siblingsFilter = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب المخدومين)
 let classFilter = 'all'; // 'all' | <classId> | 'none' (فلتر الفصل — تبويب المخدومين)
 let currentClassTab = localStorage.getItem('attendanceClassTab') || ''; // <classId> — التاب المختار فوق في شاشة الحضور، بيتحدد أول فصل موجود لما الفصول توصل
@@ -2057,24 +2075,24 @@ function toLocalDateKey(d) {
   return `${y}-${m}-${day}`;
 }
 
-// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع
-// الحضور: الخميس والجمعة بيتسجلوا على نفس الأسبوع، ويوم السبت الصبح الحضور بيتصفّر (السبت → الأربع بيتحسبوا على خميس اللي جاي)
+// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع (الأسبوع بيبدأ خميس ويخلص أربع)
+// الحضور: بيبدأ يوم الخميس ويتصفّر يوم الأربع (الأربع بيتحسب على خميس اللي بعده)
 const todayKey = () => {
   const d = new Date();
-  d.setDate(d.getDate() + 5);
+  d.setDate(d.getDate() + 1);
   d.setDate(d.getDate() - ((d.getDay() - 4 + 7) % 7));
   return toLocalDateKey(d);
 };
-// الآيات: بتتسجل وتفضل موجودة من الأربع الصبح للجمعة بالليل بس، وعلى حضور الأسبوع اللي فات (مش الأسبوع الجديد).
-// السبت → الثلاثاء: التسجيل مقفول والقايمة فاضية (المفتاح بيبقى هو مفتاح الأسبوع الجاري اللي لسه معندوش آيات)
-const verseOpen = () => { const w = new Date().getDay(); return w >= 3 && w <= 5; }; // أربع(3) → جمعة(5)
+// الآيات: أسبوعها من السبت الصبح لحد الجمعة بالليل، والقايمة بترجع فاضية كل يوم سبت.
+// وبتتسجل على حضور الأسبوع اللي قبله = تاريخ الخميس اللي قبل السبت بتاع الأسبوع ده (سبت 03/10 → جمعة 09/10 = خميس 01/10).
+// التسجيل مفتوح طول الأسبوع.
 const verseKey = () => {
-  if (!verseOpen()) return todayKey();
-  const d = new Date(todayKey() + 'T00:00:00');
-  d.setDate(d.getDate() - 7);
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 1) % 7) - 2); // رجوع لأقرب سبت، وبعدين يومين لورا = خميس
   return toLocalDateKey(d);
 };
-const VERSE_CLOSED_MSG = 'تسجيل الآية من الأربع للجمعة بس';
+const verseOpen = () => true;
+const VERSE_CLOSED_MSG = 'تسجيل الآية مقفول';
 
 // ===== AUTH =====
 window.switchAuthTab = (which) => {
@@ -3310,9 +3328,11 @@ function listenTodayAttendance() {
 
 // حضور... يعني سماع الآية النهارده، بث لحظي بنفس فكرة الحضور بالظبط: أي خادم يسجل سماع لمخدوم،
 // كل الخدام التانيين الفاتحين نفس الفصل في نفس اللحظة يشوفوا التحديث فورًا من غير ما يعملوا reload
+let verseListenKey = null;
 function listenTodayVerses() {
   if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
   const today = verseKey();
+  verseListenKey = today;
   todayVersesUnsub = onSnapshot(
     todayQuery('verses', today),
     snap => {
@@ -3333,6 +3353,57 @@ function listenTodayVerses() {
     err => console.error('today verses listener error:', err)
   );
 }
+
+// ===== فلتر التسميع في الافتقاد: بنحمّل آيات آخر كام أسبوع (بنفس فكرة تحميل الحضور) =====
+let recentVerseWeeks = 0, recentVerseScope = null, recentVerseSyncAt = 0, verseRefreshBusy = false, verseLoadP = Promise.resolve();
+const verseFilterWeeks = () => (parseInt(verseFilter) || 0) + 2;
+const verseIsStale = () => !todayVersesUnsub && (Date.now() - recentVerseSyncAt) > ATT_TTL;
+// التاريخ بيتحسب "مرة" لو فيه سماع فعلي مسجّل فيه بس
+function verseSessionDates() { return Object.keys(allVerses).filter(d => allVerses[d] && Object.keys(allVerses[d]).length).sort(); }
+function ensureRecentVerses(weeks) {
+  const run = verseLoadP.catch(() => {}).then(() => _ensureRecentVerses(weeks));
+  verseLoadP = run;
+  return run;
+}
+async function _ensureRecentVerses(weeks) {
+  weeks = Math.max(weeks || 4, 4);
+  const scope = readScopeClasses(), scopeKey = scope.join(',');
+  if (recentVerseScope !== null && recentVerseScope !== scopeKey) recentVerseWeeks = 0;
+  recentVerseScope = scopeKey;
+  if (recentVerseWeeks >= weeks && !verseIsStale()) return;
+  const d = new Date(); d.setDate(d.getDate() - weeks * 7);
+  const fromKey = toLocalDateKey(d), nowKey = verseKey();
+  let snap;
+  try {
+    snap = await countedGetDocs(scope.length
+      ? query(collection(db,'verses'), where('date','>=', fromKey), where('classSection','in', scope))
+      : query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (نطاق زمني - فلتر الافتقاد)');
+  } catch(e) {
+    if (!scope.length) throw e;
+    console.warn('أنشئ index مركب لـ verses (classSection + date):', e && e.message);
+    snap = await countedGetDocs(query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (نطاق زمني - بدون index)');
+  }
+  const fresh = {};
+  snap.docs.forEach(x => {
+    const v = x.data();
+    if (!fresh[v.date]) fresh[v.date] = {};
+    fresh[v.date][v.studentId] = { id: x.id, verse: v.verse || '' };
+  });
+  const liveToday = !!todayVersesUnsub; // البث اللحظي لأسبوع التسميع الحالي أحدث من القراءة دي
+  for (const k of Object.keys(allVerses)) if (k >= fromKey && !(liveToday && k === nowKey)) delete allVerses[k];
+  for (const k in fresh) if (!(liveToday && k === nowKey)) allVerses[k] = fresh[k];
+  recentVerseSyncAt = Date.now();
+  recentVerseWeeks = weeks;
+}
+
+// لو الموقع فاضل مفتوح عدّى سبت: بنصفّر قايمة التسميع ونسمع على أسبوع التسميع الجديد
+setInterval(() => {
+  if (todayVersesUnsub && verseListenKey && verseKey() !== verseListenKey) {
+    todayVerses = {}; todayVerseTime = {};
+    listenTodayVerses();
+    renderTodayList();
+  }
+}, 60 * 1000);
 
 async function loadAllVerses() {
   const snap = await countedGetDocs(collection(db,'verses'), 'verses (الكل - غير مستخدمة)');
@@ -3536,8 +3607,6 @@ window.assignClassSection = async (id, section) => {
     if (!already) await markPresent(id);
     showToast(`✅ ${s?.name || ''} — ${classLabel(section)} وتم تسجيل الحضور`, 'success');
     navigator.vibrate?.([60,30,60]);
-    // لو الفصل اللي اتحدد غير التاب المفتوح، نفتح تاب الفصل ده عشان الحضور يبان فورًا في قايمة اليوم والإحصائيات
-    if (section && section !== currentClassTab) switchClassTab(section, document.getElementById('class-tab-' + section));
     renderStudentsList();
     updateStats();
     renderTodayList();
@@ -3629,6 +3698,15 @@ window.setAttendanceFilter = (v, btn) => {
   renderFilterList();
 };
 
+window.setVerseFilter = (v, btn) => {
+  verseFilter = v;
+  document.querySelectorAll('#verse-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('verse-value').textContent = btn.textContent.trim();
+  btn.closest('details')?.removeAttribute('open');
+  renderFilterList();
+};
+
 window.setNoteFilter = (v, btn) => {
   noteFilter = v;
   document.querySelectorAll('#note-chips .filter-chip').forEach(b => b.classList.remove('active'));
@@ -3650,6 +3728,13 @@ function renderFilterList() {
     attRefreshBusy = true;
     ensureRecentAttendance(filterWeeks()).then(() => { attRefreshBusy = false; renderFilterList(); }).catch(() => { attRefreshBusy = false; });
   }
+  if (verseFilter !== 'all' && (recentVerseWeeks < verseFilterWeeks() || verseIsStale()) && !verseRefreshBusy) {
+    cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+    verseRefreshBusy = true;
+    ensureRecentVerses(verseFilterWeeks()).then(() => { verseRefreshBusy = false; renderFilterList(); }).catch(() => { verseRefreshBusy = false; cont.innerHTML = '<div class="empty-state">تعذّر التحميل<br><button class="action-btn" style="margin-top:10px" onclick="renderFilterList()">🔄 حاول تاني</button></div>'; });
+    return;
+  }
+  if (verseFilter !== 'all' && verseRefreshBusy) return;
   const dates = attSessionDates();
   let list = [...allStudents];
   const allowed = getAllowedAssignedClasses();
@@ -3669,6 +3754,12 @@ function renderFilterList() {
     const n = parseInt(attendanceFilter);
     const lastDates = dates.slice(-n);
     list = list.filter(s => lastDates.length === n && lastDates.every(d => !!allAttendance[d]?.[s.id]));
+  }
+  if (verseFilter !== 'all') {
+    const vDates = verseSessionDates();
+    const n = parseInt(verseFilter);
+    const lastV = vDates.slice(-n);
+    list = list.filter(s => lastV.length === n && lastV.every(d => !!allVerses[d]?.[s.id]));
   }
   if (noteFilter === 'noReason') {
     list = list.filter(s => !Array.isArray(s.visitNotes) || s.visitNotes.length === 0);
