@@ -3363,7 +3363,9 @@ let recentVerseWeeks = 0, recentVerseScope = null, recentVerseSyncAt = 0, verseR
 const verseFilterWeeks = () => (parseInt(verseFilter) || 0) + 2;
 const verseIsStale = () => !todayVersesUnsub && (Date.now() - recentVerseSyncAt) > ATT_TTL;
 // التاريخ بيتحسب "مرة" لو فيه سماع فعلي مسجّل فيه بس
-function verseSessionDates() { return Object.keys(allVerses).filter(d => allVerses[d] && Object.keys(allVerses[d]).length).sort(); }
+// جلسات التسميع الحقيقية بس: تاريخها لازم يكون يوم خميس (verseKey دايمًا خميس). أي تاريخ تاني (زي 23/09 من النقل القديم) بقايا مش جلسة
+const isThursdayKey = k => { const [y,m,d] = k.split('-').map(Number); return new Date(y, m-1, d).getDay() === 4; };
+function verseSessionDates() { return Object.keys(allVerses).filter(d => isThursdayKey(d) && allVerses[d] && Object.keys(allVerses[d]).length).sort(); }
 function ensureRecentVerses(weeks) {
   const run = verseLoadP.catch(() => {}).then(() => _ensureRecentVerses(weeks));
   verseLoadP = run;
