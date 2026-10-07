@@ -3369,7 +3369,8 @@ function ensureRecentVerses(weeks) {
   verseLoadP = run;
   return run;
 }
-const VERSE_CACHE_KEY = 'verse_recent_cache_v1';
+const VERSE_CACHE_KEY = 'verse_recent_cache_v2'; // v2: الكاش القديم كان ممكن يفضل ناقص آيات اتنقلت/اتصلّحت بعد ما اتخزن
+let verseForceFull = false, verseRetriedFull = false; // قراءة كاملة من فايرستور بدون كاش (بتتفعّل تلقائي لو الفلتر رجّع فاضي)
 // نفس فكرة الحضور: القراءة محصورة في فصل الخادم، والأسابيع اللي فاتت متخزنة على الجهاز، وبنقرا من آخر مزامنة بس
 async function _ensureRecentVerses(weeks) {
   weeks = Math.max(weeks || 4, 4);
@@ -3394,7 +3395,8 @@ async function _ensureRecentVerses(weeks) {
     } catch(e) { console.warn('verse classSection backfill failed', e); }
   }
   let c = null; try { c = JSON.parse((await idbGet(VERSE_CACHE_KEY + '@' + scopeKey)) || 'null'); } catch(e) {}
-  const fresh = !!(c && c.data && c.from && c.from <= fromKey && c.through && (c.scope || '') === scopeKey && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
+  const forceFull = verseForceFull; verseForceFull = false;
+  const fresh = !forceFull && !!(c && c.data && c.from && c.from <= fromKey && c.through && (c.scope || '') === scopeKey && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
   const data = fresh ? c.data : {};
   const qFrom = fresh ? c.through : fromKey;
   const cons = [where('date','>=', qFrom)];
@@ -3738,6 +3740,7 @@ window.setAttendanceFilter = (v, btn) => {
 
 window.setVerseFilter = (v, btn) => {
   verseFilter = v;
+  verseRetriedFull = false;
   document.querySelectorAll('#verse-chips .filter-chip').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('verse-value').textContent = btn.textContent.trim();
@@ -3821,6 +3824,12 @@ function renderFilterList() {
     return c !== 0 ? c : a.name.localeCompare(b.name, 'ar');
   });
   document.getElementById('filter-count').textContent = `${list.length} مخدوم`;
+  if (!list.length && verseFilter !== 'all' && !verseRetriedFull) {
+    // النتيجة فاضية: ممكن الكاش المحلي ناقص، فبنعمل قراءة كاملة مرة واحدة من فايرستور ونعيد الفلتر
+    verseRetriedFull = true; verseForceFull = true; recentVerseWeeks = 0;
+    renderFilterList();
+    return;
+  }
   if (!list.length) {
     let dbg = '';
     if (verseFilter !== 'all') {
