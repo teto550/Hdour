@@ -3293,7 +3293,7 @@ async function migrateLegacyVerses() {
     const docs = s23.docs.filter(d => !had.has(d.data().studentId));
     for (let i = 0; i < docs.length; i += 400) {
       const b = writeBatch(db);
-      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-17' }));
+      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-17', classSection: d.data().classSection ?? clsOf(d.data().studentId) }));
       await b.commit();
     }
     localStorage.setItem('vmig_0923b', '1');
@@ -3369,6 +3369,8 @@ function ensureRecentVerses(weeks) {
   verseLoadP = run;
   return run;
 }
+const VERSE_CACHE_KEY = 'verse_recent_cache_v1';
+// نفس فكرة الحضور: القراءة محصورة في فصل الخادم، والأسابيع اللي فاتت متخزنة على الجهاز، وبنقرا من آخر مزامنة بس
 async function _ensureRecentVerses(weeks) {
   weeks = Math.max(weeks || 4, 4);
   const scope = readScopeClasses(), scopeKey = scope.join(',');
@@ -3377,20 +3379,54 @@ async function _ensureRecentVerses(weeks) {
   if (recentVerseWeeks >= weeks && !verseIsStale()) return;
   const d = new Date(); d.setDate(d.getDate() - weeks * 7);
   const fromKey = toLocalDateKey(d), nowKey = verseKey();
-  // مش بنفلتر بـ classSection في الاستعلام: آيات قديمة كتير متسجلة من غير الحقل ده فكانت بتختفي. الفلترة بفصل المخدوم بتتم هنا
-  const snap = await countedGetDocs(query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (نطاق زمني - فلتر الافتقاد)');
-  const fresh = {};
-  snap.docs.forEach(x => {
-    const v = x.data();
-    if (scope.length && !scope.includes(v.classSection || clsOf(v.studentId))) return;
-    if (!fresh[v.date]) fresh[v.date] = {};
-    fresh[v.date][v.studentId] = { id: x.id, verse: v.verse || '' };
-  });
-  const liveToday = !!todayVersesUnsub; // البث اللحظي لأسبوع التسميع الحالي أحدث من القراءة دي
-  for (const k of Object.keys(allVerses)) if (k >= fromKey && !(liveToday && k === nowKey)) delete allVerses[k];
-  for (const k in fresh) if (!(liveToday && k === nowKey)) allVerses[k] = fresh[k];
+  const liveToday = !!todayVersesUnsub; // البث اللحظي لأسبوع التسميع الحالي أحدث من أي قراءة
+  // تصليح لمرة واحدة على الجهاز: آيات قديمة اتسجلت من غير فصل فكانت مش بتظهر في استعلام الفصل
+  if (!localStorage.getItem('vbf_cls1') && allStudents.length) {
+    try {
+      const all = await countedGetDocs(query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (تصليح فصل الآيات - مرة واحدة)');
+      const miss = all.docs.filter(x => !x.data().classSection && clsOf(x.data().studentId));
+      for (let i = 0; i < miss.length; i += 400) {
+        const bt = writeBatch(db);
+        miss.slice(i, i + 400).forEach(x => bt.update(x.ref, { classSection: clsOf(x.data().studentId) }));
+        await bt.commit();
+      }
+      localStorage.setItem('vbf_cls1', '1');
+    } catch(e) { console.warn('verse classSection backfill failed', e); }
+  }
+  let c = null; try { c = JSON.parse((await idbGet(VERSE_CACHE_KEY + '@' + scopeKey)) || 'null'); } catch(e) {}
+  const fresh = !!(c && c.data && c.from && c.from <= fromKey && c.through && (c.scope || '') === scopeKey && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
+  const data = fresh ? c.data : {};
+  const qFrom = fresh ? c.through : fromKey;
+  const cons = [where('date','>=', qFrom)];
+  if (liveToday) cons.push(where('date','<', nowKey)); // أسبوع التسميع الحالي جاي من البث اللحظي، مفيش داعي نقراه تاني
+  let snap = null, usedKey = scopeKey;
+  if (!(liveToday && qFrom >= nowKey)) {
+    try {
+      snap = await countedGetDocs(scope.length ? query(collection(db,'verses'), ...cons, where('classSection','in', scope)) : query(collection(db,'verses'), ...cons), 'verses (نطاق زمني - فلتر الافتقاد)');
+    } catch(e) {
+      if (!scope.length) throw e;
+      console.warn('أنشئ index مركب لـ verses (classSection + date):', e && e.message);
+      snap = await countedGetDocs(query(collection(db,'verses'), ...cons), 'verses (نطاق زمني - بدون index)'); usedKey = '';
+    }
+  }
+  if (snap) {
+    for (const k of Object.keys(data)) if (k >= qFrom) delete data[k];
+    snap.docs.forEach(x => {
+      const v = x.data();
+      if (usedKey === '' && scope.length && !scope.includes(v.classSection || clsOf(v.studentId))) return;
+      if (!data[v.date]) data[v.date] = {};
+      data[v.date][v.studentId] = { id: x.id, verse: v.verse || '' };
+    });
+  }
+  for (const k in data) {
+    if (k < fromKey) continue;
+    if (liveToday && k === nowKey) continue;
+    allVerses[k] = { ...data[k] };
+  }
+  for (const k of Object.keys(allVerses)) if (k >= fromKey && !(liveToday && k === nowKey) && !data[k]) delete allVerses[k];
   recentVerseSyncAt = Date.now();
   recentVerseWeeks = weeks;
+  idbSet(VERSE_CACHE_KEY + '@' + scopeKey, JSON.stringify({ from: fresh ? c.from : fromKey, through: nowKey, fullTs: fresh ? c.fullTs : Date.now(), scope: usedKey, data }));
 }
 
 // لو الموقع فاضل مفتوح عدّى سبت: بنصفّر قايمة التسميع ونسمع على أسبوع التسميع الجديد
@@ -3786,7 +3822,12 @@ function renderFilterList() {
   });
   document.getElementById('filter-count').textContent = `${list.length} مخدوم`;
   if (!list.length) {
-    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>لا يوجد نتائج</div>`;
+    let dbg = '';
+    if (verseFilter !== 'all') {
+      const vd = verseSessionDates();
+      dbg = `<div style="margin-top:12px;font-size:11px;opacity:.7;direction:ltr;line-height:1.8">[تشخيص] جلسات التسميع: ${vd.length ? vd.map(d => d + ' (' + Object.keys(allVerses[d]).length + ')').join(' · ') : 'مفيش'}<br>الفصول: ${readScopeClasses().join(',') || 'الكل'} · مخدومين قبل الفلتر: ${classScope(allStudents.filter(s => { const al = getAllowedAssignedClasses(); return currentRole === 'admin' || !al.length || al.includes(s.classSection); })).length}</div>`;
+    }
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>لا يوجد نتائج${dbg}</div>`;
     return;
   }
   cont.innerHTML = list.map(s => {
