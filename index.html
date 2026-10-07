@@ -3738,7 +3738,8 @@ function renderFilterList() {
     attRefreshBusy = true;
     ensureRecentAttendance(filterWeeks()).then(() => { attRefreshBusy = false; renderFilterList(); }).catch(() => { attRefreshBusy = false; });
   }
-  if (verseFilter !== 'all' && (recentVerseWeeks < verseFilterWeeks() || verseIsStale()) && !verseRefreshBusy) {
+  const verseScopeChanged = recentVerseScope !== null && recentVerseScope !== readScopeClasses().join(','); // الفصل اتغيّر: لازم نحمّل تسميع الفصل الجديد
+  if (verseFilter !== 'all' && (verseScopeChanged || recentVerseWeeks < verseFilterWeeks() || verseIsStale()) && !verseRefreshBusy) {
     cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
     verseRefreshBusy = true;
     ensureRecentVerses(verseFilterWeeks()).then(() => { verseRefreshBusy = false; renderFilterList(); }).catch(() => { verseRefreshBusy = false; cont.innerHTML = '<div class="empty-state">تعذّر التحميل<br><button class="action-btn" style="margin-top:10px" onclick="renderFilterList()">🔄 حاول تاني</button></div>'; });
