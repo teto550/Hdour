@@ -3272,8 +3272,7 @@ function restartTodayListeners() {
 }
 // نقل صامت لمرة واحدة: آيات الأربع 30/09 كانت متحفظة على تاريخ الأربع، ودلوقتي بتتحسب على حضور الأسبوع اللي فات (خميس 24/09)
 async function migrateLegacyVerses() {
-  if (localStorage.getItem('vmig_0930')) return;
-  try {
+  if (!localStorage.getItem('vmig_0930')) try {
     const snap = await countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-30')), 'verses (نقل تاريخ قديم - مرة واحدة)');
     const docs = snap.docs;
     for (let i = 0; i < docs.length; i += 400) {
