@@ -3907,18 +3907,23 @@ window.openProfile = (id) => {
     });
   }
   // attendance + verse history combined
-  const relevantDates = [...new Set([...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse().slice(0,20);
+  const relevantDates = [...new Set([...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse().slice(0,5);
   const histHTML = relevantDates.length ? `
     <div style="padding:0 16px 16px">
       <div class="section-title" style="margin-bottom:10px">📅 سجل الحضور والتسميع</div>
       ${relevantDates.map(d => {
         const p = d.split('-');
         const att   = !!H?.att[d];
+        const heard = !!H?.ver[d];
         const verse = H?.ver[d]?.verse || '';
         return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
           <span style="font-size:13px;font-weight:600;color:var(--text-dim)">${p[2]}/${p[1]}/${p[0]}</span>
-          ${att ? `<span style="font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</span>` : ''}
-          ${verse ? `<span style="font-size:11px;color:#a07de0;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);border-radius:5px;padding:2px 7px">📖 ${verse}</span>` : ''}
+          ${att
+            ? `<span style="font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</span>`
+            : `<span style="font-size:11px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-dim);opacity:.4;border-radius:5px;padding:2px 7px">حاضر</span>`}
+          ${heard
+            ? `<span style="font-size:11px;color:#a07de0;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);border-radius:5px;padding:2px 7px">📖 سماع${verse ? ' · ' + verse : ''}</span>`
+            : `<span style="font-size:11px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-dim);opacity:.4;border-radius:5px;padding:2px 7px">سماع</span>`}
         </div>`;
       }).join('')}
     </div>` : '';
