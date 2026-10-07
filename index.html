@@ -345,6 +345,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .admin-card.mode-edit{border-color:var(--accent);border-style:dashed}
 .admin-card.mode-del{border-color:#e74c3c;border-style:dashed}
 .admin-back{background:none;border:none;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;cursor:pointer;padding:4px 2px;margin-bottom:6px}
+.creator-credit{margin:28px 0 12px;text-align:center;font-size:10px;line-height:1.4;color:var(--text-dim);opacity:.7;direction:ltr;letter-spacing:.2px;user-select:text}
 .date-pick{position:relative;display:flex;align-items:center;gap:8px;width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;margin-bottom:14px;cursor:pointer;color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;}
 .date-pick .dp-txt.empty{color:var(--text-dim);font-weight:600;}
 .date-pick input[type=date]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0!important;padding:0!important;border:0;}
@@ -441,12 +442,14 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="admin-card" onclick="showAdminClasses()"><span class="ac-emoji">🏫</span>الفصول</button>
         <button class="admin-card" onclick="switchTab('monitor')"><span class="ac-emoji">👥</span>الخدام</button>
       </div>
+      <div class="creator-credit">Creator by David Emil : 01274005969</div>
     </div>
     <div id="tab-sup-home" style="display:none">
       <div class="admin-grid">
         <button class="admin-card" onclick="supOpenClasses()"><span class="ac-emoji">🏫</span>الفصول</button>
         <button class="admin-card" onclick="switchTab('allclassservants')"><span class="ac-emoji">👥</span>الخدام<span id="sup-pending-badge" style="display:none;margin-top:6px;background:var(--danger);color:#fff;border-radius:12px;padding:1px 9px;font-size:12px;font-weight:800"></span></button>
       </div>
+      <div class="creator-credit">Creator by David Emil : 01274005969</div>
     </div>
     <div id="tab-admin-classes" style="display:none">
       <button class="admin-back" onclick="goHome()">→ رجوع</button>
@@ -477,6 +480,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="admin-card" id="home-card-allclassservants" style="display:none" onclick="switchTab('allclassservants')"><span class="ac-emoji">🏫</span>خدام الفصول</button>
       </div>
       <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
+      <div class="creator-credit">Creator by David Emil : 01274005969</div>
     </div>
     <div class="tabs" id="main-tabs">
       <button class="tab" style="flex:0 0 auto" onclick="tabsHome()">🏠</button>
