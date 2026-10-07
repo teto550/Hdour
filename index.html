@@ -3365,7 +3365,8 @@ const verseIsStale = () => !todayVersesUnsub && (Date.now() - recentVerseSyncAt)
 // التاريخ بيتحسب "مرة" لو فيه سماع فعلي مسجّل فيه بس
 // جلسات التسميع الحقيقية بس: تاريخها لازم يكون يوم خميس (verseKey دايمًا خميس). أي تاريخ تاني (زي 23/09 من النقل القديم) بقايا مش جلسة
 const isThursdayKey = k => { const [y,m,d] = k.split('-').map(Number); return new Date(y, m-1, d).getDay() === 4; };
-function verseSessionDates() { return Object.keys(allVerses).filter(d => isThursdayKey(d) && allVerses[d] && Object.keys(allVerses[d]).length).sort(); }
+// الأسبوع الجاري (verseKey) لسه ناقص لحد الجمعة بالليل، فمبنحسبوش جلسة في الفلتر عشان ميبقاش شرط "سمع كل المرات" مستحيل
+function verseSessionDates() { const cur = verseKey(); return Object.keys(allVerses).filter(d => d !== cur && isThursdayKey(d) && allVerses[d] && Object.keys(allVerses[d]).length).sort(); }
 function ensureRecentVerses(weeks) {
   const run = verseLoadP.catch(() => {}).then(() => _ensureRecentVerses(weeks));
   verseLoadP = run;
@@ -3803,6 +3804,7 @@ function renderFilterList() {
     const vDates = verseSessionDates();
     const n = parseInt(verseFilter);
     const lastV = vDates.slice(-n);
+    window._verseMatchDbg = vDates.map(d => d + ' → ' + list.filter(s => allVerses[d]?.[s.id]).length + ' مطابق').join(' · ');
     list = list.filter(s => lastV.length === n && lastV.every(d => !!allVerses[d]?.[s.id]));
   }
   if (noteFilter === 'noReason') {
@@ -3836,7 +3838,7 @@ function renderFilterList() {
     let dbg = '';
     if (verseFilter !== 'all') {
       const vd = verseSessionDates();
-      dbg = `<div style="margin-top:12px;font-size:11px;opacity:.7;direction:ltr;line-height:1.8">[تشخيص] جلسات التسميع: ${vd.length ? vd.map(d => d + ' (' + Object.keys(allVerses[d]).length + ')').join(' · ') : 'مفيش'}<br>الفصول: ${readScopeClasses().join(',') || 'الكل'} · مخدومين قبل الفلتر: ${classScope(allStudents.filter(s => { const al = getAllowedAssignedClasses(); return currentRole === 'admin' || !al.length || al.includes(s.classSection); })).length}</div>`;
+      dbg = `<div style="margin-top:12px;font-size:11px;opacity:.7;direction:ltr;line-height:1.8">[تشخيص] جلسات التسميع: ${vd.length ? vd.map(d => d + ' (' + Object.keys(allVerses[d]).length + ')').join(' · ') : 'مفيش'}<br>مطابقة مع المخدومين الحاليين (من غير الأسبوع الجاري): ${window._verseMatchDbg || '-'}<br>الفصول: ${readScopeClasses().join(',') || 'الكل'} · مخدومين قبل الفلتر: ${classScope(allStudents.filter(s => { const al = getAllowedAssignedClasses(); return currentRole === 'admin' || !al.length || al.includes(s.classSection); })).length}</div>`;
     }
     cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>لا يوجد نتائج${dbg}</div>`;
     return;
