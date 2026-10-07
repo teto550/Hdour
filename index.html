@@ -3377,19 +3377,12 @@ async function _ensureRecentVerses(weeks) {
   if (recentVerseWeeks >= weeks && !verseIsStale()) return;
   const d = new Date(); d.setDate(d.getDate() - weeks * 7);
   const fromKey = toLocalDateKey(d), nowKey = verseKey();
-  let snap;
-  try {
-    snap = await countedGetDocs(scope.length
-      ? query(collection(db,'verses'), where('date','>=', fromKey), where('classSection','in', scope))
-      : query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (نطاق زمني - فلتر الافتقاد)');
-  } catch(e) {
-    if (!scope.length) throw e;
-    console.warn('أنشئ index مركب لـ verses (classSection + date):', e && e.message);
-    snap = await countedGetDocs(query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (نطاق زمني - بدون index)');
-  }
+  // مش بنفلتر بـ classSection في الاستعلام: آيات قديمة كتير متسجلة من غير الحقل ده فكانت بتختفي. الفلترة بفصل المخدوم بتتم هنا
+  const snap = await countedGetDocs(query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (نطاق زمني - فلتر الافتقاد)');
   const fresh = {};
   snap.docs.forEach(x => {
     const v = x.data();
+    if (scope.length && !scope.includes(v.classSection || clsOf(v.studentId))) return;
     if (!fresh[v.date]) fresh[v.date] = {};
     fresh[v.date][v.studentId] = { id: x.id, verse: v.verse || '' };
   });
