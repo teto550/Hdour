@@ -352,6 +352,32 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .mon-date-row .date-pick{flex:1;width:auto;margin-bottom:0;padding:9px 12px;border-radius:12px;}
 #tab-monitor .list-header .date-pick{width:auto;margin-bottom:0;padding:6px 10px;font-size:13px;}
 .cs-scope-title{font-size:17px!important;padding:8px!important;}
+
+/* ===== إضاءات فسفورية (Neon Glow) ===== */
+:root{--neon:#4f8ef7;--neon-a:color-mix(in srgb,var(--neon) 65%,transparent);--neon-b:color-mix(in srgb,var(--neon) 30%,transparent);}
+/* كروت الشاشة الرئيسية (الحضور / الفصول / الخدام …) — حافة نيون هادية بتتنفّس، ولون مختلف لكل كارت */
+.admin-card{--neon:#4f8ef7;isolation:isolate;transition:transform .15s,border-color .2s,box-shadow .2s,background .2s;}
+.admin-grid>.admin-card:nth-child(4n+2){--neon:#c36bff;}
+.admin-grid>.admin-card:nth-child(4n+3){--neon:#2effb0;}
+.admin-grid>.admin-card:nth-child(4n+4){--neon:#ff4fa8;}
+.admin-card:not(.add)::after{content:"";position:absolute;inset:-1px;border-radius:inherit;border:1px solid var(--neon);box-shadow:0 0 10px var(--neon-b),0 0 22px var(--neon-b),inset 0 0 14px var(--neon-b);opacity:.45;pointer-events:none;animation:neon-breathe 3.2s ease-in-out infinite;}
+.admin-card .ac-emoji{filter:drop-shadow(0 0 8px var(--neon-a));}
+@keyframes neon-breathe{0%,100%{opacity:.35;}50%{opacity:.85;}}
+/* لحظة الضغط/اللمس */
+.admin-card:active,.admin-card.neon-press,.admin-card:focus-visible{border-color:var(--neon);color:#fff;background:linear-gradient(135deg,var(--neon-b),var(--surface) 70%);box-shadow:0 0 14px var(--neon-a),0 0 34px var(--neon-b);}
+.admin-card:active::after,.admin-card.neon-press::after{opacity:1;animation:none;box-shadow:0 0 16px var(--neon),0 0 40px var(--neon-a),inset 0 0 22px var(--neon-a);}
+@media (hover:hover){.admin-card:hover{border-color:var(--neon);box-shadow:0 0 14px var(--neon-b);}}
+/* التابات والشرائح: اللي مختار بيشع */
+.tab.active,.class-tab.active,.filter-chip.active,.admin-mode-btn.active{box-shadow:0 0 6px var(--neon-a),0 0 18px var(--neon-b);text-shadow:0 0 8px rgba(255,255,255,.55);animation:neon-pulse 2.6s ease-in-out infinite;}
+.class-tab.active{--neon:var(--tab-neon,#4f8ef7);}
+.tab.active{--neon:#6fa4ff;}
+@keyframes neon-pulse{0%,100%{box-shadow:0 0 5px var(--neon-a),0 0 14px var(--neon-b);}50%{box-shadow:0 0 10px var(--neon),0 0 26px var(--neon-a);}}
+.tab:active,.class-tab:active,.filter-chip:active,.admin-mode-btn:active,.tab.neon-press,.class-tab.neon-press,.filter-chip.neon-press{box-shadow:0 0 12px var(--neon-a),0 0 28px var(--neon-b);transform:scale(.97);}
+/* الأزرار الأساسية */
+.btn-primary{box-shadow:0 0 14px color-mix(in srgb,var(--accent) 45%,transparent);}
+.btn-primary:active{box-shadow:0 0 22px var(--accent),0 0 44px color-mix(in srgb,var(--accent) 50%,transparent);}
+.page-title-box{box-shadow:0 0 12px color-mix(in srgb,var(--accent) 22%,transparent);border-color:color-mix(in srgb,var(--accent) 35%,transparent);}
+@media (prefers-reduced-motion:reduce){.admin-card::after,.tab.active,.class-tab.active,.filter-chip.active,.admin-mode-btn.active{animation:none!important;}}
 </style>
 </head>
 <body>
@@ -1889,8 +1915,8 @@ function renderGlobalClassTabs() {
   if (!bar) return;
   bar.innerHTML = allClasses.map(c => {
     const p = classPalette(c.id);
-    return `<button class="class-tab" id="class-tab-${c.id}" style="--tab-grad:linear-gradient(135deg,${p.text},${p.text}cc)" onclick="switchClassTab('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
-  }).join('') + (currentRole === 'admin' ? `<button class="class-tab" id="class-tab-all" style="--tab-grad:linear-gradient(135deg,#6b7280,#4b5563)" onclick="toggleAdminAllClasses()">🌐 كل الفصول</button>` : '');
+    return `<button class="class-tab" id="class-tab-${c.id}" style="--tab-grad:linear-gradient(135deg,${p.text},${p.text}cc);--tab-neon:${p.text}" onclick="switchClassTab('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('') + (currentRole === 'admin' ? `<button class="class-tab" id="class-tab-all" style="--tab-grad:linear-gradient(135deg,#6b7280,#4b5563);--tab-neon:#9ca3af" onclick="toggleAdminAllClasses()">🌐 كل الفصول</button>` : '');
   applyClassRestrictionUI(); renderAdminAllChip();
 }
 // الفصول الوحيدة اللي ليها فلتر فصول في تبويب المخدومين: بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1
@@ -6679,6 +6705,16 @@ window.showToast = (msg, type='info') => {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.className = '', 2800);
 };
+</script>
+
+<script>
+// وميض نيون لحظة اللمس على الكروت والتابات
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest && e.target.closest('.admin-card,.tab,.class-tab,.filter-chip');
+  if (!el) return;
+  el.classList.add('neon-press');
+  setTimeout(() => el.classList.remove('neon-press'), 450);
+}, { passive: true });
 </script>
 
 <script>
