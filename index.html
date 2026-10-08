@@ -55,7 +55,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 
 .tabs{display:flex;gap:6px;margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;}
 .tab{flex:1;padding:10px;border:none;border-radius:8px;background:transparent;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;}
-.tab.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;}
+.tab.active{background:rgba(79,142,247,.12);color:var(--accent);border:1px solid rgba(79,142,247,.25);box-shadow:none;text-shadow:none;animation:none;}
 #main-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap;}
 #main-tabs::-webkit-scrollbar{display:none;}
 #main-tabs .tab{flex:0 0 auto;white-space:nowrap;}
@@ -136,7 +136,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .class-tabs{display:flex;gap:6px;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
 .class-tabs::-webkit-scrollbar{display:none;}
 .class-tab{flex:0 0 auto;white-space:nowrap;padding:11px 16px;border:none;border-radius:8px;background:transparent;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;}
-.class-tab.active{background:var(--tab-grad,linear-gradient(135deg,var(--accent),var(--accent2)));color:#fff;}
+.class-tab.active{background:rgba(79,142,247,.1);color:var(--accent);border:1px solid rgba(79,142,247,.25);box-shadow:none;animation:none;}
 .present-badge{background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:var(--success);border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700;flex-shrink:0;}
 .remove-att-btn{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:7px;color:var(--danger);font-size:11px;padding:3px 8px;cursor:pointer;font-family:'Cairo',sans-serif;font-weight:700;flex-shrink:0;}
 
@@ -247,7 +247,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 #monitor-class-chips{background:transparent;border:none;padding:2px 0 4px;gap:8px;scrollbar-width:none;}
 #monitor-class-chips::-webkit-scrollbar{display:none;}
 #monitor-class-chips .tab{flex:0 0 auto;white-space:nowrap;padding:8px 16px;border-radius:999px;background:var(--surface);border:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text-dim);}
-#monitor-class-chips .tab.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(79,142,247,0.35);}
+#monitor-class-chips .tab.active{background:rgba(79,142,247,.12);color:var(--accent);border-color:rgba(79,142,247,.25);box-shadow:none;animation:none;}
 #monitor-subtabs{padding:5px;}
 #monitor-subtabs .tab{padding:12px 10px;font-size:14px;font-weight:800;border-radius:10px;}
 #serv-att-activity-chips{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:transparent;border:none;padding:0;}
@@ -257,7 +257,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 #serv-att-activity-chips .tab[data-act="sunday_school"]{--c:79,142,247;}
 #serv-att-activity-chips .tab[data-act="meeting"]{--c:46,204,113;}
 #serv-att-activity-chips .tab[data-act="preparation"]{--c:243,156,18;}
-#serv-att-activity-chips .tab.active{background:rgba(var(--c),0.18);border-color:rgba(var(--c),0.75);color:#fff;box-shadow:0 0 0 1px rgba(var(--c),0.35) inset,0 4px 14px rgba(var(--c),0.25);}
+#serv-att-activity-chips .tab.active{background:rgba(var(--c),0.1);border-color:rgba(var(--c),0.35);color:var(--text);box-shadow:none;animation:none;}
 #tab-monitor .search-box input{padding:13px 14px;border-radius:14px;font-size:14px;}
 .mon-date-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
 .mon-date-lbl{font-size:13px;font-weight:800;flex-shrink:0;}
@@ -368,13 +368,13 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .admin-card:active::after,.admin-card.neon-press::after{opacity:1;animation:none;box-shadow:0 0 16px var(--neon),0 0 40px var(--neon-a),inset 0 0 22px var(--neon-a);}
 @media (hover:hover){.admin-card:hover{border-color:var(--neon);box-shadow:0 0 14px var(--neon-b);}}
 /* التابات والشرائح: إضاءة خفيفة ومريحة للعين */
-.tab.active,.class-tab.active,.filter-chip.active,.admin-mode-btn.active{box-shadow:0 0 2px var(--neon-a),0 0 7px var(--neon-b);text-shadow:0 0 3px rgba(255,255,255,.35);animation:neon-pulse 2.6s ease-in-out infinite;}
-.class-tab.active{--neon:var(--tab-neon,#4f8ef7);}
-.tab.active{--neon:#6fa4ff;}
-@keyframes neon-pulse{0%,100%{box-shadow:0 0 2px var(--neon-a),0 0 6px var(--neon-b);}50%{box-shadow:0 0 5px var(--neon),0 0 12px var(--neon-a);}}
-.tab:active,.class-tab:active,.filter-chip:active,.admin-mode-btn:active,.tab.neon-press,.class-tab.neon-press,.filter-chip.neon-press{box-shadow:0 0 5px var(--neon-a),0 0 13px var(--neon-b);transform:scale(.97);}
+.tab.active,.class-tab.active,.filter-chip.active,.admin-mode-btn.active{box-shadow:none;text-shadow:none;animation:none;}
+.class-tab.active{--neon:var(--accent);background:rgba(79,142,247,.1);color:var(--accent);border:1px solid rgba(79,142,247,.25);}
+.tab.active{--neon:var(--accent);background:rgba(79,142,247,.1);color:var(--accent);border:1px solid rgba(79,142,247,.25);}
+@keyframes neon-pulse{0%,100%{box-shadow:none;}50%{box-shadow:none;}}
+.tab:active,.class-tab:active,.filter-chip:active,.admin-mode-btn:active,.tab.neon-press,.class-tab.neon-press,.filter-chip.neon-press{box-shadow:none;transform:scale(.97);}
 /* قاعده نهائية خفيفة للمبتدئين: إلغاء حركة neon وتقليل الضوء على التبويبات */
-.tab.active,.class-tab.active,.filter-chip.active,.admin-mode-btn.active{animation:none!important;box-shadow:0 0 2px var(--neon-a),0 0 7px var(--neon-b)!important;text-shadow:0 0 3px rgba(255,255,255,.35)!important;}
+.tab.active,.class-tab.active,.filter-chip.active,.admin-mode-btn.active{animation:none!important;box-shadow:none!important;text-shadow:none!important;}
 /* الأزرار الأساسية */
 .btn-primary{box-shadow:0 0 14px color-mix(in srgb,var(--accent) 45%,transparent);}
 .btn-primary:active{box-shadow:0 0 22px var(--accent),0 0 44px color-mix(in srgb,var(--accent) 50%,transparent);}
@@ -1920,9 +1920,8 @@ function renderGlobalClassTabs() {
   const bar = document.getElementById('global-class-tabs');
   if (!bar) return;
   bar.innerHTML = allClasses.map(c => {
-    const p = classPalette(c.id);
-    return `<button class="class-tab" id="class-tab-${c.id}" style="--tab-grad:linear-gradient(135deg,${p.text},${p.text}cc);--tab-neon:${p.text}" onclick="switchClassTab('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
-  }).join('') + (currentRole === 'admin' ? `<button class="class-tab" id="class-tab-all" style="--tab-grad:linear-gradient(135deg,#6b7280,#4b5563);--tab-neon:#9ca3af" onclick="toggleAdminAllClasses()">🌐 كل الفصول</button>` : '');
+    return `<button class="class-tab" id="class-tab-${c.id}" onclick="switchClassTab('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('') + (currentRole === 'admin' ? `<button class="class-tab" id="class-tab-all" onclick="toggleAdminAllClasses()">🌐 كل الفصول</button>` : '');
   applyClassRestrictionUI(); renderAdminAllChip();
 }
 // الفصول الوحيدة اللي ليها فلتر فصول في تبويب المخدومين: بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1
