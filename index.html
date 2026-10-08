@@ -356,17 +356,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 /* ===== إضاءات فسفورية (Neon Glow) ===== */
 :root{--neon:#4f8ef7;--neon-a:color-mix(in srgb,var(--neon) 65%,transparent);--neon-b:color-mix(in srgb,var(--neon) 30%,transparent);}
 /* كروت الشاشة الرئيسية (الحضور / الفصول / الخدام …) — حافة نيون هادية بتتنفّس، ولون مختلف لكل كارت */
-.admin-card{--neon:#4f8ef7;isolation:isolate;transition:transform .15s,border-color .2s,box-shadow .2s,background .2s;}
-.admin-grid>.admin-card:nth-child(4n+2){--neon:#c36bff;}
-.admin-grid>.admin-card:nth-child(4n+3){--neon:#2effb0;}
-.admin-grid>.admin-card:nth-child(4n+4){--neon:#ff4fa8;}
-.admin-card:not(.add)::after{content:"";position:absolute;inset:-1px;border-radius:inherit;border:1px solid var(--neon);box-shadow:0 0 10px var(--neon-b),0 0 22px var(--neon-b),inset 0 0 14px var(--neon-b);opacity:.45;pointer-events:none;animation:neon-breathe 3.2s ease-in-out infinite;}
-.admin-card .ac-emoji{filter:drop-shadow(0 0 8px var(--neon-a));}
-@keyframes neon-breathe{0%,100%{opacity:.35;}50%{opacity:.85;}}
+.admin-card{transition:transform .15s,border-color .2s,background .2s;}
 /* لحظة الضغط/اللمس */
-.admin-card:active,.admin-card.neon-press,.admin-card:focus-visible{border-color:var(--neon);color:#fff;background:linear-gradient(135deg,var(--neon-b),var(--surface) 70%);box-shadow:0 0 14px var(--neon-a),0 0 34px var(--neon-b);}
-.admin-card:active::after,.admin-card.neon-press::after{opacity:1;animation:none;box-shadow:0 0 16px var(--neon),0 0 40px var(--neon-a),inset 0 0 22px var(--neon-a);}
-@media (hover:hover){.admin-card:hover{border-color:var(--neon);box-shadow:0 0 14px var(--neon-b);}}
 /* التابات والشرائح: إضاءة خفيفة ومريحة للعين */
 .tab.active,.class-tab.active,.filter-chip.active,.admin-mode-btn.active{box-shadow:none;text-shadow:none;animation:none;}
 .class-tab.active{--neon:var(--accent);background:rgba(79,142,247,.1);color:var(--accent);border:1px solid rgba(79,142,247,.25);}
