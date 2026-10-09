@@ -1,0 +1,5400 @@
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, EmailAuthProvider, reauthenticateWithCredential }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, Timestamp, writeBatch, increment, arrayUnion, arrayRemove }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
+
+// ✏️ حط هنا إيميل (أو أكتر من إيميل) الأدمن بتاعك — ده اللي هيتسجل تلقائياً كأدمن ويقدر يشوف تبويب "متابعة"
+const ADMIN_EMAILS = ['devidemele@gmail.com'];
+
+// ===== FIREBASE CONFIG (Hdour) =====
+const firebaseConfig = {
+  apiKey: "AIzaSyBWK4y1GjEBXMrzgKu3Hm3sSG5sd2ympEI",
+  authDomain: "hdour-d66d8.firebaseapp.com",
+  projectId: "hdour-d66d8",
+  storageBucket: "hdour-d66d8.firebasestorage.app",
+  messagingSenderId: "877333539513",
+  appId: "1:877333539513:web:5e36ff0a09a2924ae64968",
+  measurementId: "G-C1ST5XBLKQ"
+};
+
+const app  = initializeApp(firebaseConfig, 'babyclass-app');
+
+// ===== APP CHECK (reCAPTCHA Enterprise) =====
+// يفضل تفعيل App Check على النشرة، لكن localhost يحتاج обход فشل Google
+// حتى لو لم يكن reCAPTCHA Enterprise مرتبًا بعد، مع إبقاء الحماية في النشرة.
+const isLocalDevelopment = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+if (!isLocalDevelopment) {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaEnterpriseProvider('6LfZEcYtAAAAAPAX04C1QJAGkoB1MV8MbJuNRF2a'),
+    isTokenAutoRefreshEnabled: true
+  });
+}
+
+const auth = getAuth(app);
+const db   = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() })
+});
+
+// ===== عدّاد القراءات (reads) — لقياس تكلفة فايرستور فعليًا =====
+// كل مستند بييجي من السيرفر بيتحسب read واحد؛ اللي بييجي من الكاش المحلي (persistentLocalCache) مجاني ومش بيتحسب.
+// افتح الـ console واكتب __reads عشان تشوف الإجمالي وتفصيل كل مصدر، أو __reads.reset() تصفّره وتاخد قياس لسيناريو معين لوحده.
+window.__reads = {
+  total: 0,
+  byLabel: {},
+  reset() { this.total = 0; this.byLabel = {}; console.log('تم تصفير عداد القراءات'); }
+};
+function countReads(label, n) {
+  if (!n) return;
+  window.__reads.total += n;
+  window.__reads.byLabel[label] = (window.__reads.byLabel[label] || 0) + n;
+  console.debug(`📊 [reads] +${n} ${label} (إجمالي ${window.__reads.total})`);
+}
+// بديل getDocs بيحسب القراءة الفعلية بس لو جايه من السيرفر (مش من الكاش المحلي)
+async function countedGetDocs(q, label) {
+  const snap = await getDocs(q);
+  if (!(snap.metadata && snap.metadata.fromCache)) countReads(label, snap.docs.length);
+  return snap;
+}
+// بتتنادى جوه أي onSnapshot عشان تحسب أول نتيجة + أي تغيير جديد يوصل بعد كده (مش كل المستندات تاني كل مرة)
+function countSnapshotReads(label, snap) {
+  if (snap.metadata && snap.metadata.fromCache) return;
+  const n = snap.docChanges ? Math.max(snap.docChanges().length, snap.docs?.length ? 0 : 1) || snap.docChanges().length : (snap.docs?.length || 1);
+  countReads(label, n || 1);
+}
+// زي اللي فوق بس لمستند واحد (onSnapshot(doc(...))) مش استعلام على مجموعة كاملة
+function countDocSnapshotReads(label, snap) {
+  if (snap.metadata && snap.metadata.fromCache) return;
+  if (snap.exists && snap.exists()) countReads(label, 1);
+}
+
+// ===== كاش كبير على الجهاز (IndexedDB) =====
+// localStorage حجمه حوالي 5MB بس، والمخدومين بصورهم (base64 جوه المستند) بيعدّوه بسرعة، فالحفظ كان بيفشل بصمت
+// وكل خادم كان بيقرا كل المخدومين من فايرستور في كل فتحة. IndexedDB مساحته أكبر بكتير.
+const _idbP = (() => {
+  try {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('stmina-cache', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  } catch(e) { return Promise.reject(e); }
+})();
+_idbP.catch(() => {});
+async function idbGet(key) {
+  try {
+    const idb = await _idbP;
+    return await new Promise((res, rej) => {
+      const q = idb.transaction('kv').objectStore('kv').get(key);
+      q.onsuccess = () => res(q.result ?? null);
+      q.onerror = () => rej(q.error);
+    });
+  } catch(e) { return null; }
+}
+async function idbSet(key, val) {
+  try {
+    const idb = await _idbP;
+    await new Promise((res, rej) => {
+      const tx = idb.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(val, key);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+      tx.onabort = () => rej(tx.error);
+    });
+    return true;
+  } catch(e) { return false; }
+}
+
+// توحيد النصوص العربية للبحث: يشيل التشكيل، الحروف الخفية (من إكسل)، ويوحّد أشكال الحروف المتشابهة
+function normalizeArabic(str) {
+  return (str || '')
+    .toString()
+    .normalize('NFKC')
+    .replace(/\u200B/g, ' ')
+    .replace(/[\u200C-\u200F\u202A-\u202E\u2066-\u2069\uFEFF\u00AD]/g, '')
+    .replace(/[\u064B-\u065F\u0610-\u061A\u06D6-\u06ED\u0670\u0640]/g, '')
+    .replace(/[إأآا]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/[\u00A0\s]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+// توحيد دائم لشكل الاسم قبل التخزين: أ/إ/آ ← ا (وأمثالها) عشان البحث يبقى بسيط ومضمون
+function canonicalizeName(str) {
+  return (str || '')
+    .toString()
+    .normalize('NFKC')
+    .replace(/\u200B/g, ' ')
+    .replace(/[\u200C-\u200F\u202A-\u202E\u2066-\u2069\uFEFF\u00AD]/g, '')
+    .replace(/[\u064B-\u065F\u0610-\u061A\u06D6-\u06ED\u0670\u0640]/g, '')
+    .replace(/[إأآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/[\u00A0\s]+/g, ' ')
+    .trim();
+}
+
+// ===== تخمين النوع (ولد/بنت) تلقائيًا من الاسم الأول =====
+// قائمة مش شاملة كل الأسماء، لكنها بتغطي أكتر الأسماء شيوعًا (قبطية وعربية عامة).
+// أي اسم مش موجود فيها بيترك فاضي عشان تختاره يدويًا بنفسك.
+const MALE_NAMES_RAW = [
+  'مينا','كيرلس','مرقس','مرقص','بطرس','بولس','بولا','بولص','يوحنا','يوسف','يعقوب','إبراهيم','ابراهيم','ابراهام',
+  'إسحق','اسحق','إسحاق','اسحاق','فيلوباتير','بيشوي','بشوي','أثناسيوس','اثناسيوس','موسى','داود','صموئيل','متى',
+  'لوقا','إستفانوس','استفانوس','مكاريوس','باخوميوس','باخوم','رافائيل','ميخائيل','جبرائيل','غبريال','جرجس','جورج',
+  'توما','رمزي','عادل','عماد','هاني','مجدي','نادر','وائل','وليد','سامح','سامي','عاطف','جميل','فادي','مارك',
+  'أندرو','اندرو','انطون','أنطون','أنطونيوس','انطونيوس','إيهاب','ايهاب','إيمن','ايمن','روماني','رومان','زكريا',
+  'حبيب','نشأت','نوشي','نصحي','فارس','تادرس','أبانوب','ابانوب','مقار','موريس','أشرف','اشرف','أحمد','احمد','محمد',
+  'علي','حسن','حسين','خالد','طارق','عمر','إسماعيل','اسماعيل','عبدالله','عبد الله','عبدالرحمن','عبد الرحمن','معاذ',
+  'أسامة','اسامة','كريم','مصطفى','عمرو','تامر','هشام','ياسر','رامي','شريف','ماجد','ناصر','باسم','حازم','زياد',
+  'آدم','ادم','يزن','جاد','سيف','مؤمن','حمزة','معتز','عزت','شنودة','ديميان','بيمن','وهبة','رزق','لبيب','عوض',
+  'صفوت','فوزي','نبيل','رأفت','رافت','سعد','سيد','أمير','امير','كارلوس','أوسم','اوسم','بهاء','عبده','رفيق',
+  'وجيه','نظير','فايز','ثروت','عصام','جلال','حلمي','لويس','يواقيم','يواكيم','حنا','ديفيد','دانيال','دانيل',
+  'سلامة','سليمان','صليب','معاوية','طلحة','عبيدة','عقبة','قتادة','عنترة','رأفت','مينو','ملاك'
+];
+const FEMALE_NAMES_RAW = [
+  'مريم','مارينا','ماريا','مارتا','كاترين','كارول','فيرونيا','فيبي','إيريني','ايريني','أغابي','اغابي','دميانة',
+  'تريز','تريزا','نرمين','ناردين','مرفت','منى','منال','مها','مي','هبة','هدى','هالة','سارة','سلمى','سلوى',
+  'سماح','سميرة','سامية','سناء','شيرين','شهد','صفاء','ضحى','عبير','عزة','علياء','غادة','فاتن','فاطمة','فايزة',
+  'كريمة','لبنى','لمياء','ليلى','مادلين','مارلين','مايا','ميرنا','ميرا','ميرام','نادية','ناهد','نجلاء','نجوى',
+  'نهى','نهال','نوال','نورا','نورهان','هاجر','هايدي','وفاء','ياسمين','يارا','دعاء','إيمان','ايمان','أمل','امل',
+  'أمنية','امنية','آية','اية','رانيا','رنا','رنيم','ريم','ريهام','زينب','سهير','شادية','شيماء','صابرين','غدير',
+  'فادية','فرح','كنزي','لجين','ملك','منة','ندى','هنا','عائشة','خديجة','رقية','أسماء','اسماء','مروة','دينا',
+  'لمى','جنى','جودي','لين','تالا','جوري','لارا','انجي','إنجي','نيفين','نانسي','ماجي','مادونا','يوستينا',
+  'سوزان','هيلانة','هيلين','فينيسيا','باربارا','كلوديا','ماريان','ماريانا','أليس','اليس','جانيت','جينا','لوسي',
+  'نادين','نيرمين','سيلفيا','فيرينا','إستير','استير','راشيل','كارين','لورا','ايفا','إيفا','نعمة','نعمت',
+  'نور الهدى','هدير','رحمة','بسملة','تسبيح','مارينيت','مارينيل','لوجينا','جيلان','نجاة','وداد','صباح','دميان'
+];
+const MALE_NAME_SET   = new Set(MALE_NAMES_RAW.map(n => canonicalizeName(n)));
+const FEMALE_NAME_SET = new Set(FEMALE_NAMES_RAW.map(n => canonicalizeName(n)));
+
+// بيرجع 'male' أو 'female' أو '' (لو مش عارفين) — بيدور على الاسم الأول بس في القوايم فوق،
+// ولو مش لاقيه بيلجأ لقاعدة بسيطة: الاسم اللي بينتهي بتاء مربوطة أو "اء" غالبًا مؤنث في العربي
+function guessGenderFromName(fullName) {
+  const first = canonicalizeName(fullName).trim().split(' ')[0];
+  if (!first) return '';
+  if (MALE_NAME_SET.has(first))   return 'male';
+  if (FEMALE_NAME_SET.has(first)) return 'female';
+  if (first.endsWith('اء')) return 'female';
+  if (first.endsWith('ه'))  return 'female'; // ه هنا أصلها تاء مربوطة بعد التوحيد (canonicalizeName بتحول ة إلى ه)
+  return '';
+}
+
+// بيشتغل وانت بتكتب اسم مخدوم جديد: لو لسه ما اخترتش النوع يدويًا، بيخمّنه من الاسم ويحطه تلقائي
+window.onNewNameInput = () => {
+  if (newGenderManuallySet) return;
+  const guess = guessGenderFromName(document.getElementById('new-name').value);
+  if (guess) document.getElementById('new-gender').value = guess;
+};
+
+// نفس الفكرة في مودال تعديل مخدوم: بيخمّن بس لو النوع لسه مش متسجل أو المستخدم مغيّرهوش يدويًا
+window.onEditNameInput = () => {
+  if (editGenderManuallySet) return;
+  const guess = guessGenderFromName(document.getElementById('edit-name').value);
+  if (guess) document.getElementById('edit-gender').value = guess;
+};
+
+
+// ولو كتبت أكتر من كلمة (زي الاسم واسم الأب) بتتفحص كل كلمة من اللي كتبته لوحدها، بأي ترتيب
+function matchesQuery(name, normalizedQuery) {
+  if (!normalizedQuery) return true;
+  const nameWords  = normalizeArabic(name).split(' ').filter(Boolean);
+  const queryWords = normalizedQuery.split(' ').filter(Boolean);
+  return queryWords.every(qw => nameWords.some(w => w.startsWith(qw)));
+}
+
+// ترتيب النتايج: اللي اسمه الأول (بداية الاسم بالكامل) بيبدأ بأول كلمة في البحث يطلع فوق
+function matchRank(name, normalizedQuery) {
+  const words      = normalizeArabic(name).split(' ').filter(Boolean);
+  const queryWords = normalizedQuery.split(' ').filter(Boolean);
+  if (words[0]?.startsWith(queryWords[0] || '')) return 0;
+  return 1;
+}
+
+function searchStudents(list, normalizedQuery) {
+  return list
+    .filter(s => matchesQuery(s.name, normalizedQuery))
+    .sort((a, b) => {
+      const r = matchRank(a.name, normalizedQuery) - matchRank(b.name, normalizedQuery);
+      return r !== 0 ? r : a.name.localeCompare(b.name, 'ar');
+    });
+}
+
+// ===== مطابقة متسامحة (fuzzy) للبحث الصوتي =====
+// بتتحمل فرق حرف أو اتنين بين الكلمتين، عشان تعويض غلطة التعرف على الصوت في أسماء متشابهة
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  const al = a.length, bl = b.length;
+  if (!al) return bl;
+  if (!bl) return al;
+  let prev = Array.from({ length: bl + 1 }, (_, i) => i);
+  for (let i = 1; i <= al; i++) {
+    const curr = [i];
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = curr;
+  }
+  return prev[bl];
+}
+
+function wordsFuzzyMatch(nameWord, queryWord) {
+  if (!nameWord || !queryWord) return false;
+  if (nameWord.startsWith(queryWord) || queryWord.startsWith(nameWord)) return true;
+  const maxLen = Math.max(nameWord.length, queryWord.length);
+  const threshold = maxLen <= 3 ? 1 : (maxLen <= 6 ? 2 : 3);
+  return levenshtein(nameWord, queryWord) <= threshold;
+}
+
+function matchesQueryFuzzy(name, normalizedQuery) {
+  if (!normalizedQuery) return true;
+  const nameWords  = normalizeArabic(name).split(' ').filter(Boolean);
+  const queryWords = normalizedQuery.split(' ').filter(Boolean);
+  return queryWords.every(qw => nameWords.some(w => wordsFuzzyMatch(w, qw)));
+}
+
+function searchStudentsFuzzy(list, normalizedQuery) {
+  return list
+    .filter(s => matchesQueryFuzzy(s.name, normalizedQuery))
+    .sort((a, b) => {
+      // الأقرب حرفيًا (أقل فروق) يطلع فوق
+      const nameWordsA = normalizeArabic(a.name).split(' ').filter(Boolean);
+      const nameWordsB = normalizeArabic(b.name).split(' ').filter(Boolean);
+      const queryWords = normalizedQuery.split(' ').filter(Boolean);
+      const scoreOf = (nameWords) => queryWords.reduce((sum, qw) => {
+        const best = Math.min(...nameWords.map(w => levenshtein(w, qw)));
+        return sum + best;
+      }, 0);
+      const r = scoreOf(nameWordsA) - scoreOf(nameWordsB);
+      return r !== 0 ? r : a.name.localeCompare(b.name, 'ar');
+    });
+}
+
+// كلمات بيقولها الناس عادةً قبل الاسم وهما بيسجلوا بالصوت، مش جزء من الاسم فبنشيلها قبل المطابقة
+const VOICE_FILLER_WORDS = new Set([
+  'سجل', 'سجلي', 'سجّل', 'حضور', 'خد', 'خدي', 'يلا', 'دلوقتي', 'كده', 'بقي', 'بقى',
+  'احضر', 'حاضر', 'قول', 'اسم', 'المخدوم', 'مخدوم', 'من', 'فضلك', 'لو', 'سمحت',
+  'عايز', 'عايزه', 'اكتب', 'يا', 'استاذ', 'الاستاذ', 'خادم'
+]);
+
+function stripVoiceFillers(normalizedQuery) {
+  const words = normalizedQuery.split(' ').filter(Boolean).filter(w => !VOICE_FILLER_WORDS.has(w));
+  return words.length ? words.join(' ') : normalizedQuery; // لو مسحنا كل الكلام نرجع للأصل بدل ما نفضيه
+}
+
+// ===== مطابقة صوتية بالتقييم (scoring) بدل الفلترة الجامدة =====
+// بدل ما نشترط إن كل كلمة تتطابق (ولو بفرق حرف) عشان الاسم يدخل القائمة، بنّدي كل اسم "درجة تشابه"
+// من 0 لـ 1، وبعدين بنرجّع بس اللي فعلاً قريبين من أعلى درجة. ده بيمنع ظهور أسماء بعيدة شبهت بالصدفة.
+function voiceWordScore(nameWord, queryWord) {
+  if (!nameWord || !queryWord) return 0;
+  if (nameWord === queryWord) return 1;
+  if (nameWord.startsWith(queryWord) || queryWord.startsWith(nameWord)) {
+    const shorter = Math.min(nameWord.length, queryWord.length);
+    const longer  = Math.max(nameWord.length, queryWord.length);
+    return 0.75 + 0.2 * (shorter / longer); // بادئة مشتركة قصيرة (زي حرف واحد) تاخد بونص أقل من بادئة طويلة
+  }
+  const dist = levenshtein(nameWord, queryWord);
+  const maxLen = Math.max(nameWord.length, queryWord.length);
+  const sim = 1 - dist / maxLen;
+  // الكلمات القصيرة (3 حروف وأقل) بتدّي مطابقات غلط كتير بفرق حرف واحد بس، فبنشدد عليها أكتر
+  const minSim = maxLen <= 3 ? 0.75 : (maxLen <= 5 ? 0.65 : 0.55);
+  return sim >= minSim ? sim : 0;
+}
+
+function voiceNameScore(nameWords, queryWords) {
+  let total = 0;
+  for (const qw of queryWords) {
+    let best = 0;
+    for (const nw of nameWords) best = Math.max(best, voiceWordScore(nw, qw));
+    if (best === 0) return 0; // أي كلمة اتقالت ومالقتش شبه كفاية في الاسم = الاسم ده مش مرشح خالص
+    total += best;
+  }
+  return total / queryWords.length;
+}
+
+function searchStudentsVoice(list, normalizedQuery) {
+  return scoreStudentsVoice(list, normalizedQuery).map(x => x.s);
+}
+
+// نسخة خام بترجع كل مرشح مع درجته، من غير قص للأقرب من القمة — عشان نقدر ندمج نتايج
+// كذا بديل صوتي (alternatives) مع بعض ونختار الأفضل من بينهم كلهم مش بس أول بديل جه له نتيجة
+function scoreStudentsVoice(list, normalizedQuery) {
+  const queryWords = normalizedQuery.split(' ').filter(Boolean);
+  if (!queryWords.length) return [];
+  return list
+    .map(s => ({ s, score: voiceNameScore(normalizeArabic(s.name).split(' ').filter(Boolean), queryWords) }))
+    .filter(x => x.score >= 0.62); // عتبة جودة: تحتها بنعتبر الاسم مش مرشح مناسب أصلاً
+}
+
+let allStudents = [], todayAttendance = {}, allAttendance = {};
+let todayAttendanceTime = {}, todayVerseTime = {}; // studentId -> millis وقت التسجيل، لترتيب "الأول للأخير"
+let todayListFilter = 'all'; // 'all' | 'attendance' | 'verse'
+let todayListSortOrder = 'first'; // 'first' (الأول اللي سجل فوق) | 'last' (الأخير اللي سجل فوق)
+function tsToMillis(ts) {
+  if (!ts) return Date.now();
+  if (typeof ts.toMillis === 'function') return ts.toMillis();
+  if (ts.seconds) return ts.seconds * 1000;
+  return Date.now();
+}
+let todayAttendanceUnsub = null; // بث لحظي لحضور النهارده — يخلي كل خادم يشوف تحديثات الخادم التاني فوراً
+let todayVersesUnsub = null;     // بث لحظي لسماع الآية النهارده — نفس الفكرة بالظبط لكن للسماع
+let todayVerses = {}, allVerses = {};  // { studentId: { id, verse } } keyed by date→studentId
+let currentUid = null, currentName = '', currentRole = 'servant', currentEmail = '';
+let currentSupervisorClass = ''; // الفصول اللي الخادم مسؤول عنها (ممكن تبقى جزء من فصوله)
+let currentAssignedClass = ''; // 'a' | 'b' | 'kg' | 'a,b' | '' — الفصول اللي الأدمن حدده للخادم من تبويب "متابعة" (فاضي = مقيدش، بيشوف كل الفصول)
+let classPicked = false;      // الخادم اللي في أكتر من فصل بيختار فصله مرة أول ما يفتح البرنامج
+let classServScope = 'class'; // 'class' = خدام الفصل الحالي بس | 'all' = خدام كل الفصول اللي المسؤول مسؤول عنها
+let currentPhone = '', currentAddress = ''; // بيانات ملفي الشخصي (شاشة الإعدادات)
+let heartbeatTimer = null;
+
+function normalizeAssignedClasses(raw) {
+  const items = Array.isArray(raw) ? raw : String(raw ?? '').split(',');
+  return [...new Set(items.map(v => String(v).trim()).filter(Boolean))];
+}
+function formatAssignedClasses(raw) {
+  const list = normalizeAssignedClasses(raw);
+  if (!list.length) return 'كل الفصول';
+  return list.map(cls => classLabel(cls)).join(' + ');
+}
+function getAllowedAssignedClasses(raw = currentAssignedClass) {
+  const allowed = normalizeAssignedClasses(raw);
+  return currentRole === 'admin' || !allowed.length ? [] : allowed;
+}
+// نطاق قراءة الخادم: فصوله بس. ولو واحد منهم بيبي كلاس 1/2 أو كي جي 1 → التلات فصول دول + المخدومين اللي لسه متقسموش ('')
+// لحد ما التقسيم يخلص. الأدمن والخادم من غير فصل = [] (من غير تقييد)
+let adminAllClasses = false, adminAutoAll = false;
+function readScopeClasses() {
+  if (currentRole === 'admin') {
+    if (adminAllClasses || !currentClassTab || !classById(currentClassTab)) return [];
+    const grp = babyKgClasses().map(c => c.id);
+    return grp.includes(currentClassTab) ? [...grp, ''] : [currentClassTab];
+  }
+  const al = getAllowedAssignedClasses();
+  if (!al.length) return [];
+  const grp = babyKgClasses().map(c => c.id);
+  return [...new Set(al.some(id => grp.includes(id)) ? [...al, ...grp, ''] : al)].slice(0, 30);
+}
+async function waitClassesReady() { for (let i = 0; i < 40 && !allClasses.length; i++) await new Promise(r => setTimeout(r, 100)); }
+let lastReadScopeKey = '';
+function onAdminScopeChanged() {
+  if (currentRole !== 'admin') return;
+  const sk = readScopeClasses().join(',');
+  if (sk === lastReadScopeKey) return;
+  lastReadScopeKey = sk;
+  if (todayAttendanceUnsub || todayVersesUnsub) restartTodayListeners();
+  if (studentsLoaded) loadStudents().then(() => { updateStats(); renderTodayList(); updateStuCount(); renderStudentsList();
+    if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
+    if (document.getElementById('tab-messages')?.style.display === 'block') renderWaTab(); });
+}
+function renderAdminAllChip() {
+  const b = document.getElementById('class-tab-all'); if (!b) return;
+  b.classList.toggle('active', adminAllClasses && !adminAutoAll);
+}
+window.toggleAdminAllClasses = () => {
+  adminAllClasses = !(adminAllClasses && !adminAutoAll); adminAutoAll = false;
+  renderAdminAllChip(); onAdminScopeChanged();
+  showToast(adminAllClasses ? '🌐 بيقرا كل الفصول' : 'بيقرا الفصل المختار بس', 'info');
+};
+// الداشبورد والتصدير وأدوات التنضيف محتاجة كل الفصول: بنحمّلها مؤقتًا ونرجع للفصل أول ما الأدمن يغيّر الفصل
+async function ensureAllClassesForAdmin() {
+  if (currentRole !== 'admin' || adminAllClasses) return;
+  adminAllClasses = true; adminAutoAll = true; lastReadScopeKey = '';
+  showToast('جاري تحميل كل الفصول…', 'info');
+  await loadStudents();
+}
+function adminClassChanged() {
+  if (adminAutoAll) { adminAllClasses = false; adminAutoAll = false; }
+  renderAdminAllChip(); onAdminScopeChanged();
+}
+function isAssignedClassRestricted() {
+  return currentRole !== 'admin' && getAllowedAssignedClasses().length > 0;
+}
+// لستة مقصورة على فصل/فصول الخادم بس — للميزات اللي المفروض تفضل مقفولة على فصله
+// (رسائل الواتساب، تصدير الإكسل، طباعة الـQR، الحضور بالصوت) حتى لو تبويب "المخدومين" بيعرض كل الفصول
+function ownClassStudents() {
+  const allowed = getAllowedAssignedClasses();
+  const base = (currentRole !== 'admin' && allowed.length) ? allStudents.filter(s => allowed.includes(s.classSection)) : allStudents;
+  return currentRole !== 'admin' ? classScope(base) : base;
+}
+let newGenderManuallySet  = false; // true لو المستخدم غيّر خانة "النوع" بنفسه في فورم الإضافة (يوقف التخمين التلقائي)
+let editGenderManuallySet = false; // نفس الفكرة بس في مودال التعديل
+let ownServantUnsub = null; // بث لحظي على مستند الخادم بتاعي نفسه — عشان لو الأدمن الأساسي غيّر صلاحيتي أو حذفني، أتأثر فورًا من غير ما أعمل reload
+let servantsUnsub = null;   // بث لحظي على قائمة الخدام في تبويب المتابعة — عشان أي تغيير (قبول/رفض/ترقية/حذف) يظهر لكل الأدمنز فورًا
+let explicitAuthAction = false; // بيتحط true بس لما الخادم يدوس زرار "دخول" بنفسه، عشان نفرّق بين جلسة محمولة من موقع تاني على نفس الدومين ودخول مقصود فعلاً
+let bdayMonth = 0, absenceFilter = 'all', attendanceFilter = 'all', verseFilter = 'all', noteFilter = 'all';
+let siblingsFilter = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب المخدومين)
+let classFilter = 'all'; // 'all' | <classId> | 'none' (فلتر الفصل — تبويب المخدومين)
+let currentClassTab = localStorage.getItem('attendanceClassTab') || ''; // <classId> — التاب المختار فوق في شاشة الحضور، بيتحدد أول فصل موجود لما الفصول توصل
+
+// ===== الفصول (ديناميكي) =====
+// الفصول بقت متخزنة في مجموعة 'classes' على فايرستور بدل ما تكون ثابتة (a/b/kg) في الكود،
+// عشان تقدر تضيف/تعدّل/تمسح فصول من جوه التطبيق نفسه من غير ما تحتاج تعديل كود
+let allClasses = []; // [{id,name,emoji,order}]
+let classesUnsub = null;
+const CLASS_PALETTE = [
+  {bg:'rgba(79,142,247,0.12)',  border:'rgba(79,142,247,0.3)',  text:'#4f8ef7'},
+  {bg:'rgba(124,92,191,0.12)',  border:'rgba(124,92,191,0.3)',  text:'#a07de0'},
+  {bg:'rgba(46,204,113,0.12)',  border:'rgba(46,204,113,0.3)',  text:'#2ecc71'},
+  {bg:'rgba(243,156,18,0.12)',  border:'rgba(243,156,18,0.3)',  text:'#f39c12'},
+  {bg:'rgba(231,76,60,0.12)',   border:'rgba(231,76,60,0.3)',   text:'#e74c3c'},
+  {bg:'rgba(26,188,156,0.12)',  border:'rgba(26,188,156,0.3)',  text:'#1abc9c'},
+  {bg:'rgba(230,126,34,0.12)',  border:'rgba(230,126,34,0.3)',  text:'#e67e22'},
+  {bg:'rgba(52,152,219,0.12)',  border:'rgba(52,152,219,0.3)',  text:'#3498db'},
+];
+// ===== خادم ممكن يبقى مسؤول فصل في فصل وخادم عادي في فصل تاني =====
+// الخادم بقى ممكن يبقى في أكتر من دور (roleIds) — صلاحياته بتتحسب من كل أدواره: assignedClass = كل فصوله، supervisorClass = الفصول اللي هو مسؤول عنها بس
+function servantRoleIds(s) { return Array.isArray(s.roleIds) ? s.roleIds.filter(Boolean) : (s.roleId ? [s.roleId] : []); }
+function servantInRole(s, roleId) { return servantRoleIds(s).includes(roleId); }
+// مسؤول قديم (من غير supervisorClass) بيتحسب مسؤول عن كل فصوله زي الأول
+function supervisedClassesOf(s) {
+  if (!s || s.role !== 'supervisor') return [];
+  return s.supervisorClass !== undefined ? normalizeAssignedClasses(s.supervisorClass) : normalizeAssignedClasses(s.assignedClass);
+}
+function derivePermsFromRoles(roleList) {
+  if (roleList.some(r => r.isAdmin)) return { role:'admin', assignedClass:'', supervisorClass:'' };
+  const all = new Set(), sup = new Set();
+  roleList.forEach(r => (r.classes || []).forEach(c => { all.add(c); if (r.isSupervisor) sup.add(c); }));
+  return { role: sup.size ? 'supervisor' : 'servant', assignedClass: [...all].join(','), supervisorClass: [...sup].join(',') };
+}
+// أسماء الخدام المضافين مقدمًا: بنعتبر "أحمد" و"احمد " و"أحمد  " نفس الاسم، وبنشيل التكرار (أول شكل بيظهر هو اللي بيتعرض)
+function nameKey(n) { return normalizeArabic(n).trim(); }
+function uniqueNames(list) {
+  const seen = new Set(), out = [];
+  (list || []).forEach(n => { const k = nameKey(n); if (k && !seen.has(k)) { seen.add(k); out.push(n); } });
+  return out;
+}
+// كل الأشكال المتخزنة لنفس الاسم جوه دور معين (عشان نمسحها كلها مرة واحدة)
+function nameVariantsIn(role, name) {
+  const k = nameKey(name);
+  return (role && Array.isArray(role.pendingNames) ? role.pendingNames : []).filter(x => nameKey(x) === k);
+}
+// بتحسب صلاحيات خادم واحد بعد ما أدواره اتغيرت — من غير ما تضيّع صلاحياته القديمة، وبتسحب منه بس اللي كان واخده من الدور اللي اتشال منه
+// newIds = أدواره بعد التغيير | rolesNow = كل الأدوار بعد التغيير | removedRole = الدور اللي اتشال منه (لو اتشال) بشكله القديم
+function permsAfterRoleChange(sv, newIds, rolesNow, removedRole) {
+  const list = newIds.map(i => rolesNow.find(r => r.id === i)).filter(Boolean);
+  if (list.some(r => r.isAdmin)) return derivePermsFromRoles(list);
+  const oldClasses = normalizeAssignedClasses(sv.assignedClass);
+  const oldSup = supervisedClassesOf(sv);
+  const unchanged = { role: sv.role || 'servant', assignedClass: oldClasses.join(','), supervisorClass: oldSup.join(',') };
+  // أدمن متعيّن مباشرة (مش من دور): مبنمسهوش إلا لو اتشال من دور أدمن صراحةً
+  if (sv.role === 'admin') {
+    if (removedRole && removedRole.isAdmin) return list.length ? derivePermsFromRoles(list) : { role:'servant', assignedClass:'', supervisorClass:'' };
+    return { role:'admin', assignedClass: '', supervisorClass: '' };
+  }
+  if (removedRole) {
+    if (list.length) return derivePermsFromRoles(list);
+    if (removedRole.isSupervisor) {
+      // اتشال من دور مسؤول فصل وملوش أدوار تانية: بنسحب المسؤولية بس، وبيفضل خادم في نفس فصوله
+      const gone = new Set(removedRole.classes || []);
+      const sup = oldSup.filter(c => !gone.has(c));
+      return { role: sup.length ? 'supervisor' : 'servant', assignedClass: unchanged.assignedClass, supervisorClass: sup.join(',') };
+    }
+    return unchanged;
+  }
+  const hadRoles = servantRoleIds(sv).some(i => rolesNow.some(r => r.id === i));
+  if (hadRoles) return derivePermsFromRoles(list);
+  // خادم قديم من غير أدوار: بنضيف الدور الجديد على صلاحياته الحالية بدل ما نستبدلها
+  const d = derivePermsFromRoles(list);
+  const all = oldClasses.length ? [...new Set([...oldClasses, ...normalizeAssignedClasses(d.assignedClass)])] : []; // فاضي = كل الفصول، يفضل زي ما هو
+  const sup = [...new Set([...oldSup, ...normalizeAssignedClasses(d.supervisorClass)])];
+  return { role: sup.length ? 'supervisor' : 'servant', assignedClass: all.join(','), supervisorClass: sup.join(',') };
+}
+// كل فصول الكي جي (id بيبدأ بـ kg أو الاسم بيبدأ بـ "كي جي") ليها نفس الإيموجي 👶 بغض النظر عن المتخزن في فايرستور
+const KG_CLASS_EMOJI = '👶';
+function unifyKgEmoji(c) {
+  const isKg = /^kg/i.test(c.id || '') || /^\s*كي\s*جي/.test(c.name || '');
+  return isKg ? { ...c, emoji: KG_CLASS_EMOJI } : c;
+}
+function classById(id) { return allClasses.find(c => c.id === id); }
+function classLabel(sec) { if (!sec) return 'بدون فصل'; const c = classById(sec); return c ? c.name : sec; }
+function classEmoji(sec) { if (!sec) return '؟'; const c = classById(sec); return c ? (c.emoji || '📘') : '❔'; }
+function classPalette(sec) {
+  const idx = allClasses.findIndex(c => c.id === sec);
+  return CLASS_PALETTE[(idx < 0 ? 0 : idx) % CLASS_PALETTE.length];
+}
+function classBadgeHTML(sec, forceLabel) {
+  if (!sec) return `<span class="class-badge class-none">؟ لسه متقسمش</span>`;
+  const p = classPalette(sec);
+  const label = forceLabel === false ? '' : classLabel(sec);
+  return `<span class="class-badge" style="background:${p.bg};border:1px solid ${p.border};color:${p.text}">${classEmoji(sec)} ${label}</span>`;
+}
+// افاتار المخدوم: لو عنده صورة (s.photo) بيوريها، ولو لأ بيرجع لحرف الاسم زي ما كان بالظبط
+function studentAvatarHTML(s, cls) {
+  if (s.photo) return `<div class="${cls}" style="background-image:url('${s.photo}');background-size:cover;background-position:center"></div>`;
+  return `<div class="${cls}">${(s.name||'؟').trim()[0]||'؟'}</div>`;
+}
+// شرايط فصول (chips) عامة — بتتبني من allClasses مباشرة، فبتشتغل مع أي عدد فصول
+function classChipsHTML(activeId, onClickFn, opts = {}) {
+  let html = '';
+  if (opts.includeAll) html += `<button class="filter-chip ${activeId==='all'?'active':''}" onclick="${onClickFn}('all',this)">كل الفصول</button>`;
+  (opts.classes || allClasses).forEach(c => {
+    html += `<button class="filter-chip ${activeId===c.id?'active':''}" onclick="${onClickFn}('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
+  });
+  if (opts.includeNone) html += `<button class="filter-chip ${activeId==='none'?'active':''}" onclick="${onClickFn}('none',this)">؟ لسه متقسمش</button>`;
+  return html;
+}
+function classPickButtonsHTML(studentId, classes) {
+  return (classes || allClasses).map(c => {
+    const p = classPalette(c.id);
+    return `<button class="class-pick-btn" style="border-color:${p.border};color:${p.text}" onclick="event.stopPropagation();assignClassSection('${studentId}','${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('');
+}
+function classSelectOptionsHTML(includeEmpty, emptyLabel) {
+  let html = includeEmpty ? `<option value="">${emptyLabel || '— لسه متقسمش —'}</option>` : '';
+  html += allClasses.map(c => `<option value="${c.id}">${c.emoji||'📘'} ${c.name}</option>`).join('');
+  return html;
+}
+// بتجهّز الفصول الافتراضية بس أول مرة (لو المجموعة لسه فاضية) — بتتنادى من جوه أول snapshot
+// بتاع startClassesListener() عشان منقراش مجموعة classes مرتين على بعض عند كل دخول أدمن
+async function seedDefaultClassesIfEmpty() {
+  try {
+    const defaults = [ {id:'a',name:'فصل أ',emoji:'🅰️',order:0}, {id:'b',name:'فصل ب',emoji:'🅱️',order:1}, {id:'kg',name:'كي جي ١',emoji:'👶',order:2} ];
+    for (const c of defaults) await setDoc(doc(db,'classes',c.id), { name:c.name, emoji:c.emoji, order:c.order, createdAt: serverTimestamp() });
+  } catch(e) { console.error('تعذّر تجهيز الفصول الافتراضية:', e); }
+}
+let classesSeedChecked = false;
+function startClassesListener() {
+  if (classesUnsub) return;
+  classesUnsub = onSnapshot(collection(db,'classes'), snap => {
+    countSnapshotReads('classes (live)', snap);
+    allClasses = snap.docs
+      .map(d => unifyKgEmoji({ id:d.id, ...d.data() }))
+      .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
+    if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
+    if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('attendanceClassTab')) ? localStorage.getItem('attendanceClassTab') : allClasses[0].id;
+    const sk = readScopeClasses().join(',');
+    if (sk !== lastReadScopeKey) {
+      lastReadScopeKey = sk;
+      if (todayAttendanceUnsub || todayVersesUnsub) restartTodayListeners();
+      if (studentsLoaded) loadStudents().then(() => { updateStats(); renderTodayList(); });
+    }
+    onClassesUpdated();
+  }, err => console.error('classes listener error:', err));
+}
+function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; lastReadScopeKey = ''; classesSeedChecked = false; }
+// بيتنادى كل مرة قايمة الفصول تتغير (إضافة/تعديل/حذف فصل) — بيعيد بناء كل حتة في الواجهة معتمدة على الفصول
+function onClassesUpdated() {
+  renderGlobalClassTabs();
+  if (document.getElementById('tab-pick-class')?.style.display === 'block') renderClassPicker();
+  { const t = document.getElementById('class-home-title'); if (t && document.getElementById('tab-home')?.style.display === 'block') t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab); }
+  renderClassChips();
+  renderProfClassChips();
+  renderRegClassOptions();
+  const editSel = document.getElementById('edit-class');
+  if (editSel) { const cur = editSel.value; editSel.innerHTML = classSelectOptionsHTML(true); editSel.value = cur; }
+  if (currentRole === 'admin') {
+    renderClassesAdminList();
+    if (document.getElementById('tab-admin-classes')?.style.display === 'block') renderAdminClassCards();
+    // بنقرا مجموعة الخدام تاني بس لو تبويب "متابعة" مفتوح فعلاً دلوقتي — مش عند كل تحديث للفصول
+    if (document.getElementById('tab-monitor')?.style.display === 'block') { renderMonitorClassChips(); loadServantsOnce(); }
+  }
+  if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
+  if (document.getElementById('tab-attendance')?.style.display === 'block') { updateStats(); renderTodayList(); }
+}
+// شريط الفصول العلوي في شاشة الحضور — بيتبني من allClasses بالكامل
+function renderGlobalClassTabs() {
+  const bar = document.getElementById('global-class-tabs');
+  if (!bar) return;
+  bar.innerHTML = allClasses.map(c => {
+    return `<button class="class-tab" id="class-tab-${c.id}" onclick="switchClassTab('${c.id}',this)">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('') + (currentRole === 'admin' ? `<button class="class-tab" id="class-tab-all" onclick="toggleAdminAllClasses()">🌐 كل الفصول</button>` : '');
+  applyClassRestrictionUI(); renderAdminAllChip();
+}
+// الفصول الوحيدة اللي ليها فلتر فصول في تبويب المخدومين: بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1
+// (لحد ما باقي المخدومين يتوزعوا عليهم). أي فصل تاني بيعرض مخدومينه بس من غير فلتر.
+function isBabyKgClass(c) {
+  const n = normalizeArabic(c && c.name || '')
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/\s+/g, ' ').trim();
+  return /^بيبي( كلاس)? ?[12]$/.test(n) || /^كي ?جي ?1$/.test(n);
+}
+function babyKgClasses() { return allClasses.filter(isBabyKgClass); }
+// أي فصل غير التلات فصول دول مسؤول عن مخدومين فصله بس — ميوصلش لمخدومين بيبي كلاس 1/2 وكي جي 1 ولا للي لسه متقسمش
+function classScopeActive() {
+  if (!currentClassTab || !classById(currentClassTab)) return false;
+  return !babyKgClasses().some(c => c.id === currentClassTab);
+}
+function classScope(list) { return classScopeActive() ? list.filter(s => s.classSection === currentClassTab) : list; }
+// الفلتر الفعلي المستخدم في قائمة المخدومين
+function effectiveClassFilter() {
+  if (!currentClassTab || !classById(currentClassTab)) return classFilter;
+  const grp = babyKgClasses();
+  if (grp.some(c => c.id === currentClassTab)) return (classFilter === 'none' || grp.some(c => c.id === classFilter)) ? classFilter : currentClassTab;
+  return currentClassTab;
+}
+function renderClassChips() {
+  const cont = document.getElementById('class-chips');
+  if (!cont) return;
+  const grp = babyKgClasses();
+  const show = !!currentClassTab && grp.some(c => c.id === currentClassTab);
+  cont.style.display = show ? '' : 'none';
+  cont.innerHTML = show ? classChipsHTML(effectiveClassFilter(), 'setClassFilter', { classes: grp, includeNone: true }) : '';
+}
+function renderProfClassChips(activeId) {
+  const cont = document.getElementById('prof-class-chips');
+  if (!cont) return;
+  const active = activeId !== undefined ? activeId : (allStudents.find(x => x.id === currentProfileId)?.classSection || '');
+  let html = `<button class="filter-chip ${!active?'active':''}" onclick="setStudentClassFromProfile('')">بدون فصل</button>`;
+  html += allClasses.map(c => `<button class="filter-chip ${active===c.id?'active':''}" onclick="setStudentClassFromProfile('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`).join('');
+  cont.innerHTML = html;
+}
+function renderRegClassOptions() {
+  const sel = document.getElementById('reg-class');
+  if (sel && allClasses.length) sel.innerHTML = classSelectOptionsHTML(false);
+}
+// ===== إدارة الفصول (أدمن فقط) — إضافة/تعديل/حذف فصول من جوه التطبيق نفسه =====
+function renderClassesAdminList() {
+  const cont = document.getElementById('classes-admin-list');
+  if (!cont) return;
+  if (!allClasses.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لا يوجد فصول بعد</div>`; return; }
+  cont.innerHTML = allClasses.map(c => `
+    <div class="tpl-chip">
+      <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name}</span>
+      <button class="tpl-chip-del" onclick="editClassPrompt('${c.id}')" title="تعديل" style="margin-left:4px">✏️</button>
+      <button class="tpl-chip-del" onclick="deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">✕</button>
+    </div>`).join('');
+}
+window.addClassPrompt = async () => {
+  const name = (prompt('اسم الفصل الجديد؟ (مثلاً: فصل ج)') || '').trim();
+  if (!name) return;
+  const emoji = (prompt('إيموجي للفصل؟ (اختياري، سيب فاضي لو مش عايز)') || '').trim();
+  try {
+    await addDoc(collection(db,'classes'), { name, emoji, order: allClasses.length, createdAt: serverTimestamp() });
+    showToast(`تم إضافة "${name}" ✓`, 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الإضافة', 'error'); }
+};
+window.editClassPrompt = async (id) => {
+  const c = classById(id); if (!c) return;
+  const name = (prompt('اسم الفصل:', c.name) || '').trim();
+  if (!name) return;
+  const emoji = (prompt('إيموجي الفصل:', c.emoji||'') || '').trim();
+  try {
+    await updateDoc(doc(db,'classes',id), { name, emoji });
+    showToast('تم تعديل الفصل ✓', 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء التعديل', 'error'); }
+};
+window.deleteClass = async (id, name) => {
+  if (!confirm(`هتحذف "${name}"؟ المخدومين والخدام اللي متسجلين في الفصل ده هيفضلوا متسجلين بيه بس هيبان "غير معروف" لحد ما تحددلهم فصل تاني`)) return;
+  try {
+    await deleteDoc(doc(db,'classes',id));
+    showToast('تم حذف الفصل', 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحذف', 'error'); }
+};
+
+// ===== قايمة الإعدادات المنسدلة (⚙️) =====
+window.toggleSettingsMenu = (e) => {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('settings-dropdown');
+  const opening = dd.style.display === 'none';
+  document.getElementById('settings-dropdown-roles').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
+  dd.style.display = opening ? 'block' : 'none';
+  if (opening) document.addEventListener('click', closeSettingsMenuOutside);
+};
+window.closeSettingsMenu = () => { document.getElementById('settings-dropdown').style.display = 'none'; document.removeEventListener('click', closeSettingsMenuOutside); };
+function closeSettingsMenuOutside(e) { if (!e.target.closest('.settings-menu-wrap')) window.closeSettingsMenu(); }
+
+// ===== شاشة الإعدادات — الهيدر مشترك (ملفي + الأدمن) =====
+function fillSettingsHeader() {
+  document.getElementById('settings-avatar').textContent = (currentName||'؟').trim()[0] || '؟';
+  document.getElementById('settings-name').textContent = currentName || '—';
+  document.getElementById('settings-email').textContent = currentEmail || '';
+}
+// "ملفي" — بيانات الخادم نفسه بس (اسمه، تليفونه، عنوانه) وتقدر تعدّلها — بيظهر لكل الخدام والأدمن
+window.openMyProfileModal = () => {
+  closeSettingsMenu();
+  fillSettingsHeader();
+  document.getElementById('settings-class-badge').innerHTML = currentAssignedClass
+    ? formatAssignedClasses(currentAssignedClass).split(' + ').map(l => `<span class="class-badge">${l}</span>`).join(' ')
+    : `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
+  document.getElementById('settings-name-input').value = currentName || '';
+  document.getElementById('settings-phone').value = currentPhone || '';
+  document.getElementById('settings-address').value = currentAddress || '';
+  document.getElementById('settings-profile-section').style.display = 'block';
+  document.getElementById('settings-admin-section').style.display = 'none';
+  refreshBioSettings();
+  document.getElementById('settings-modal').style.display = 'flex';
+};
+// "المستخدمين والأدوار" — شاشة الأدوار (اسم + صلاحية أدمن + فصول + أعضاء)، للأدمن بس
+window.openUsersRolesModal = () => {
+  closeSettingsMenu();
+  if (currentRole !== 'admin') return;
+  const homeVisible = document.getElementById('tab-home').style.display !== 'none' || document.getElementById('tab-admin-home').style.display !== 'none' || document.getElementById('tab-admin-classes').style.display !== 'none';
+  const activeBtn = document.querySelector('#main-tabs .tab.active[data-tab]');
+  rolesReturnTab = homeVisible ? '' : (activeBtn ? activeBtn.dataset.tab : '');
+  stopVoice(); stopTodayListeners();
+  document.getElementById('tab-home').style.display = 'none';
+  document.getElementById('main-tabs').style.display = 'none';
+  document.getElementById('global-class-tabs').style.display = 'none';
+  { const st = document.getElementById('section-title'); if (st) st.style.display = 'none'; }
+  ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
+  hideAdminScreens();
+  document.getElementById('tab-roles').style.display = 'block';
+  showRolesListView();
+  loadRolesOnce();
+};
+window.closeSettingsModal = () => { document.getElementById('settings-modal').style.display = 'none'; };
+window.closeSettingsOutside = (e) => { if (e.target.id === 'settings-modal') closeSettingsModal(); };
+// بتفتح شاشة الأدوار وتوديك على طول لدور خادم معين — مستخدمة من زرار "🗂 دوره" في قايمة الخدام
+window.openServantRoleFromSettings = async (roleId) => {
+  closeSettingsModal();
+  openUsersRolesModal();
+  await loadRolesOnce();
+  openRoleEditor(roleId);
+};
+window.saveOwnSettings = async () => {
+  const name = document.getElementById('settings-name-input').value.trim().replace(/\s+/g, ' ');
+  const phone = document.getElementById('settings-phone').value.trim();
+  const address = document.getElementById('settings-address').value.trim();
+  if (!name) { showToast('اكتب اسمك الأول', 'error'); return; }
+  const payload = { phone, address };
+  if (name !== currentName) payload.name = name;
+  try {
+    await updateDoc(doc(db,'servants',currentUid), payload);
+    currentPhone = phone; currentAddress = address;
+    if (payload.name) {
+      currentName = name;
+      fillSettingsHeader();
+      const sv = cachedServants.find(x => x.id === currentUid); if (sv) sv.name = name;
+    }
+    showToast('تم حفظ بياناتك ✓', 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
+};
+
+// ---- الأدوار (بريسيتس فصول جاهزة تتطبق على أكتر من خادم مرة واحدة) ----
+// ---- قايمة الخدام (بحث بالاسم + ترقية/تنزيل أدمن — تغيير الفصل/النوع بقى بس من شاشة "الأدوار") ----
+function renderSettingsPeopleList() {
+  const cont = document.getElementById('settings-people-list');
+  if (!cont) return;
+  const q = normalizeArabic(document.getElementById('settings-people-search')?.value || '');
+  const list = cachedServants.filter(s => s.status === 'approved' && (!q || normalizeArabic(s.name||'').includes(q)))
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  if (!list.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">مفيش خادم بالاسم ده</div>`; return; }
+  const viewerIsPrimary = isPrimaryAdmin(currentEmail);
+  cont.innerHTML = list.map(s => {
+    const assigned = normalizeAssignedClasses(s.assignedClass);
+    const nameEsc = (s.name||'').replace(/'/g,"\\'");
+    const sIsPrimary = isPrimaryAdmin(s.email);
+    let adminBtn = '';
+    if (s.role === 'admin') {
+      adminBtn = sIsPrimary
+        ? `<span class="s-sub" style="white-space:nowrap">👑 الأدمن الأساسي</span>`
+        : (viewerIsPrimary ? `<button class="action-btn" onclick="demoteServant('${s.id}','${nameEsc}')">🔻 شيله من الأدمن</button>` : `<span class="s-sub">👑 أدمن</span>`);
+    } else {
+      adminBtn = `<button class="action-btn" onclick="promoteServant('${s.id}','${nameEsc}')">👑 خليه أدمن</button>`;
+    }
+    return `<div class="servant-item" style="flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--border)">
+      <div class="s-info">
+        <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':s.role==='supervisor'?' 🗝️':''}</div>
+        <div class="s-sub">${assigned.length ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
+      </div>
+      ${adminBtn}
+      ${servantRoleIds(s).map((rid, i, arr) => `<button class="action-btn" onclick="openServantRoleFromSettings('${rid}')">🗂 ${arr.length > 1 ? (allRoles.find(r => r.id === rid)?.name || 'دور ' + (i+1)) : 'دوره'}</button>`).join('')}
+    </div>`;
+  }).join('');
+}
+let filterSiblings = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب الافتقاد)
+const NOTE_LABELS = {
+  traveling:   { emoji:'🧳', text:'مسافر' },
+  friday:      { emoji:'📅', text:'بيحضر يوم الجمعة' },
+  otherChurch: { emoji:'⛪', text:'بيحضر في كنيسة تانية' },
+  motherPregnant: { emoji:'🤰', text:'الأم حامل' },
+  noReason:    { emoji:'❓', text:'بدون سبب' }
+};
+
+// تحويل تاريخ لصيغة YYYY-MM-DD بالتوقيت المحلي (من غير تحويل لـ UTC عشان ميبوظش التاريخ قرب نص الليل)
+function toLocalDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع (الأسبوع بيبدأ سبت الصبح ويخلص جمعة بالليل)
+// الحضور: بيتصفّر كل يوم سبت الصبح (سبت → أربع بيتحسبوا على الخميس اللي جاي)
+const todayKey = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 1) % 7) + 5); // رجوع لأقرب سبت، وبعدين 5 أيام لقدام = خميس الأسبوع ده
+  return toLocalDateKey(d);
+};
+// الآيات: أسبوعها من السبت الصبح لحد الجمعة بالليل، والقايمة بترجع فاضية كل يوم سبت.
+// وبتتسجل على حضور الأسبوع اللي قبله = تاريخ الخميس اللي قبل السبت بتاع الأسبوع ده (سبت 03/10 → جمعة 09/10 = خميس 01/10).
+// التسجيل مفتوح طول الأسبوع.
+const verseKey = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 1) % 7) - 2); // رجوع لأقرب سبت، وبعدين يومين لورا = خميس
+  return toLocalDateKey(d);
+};
+const verseOpen = () => true;
+const VERSE_CLOSED_MSG = 'تسجيل الآية مقفول';
+
+// ===== الدخول بالبصمة (WebAuthn كبوابة محلية على الجهاز) =====
+// ملحوظة: مفاتيحنا مسمّاة 'bc_*' عشان الدومين teto550.github.io مشترك بين كل تطبيقاتك
+const BIO_LS = 'bc_bio_v1', BIO_DECLINED = 'bc_bio_declined';
+const BIO_DB = 'bc-bio-keys', BIO_STORE = 'keys', BIO_KEY_ID = 'k1';
+let pendingBioCreds = null; // {email, pass} من آخر دخول بالإيميل — بيتمسح بعد العرض
+const bioB64 = {
+  enc: b => btoa(String.fromCharCode(...new Uint8Array(b))),
+  dec: s => Uint8Array.from(atob(s), c => c.charCodeAt(0))
+};
+function bioIdb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(BIO_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(BIO_STORE);
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function bioIdbGet(k) {
+  const db0 = await bioIdb();
+  return new Promise((res, rej) => { const q = db0.transaction(BIO_STORE).objectStore(BIO_STORE).get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+}
+async function bioIdbSet(k, v) {
+  const db0 = await bioIdb();
+  return new Promise((res, rej) => { const t = db0.transaction(BIO_STORE, 'readwrite'); t.objectStore(BIO_STORE).put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); });
+}
+async function bioIdbDel(k) {
+  const db0 = await bioIdb();
+  return new Promise((res, rej) => { const t = db0.transaction(BIO_STORE, 'readwrite'); t.objectStore(BIO_STORE).delete(k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); });
+}
+async function bioSupported() {
+  try { return !!(window.PublicKeyCredential && window.isSecureContext && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); }
+  catch { return false; }
+}
+function bioData() { try { return JSON.parse(localStorage.getItem(BIO_LS) || 'null'); } catch { return null; } }
+async function bioDisable() {
+  localStorage.removeItem(BIO_LS);
+  try { await bioIdbDel(BIO_KEY_ID); } catch {}
+  refreshBioLoginButton();
+}
+// بيسجّل البصمة ويحفظ الإيميل والباسورد مشفّرين بمفتاح غير قابل للتصدير (non-extractable)
+async function bioEnroll(email, pass) {
+  await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: 'خدمة ابتدائي', id: location.hostname },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: email, displayName: email },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+    timeout: 60000, attestation: 'none'
+  }}).then(async cred => {
+    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify({ e: email, p: pass })));
+    await bioIdbSet(BIO_KEY_ID, key);
+    localStorage.setItem(BIO_LS, JSON.stringify({ credId: bioB64.enc(cred.rawId), email, iv: bioB64.enc(iv), ct: bioB64.enc(ct) }));
+  });
+  localStorage.removeItem(BIO_DECLINED);
+}
+// بيطلب البصمة، ولو نجحت بيفك التشفير ويرجّع الإيميل والباسورد
+async function bioUnlock() {
+  const d = bioData();
+  if (!d) throw new Error('no-bio');
+  await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rpId: location.hostname,
+    allowCredentials: [{ type: 'public-key', id: bioB64.dec(d.credId), transports: ['internal'] }],
+    userVerification: 'required', timeout: 60000
+  }});
+  const key = await bioIdbGet(BIO_KEY_ID);
+  if (!key) throw new Error('no-key');
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bioB64.dec(d.iv) }, key, bioB64.dec(d.ct));
+  const o = JSON.parse(new TextDecoder().decode(plain));
+  return { email: o.e, pass: o.p };
+}
+async function refreshBioLoginButton() {
+  const btn = document.getElementById('bio-login-btn');
+  if (!btn) return;
+  btn.style.display = (bioData() && await bioSupported()) ? 'block' : 'none';
+}
+window.doBioLogin = async () => {
+  const err = document.getElementById('login-error');
+  const btn = document.getElementById('bio-login-btn');
+  err.style.display = 'none';
+  let creds;
+  try { creds = await bioUnlock(); }
+  catch (e) {
+    if (e && (e.message === 'no-key' || e.message === 'no-bio' || e.name === 'OperationError')) {
+      await bioDisable();
+      err.textContent = 'البصمة محتاجة تتفعّل تاني — ادخل بالإيميل والباسورد وفعّلها من «ملفي»';
+    } else {
+      err.textContent = 'اتلغت البصمة أو معرفناش نتعرف عليها، حاول تاني أو ادخل بالإيميل';
+    }
+    err.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  explicitAuthAction = true;
+  try { await signInWithEmailAndPassword(auth, creds.email, creds.pass); }
+  catch {
+    explicitAuthAction = false;
+    // غالبًا الباسورد اتغيّر — نمسح البصمة القديمة عشان متفضلش بتفشل
+    await bioDisable();
+    err.textContent = 'كلمة المرور اتغيّرت — ادخل بالإيميل والباسورد وفعّل البصمة من جديد';
+    err.style.display = 'block';
+  }
+  btn.disabled = false;
+};
+// عرض تفعيل البصمة بعد أول دخول بالإيميل والباسورد
+async function maybeOfferBio() {
+  const c = pendingBioCreds; pendingBioCreds = null;
+  if (!c || !(await bioSupported())) return;
+  const d = bioData();
+  if (d && d.email === c.email) return;                    // مفعّلة أصلاً لنفس الحساب
+  if (!d && localStorage.getItem(BIO_DECLINED) === '1') return; // رفض قبل كده
+  window._bioOfferCreds = c;
+  document.getElementById('bio-offer-modal').style.display = 'block';
+}
+window.acceptBioOffer = async () => {
+  const c = window._bioOfferCreds; window._bioOfferCreds = null;
+  document.getElementById('bio-offer-modal').style.display = 'none';
+  if (!c) return;
+  try { await bioEnroll(c.email, c.pass); showToast('اتفعّلت البصمة ✅', 'success'); }
+  catch (e) { console.error('bio enroll:', e); showToast('معرفناش نفعّل البصمة', 'error'); }
+};
+window.declineBioOffer = () => {
+  window._bioOfferCreds = null;
+  localStorage.setItem(BIO_DECLINED, '1');
+  document.getElementById('bio-offer-modal').style.display = 'none';
+};
+// قسم «الدخول بالبصمة» جوه الإعدادات (ملفي)
+async function refreshBioSettings() {
+  const sec = document.getElementById('settings-bio-section');
+  if (!sec) return;
+  if (!(await bioSupported())) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  const d = bioData(), mine = d && d.email === currentEmail;
+  document.getElementById('settings-bio-status').textContent = mine
+    ? 'البصمة مفعّلة على الموبايل ده ✅ تقدر تدخل بيها من شاشة الدخول.'
+    : (d ? 'البصمة مفعّلة على الموبايل ده لحساب تاني. لو فعّلتها هنا هتتبدّل.' : 'ادخل ببصمة صباعك بدل الإيميل والباسورد على الموبايل ده.');
+  document.getElementById('settings-bio-btn').textContent = mine ? '🗑 إلغاء البصمة' : '🖐 تفعيل البصمة';
+  document.getElementById('settings-bio-pass-wrap').style.display = 'none';
+  document.getElementById('settings-bio-pass').value = '';
+  window._bioSettingsStep = mine ? 'off' : 'ask';
+}
+window.toggleBioFromSettings = async () => {
+  const step = window._bioSettingsStep;
+  if (step === 'off') { await bioDisable(); showToast('اتلغت البصمة', 'info'); refreshBioSettings(); return; }
+  const wrap = document.getElementById('settings-bio-pass-wrap');
+  if (step === 'ask') {
+    wrap.style.display = 'block';
+    document.getElementById('settings-bio-btn').textContent = '✔ تأكيد وتفعيل';
+    document.getElementById('settings-bio-pass').focus();
+    window._bioSettingsStep = 'confirm';
+    return;
+  }
+  // confirm: نتأكد من الباسورد الأول، وبعدين نسجّل البصمة
+  const pass = document.getElementById('settings-bio-pass').value;
+  if (!pass) { showToast('اكتب كلمة المرور', 'error'); return; }
+  try {
+    await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(currentEmail, pass));
+  } catch { showToast('كلمة المرور غلط', 'error'); return; }
+  try { await bioEnroll(currentEmail, pass); showToast('اتفعّلت البصمة ✅', 'success'); }
+  catch (e) { console.error('bio enroll:', e); showToast('معرفناش نفعّل البصمة', 'error'); }
+  refreshBioSettings();
+};
+
+// ===== AUTH =====
+window.switchAuthTab = (which) => {
+  document.getElementById('auth-tab-login').classList.toggle('active', which === 'login');
+  document.getElementById('auth-tab-register').classList.toggle('active', which === 'register');
+  document.getElementById('auth-login-form').style.display    = which === 'login'    ? 'block' : 'none';
+  document.getElementById('auth-register-form').style.display = which === 'register' ? 'block' : 'none';
+  document.getElementById('login-error').style.display = 'none';
+  if (which === 'register') loadRegisterClassOptions();
+};
+
+// بيتحمّل قايمة الفصول والأدوار لفورم التسجيل — بيتنادى قبل ما الخادم الجديد يعمل حساب أصلاً،
+// فلو ده أول مرة يفتح فيها التاب ده، بيجيبهم من فايرستور مباشرة (لازم قاعدة فايرستور تسمح بقراءة مجموعتي 'classes' و'roles' حتى من غير تسجيل دخول)
+async function loadRegisterClassOptions() {
+  const sel = document.getElementById('reg-class');
+  if (!sel) return;
+  if (!allRoles.length) {
+    try {
+      const rsnap = await countedGetDocs(collection(db,'roles'), 'roles (فورم التسجيل)');
+      allRoles = rsnap.docs.map(d => ({ id:d.id, ...d.data() }));
+    } catch(e) { console.error('تعذّر تحميل الأدوار (فورم التسجيل):', e); }
+  }
+  if (allClasses.length) { sel.innerHTML = classSelectOptionsHTML(true, 'تحديد الفصل'); return; }
+  sel.innerHTML = `<option value="">جاري تحميل الفصول…</option>`;
+  try {
+    const snap = await countedGetDocs(collection(db,'classes'), 'classes (فورم التسجيل)');
+    allClasses = snap.docs.map(d => unifyKgEmoji({ id:d.id, ...d.data() }))
+      .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
+    sel.innerHTML = allClasses.length ? classSelectOptionsHTML(true, 'تحديد الفصل') : `<option value="">لا يوجد فصول متاحة، كلم الأدمن</option>`;
+  } catch(e) {
+    console.error('تعذّر تحميل الفصول:', e);
+    sel.innerHTML = `<option value="">تعذّر تحميل الفصول</option>`;
+  }
+}
+// أول ما تختار الفصل، بيتملى سيلكت "اسمك" بأسماء الخدام اللي الأدمن ضافهم مقدمًا لأي دور شامل الفصل ده
+window.onRegClassChange = () => {
+  const classId = document.getElementById('reg-class').value;
+  const nameSel = document.getElementById('reg-name-select');
+  if (!classId) { nameSel.innerHTML = `<option value="">— اختار فصلك الأول —</option>`; return; }
+  const rawNames = [];
+  allRoles.forEach(r => { if (!r.isAdmin && Array.isArray(r.classes) && r.classes.includes(classId)) (r.pendingNames||[]).forEach(n => rawNames.push(n)); });
+  const names = uniqueNames(rawNames); // نفس الاسم ممكن يبقى في أكتر من دور في الفصل (مسؤول + خادم) — بيظهر مرة واحدة بس
+  names.sort((a,b) => a.localeCompare(b,'ar'));
+  let html = names.length
+    ? `<option value="">— اختار اسمك —</option>` + names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('')
+    : `<option value="">مفيش أسماء متاحة للفصل ده، كلم الأدمن</option>`;
+  nameSel.innerHTML = html;
+};
+
+window.doLogin = async () => {
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  btn.disabled = true; btn.textContent = 'جاري الدخول…'; err.style.display = 'none';
+  explicitAuthAction = true;
+  try {
+    const _em = document.getElementById('login-email').value.trim();
+    const _pw = document.getElementById('login-pass').value;
+    pendingBioCreds = { email: _em.toLowerCase(), pass: _pw };
+    await signInWithEmailAndPassword(auth, _em, _pw);
+  } catch {
+    pendingBioCreds = null;
+    explicitAuthAction = false;
+    err.textContent = 'بيانات خاطئة، حاول تاني';
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'دخول';
+  }
+};
+
+window.doRegister = async () => {
+  const btn  = document.getElementById('register-btn');
+  const err  = document.getElementById('login-error');
+  const regClass = document.getElementById('reg-class').value;
+  const name = document.getElementById('reg-name-select').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const pass  = document.getElementById('reg-pass').value;
+  const phone = document.getElementById('reg-phone').value.trim();
+  const address = document.getElementById('reg-address').value.trim();
+  err.style.display = 'none';
+  if (!regClass)    { err.textContent = 'اختار فصلك الأول';       err.style.display = 'block'; return; }
+  if (!name)        { err.textContent = 'اختار اسمك من القايمة';  err.style.display = 'block'; return; }
+  if (!email||!pass){ err.textContent = 'اكتب الإيميل وكلمة المرور'; err.style.display = 'block'; return; }
+  if (!phone)       { err.textContent = 'اكتب رقم تليفونك';       err.style.display = 'block'; return; }
+  // الاسم دايمًا مختار من القايمة الجاهزة، فبندوّر على الدور اللي هو منه عشان ناخد منه كل فصوله ونوعه بالظبط
+  // نفس الاسم ممكن يبقى مضاف في أكتر من دور (مثلاً مسؤول فصل أ + خادم فصل ب) — بنجمع كل أدواره ونحسب صلاحياته منها
+  const nameRoles = allRoles.filter(r => !r.isAdmin && Array.isArray(r.classes) && nameVariantsIn(r, name).length);
+  const matchedRoles = nameRoles.some(r => r.classes.includes(regClass)) ? nameRoles : [];
+  const matchedPerms = matchedRoles.length ? derivePermsFromRoles(matchedRoles) : { role:'servant', assignedClass: regClass, supervisorClass: '' };
+  btn.disabled = true; btn.textContent = 'جاري التسجيل…';
+  explicitAuthAction = true;
+  try {
+    const cred    = await createUserWithEmailAndPassword(auth, email, pass);
+    const isAdmin = ADMIN_EMAILS.map(e=>e.toLowerCase()).includes(email.toLowerCase());
+    await setDoc(doc(db,'servants',cred.user.uid), {
+      name, email, phone, address,
+      assignedClass: isAdmin ? '' : matchedPerms.assignedClass,
+      supervisorClass: isAdmin ? '' : matchedPerms.supervisorClass,
+      roleId: matchedRoles[0] ? matchedRoles[0].id : '',
+      roleIds: matchedRoles.map(r => r.id),
+      status: isAdmin ? 'approved' : 'pending',
+      role:   isAdmin ? 'admin'    : matchedPerms.role,
+      createdAt: serverTimestamp(),
+      lastActive: serverTimestamp()
+    });
+    // لو الاسم ده مختار من قايمة الأسماء الجاهزة، يتمسح من القايمة فورًا عشان محدش تاني يقدر يختاره
+    // (محتاج قاعدة فايرستور تسمح للمستخدم يعدّل pendingNames بتاعة roles حتى وهو لسه pending — لو القاعدة بترفض، هيتمسح بعدين لما الأدمن يقبله زي الأول)
+    for (const mr of matchedRoles) {
+      try { await updateDoc(doc(db,'roles',mr.id), { pendingNames: arrayRemove(...nameVariantsIn(mr, name)) }); } catch(e) { console.error('تعذّر مسح الاسم من القايمة فورًا:', e); }
+    }
+    try { await sendEmailVerification(cred.user); } catch(_) {}
+    // onAuthStateChanged هيتكفل بعرض الشاشة المناسبة (انتظار أو دخول مباشر لو أدمن)
+  } catch(e) {
+    console.error('خطأ التسجيل:', e.code, e.message, e);
+    let msg = 'حصل خطأ، حاول تاني (' + (e.code || e.message || 'unknown') + ')';
+    if (e.code === 'auth/email-already-in-use') {
+      switchAuthTab('login');
+      document.getElementById('login-email').value = email;
+      document.getElementById('login-pass').focus();
+      msg = 'الإيميل ده كان مسجل قبل كده. لو كان حسابك اتحذف من الأدمن، ادخل هنا بنفس الباسورد اللي كنت حاطه — هيترجع طلبك لحالة "انتظار الموافقة" تلقائي.';
+    }
+    if (e.code === 'auth/weak-password')        msg = 'كلمة المرور لازم تكون 6 حروف على الأقل';
+    if (e.code === 'auth/invalid-email')        msg = 'الإيميل غير صحيح';
+    explicitAuthAction = false;
+    err.textContent = msg; err.style.display = 'block';
+  }
+  btn.disabled = false; btn.textContent = 'تسجيل';
+};
+
+window.doLogout = async () => {
+  pendingBioCreds = null;
+  stopHeartbeat();
+  stopPendingSelfWatch(); stopPendingRequestsListener();
+  if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
+  if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
+  await signOut(auth);
+};
+
+function showAuthScreen() {
+  refreshBioLoginButton();
+  document.getElementById('splash-screen').style.display  = 'none';
+  document.getElementById('auth-screen').style.display    = 'flex';
+  document.getElementById('pending-screen').style.display  = 'none';
+  document.getElementById('app-screen').style.display      = 'none';
+}
+function showPendingScreen(title, msg) {
+  document.getElementById('splash-screen').style.display  = 'none';
+  document.getElementById('auth-screen').style.display    = 'none';
+  document.getElementById('app-screen').style.display      = 'none';
+  document.getElementById('pending-screen').style.display  = 'flex';
+  document.getElementById('pending-title').textContent = title;
+  document.getElementById('pending-msg').textContent   = msg;
+}
+
+onAuthStateChanged(auth, async user => {
+  stopHeartbeat();
+  if (!user) {
+    stopPendingSelfWatch(); stopPendingRequestsListener();
+    if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
+    if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
+    if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
+    if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
+    stopClassesListener();
+    classPicked = false;
+    localStorage.removeItem('stu_cache_v1'); localStorage.removeItem('stu_cache_v2'); studentsLoaded = false;
+    showAuthScreen();
+    const btn = document.getElementById('login-btn');
+    btn.disabled = false; btn.textContent = 'دخول';
+    return;
+  }
+  await handleSignedInUser(user);
+});
+
+// بيتنادى من onAuthStateChanged، وكمان أول ما طلب الانضمام يتقبل (من غير reload)
+async function handleSignedInUser(user) {
+  stopPendingSelfWatch();
+  try {
+    const ref = doc(db,'servants',user.uid);
+    let snap = await getDoc(ref);
+    if (!snap.exists()) {
+      // حساب موجود في Firebase Auth بس مش مسجل كخادم في الموقع ده
+      if (ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((user.email||'').toLowerCase())) {
+        await setDoc(ref, {
+          name: user.email.split('@')[0], email: user.email,
+          status: 'approved', role: 'admin',
+          createdAt: serverTimestamp(), lastActive: serverTimestamp()
+        });
+        snap = await getDoc(ref);
+      } else if (explicitAuthAction) {
+        // غالبًا حساب اتحذف قبل كده وحاول يدخل تاني بنفسه — نرجّعه لطلب انضمام جديد بانتظار الموافقة
+        await setDoc(ref, {
+          name: user.email.split('@')[0], email: user.email,
+          status: 'pending', role: 'servant',
+          createdAt: serverTimestamp(), lastActive: serverTimestamp()
+        });
+        snap = await getDoc(ref);
+      } else {
+        // مجرد جلسة محمولة تلقائيًا من موقع تاني على نفس الدومين — مش طلب دخول مقصود، نتجاهله من غير ما نبعت طلب انضمام لحد
+        explicitAuthAction = false;
+        showAuthScreen();
+        await signOut(auth);
+        return;
+      }
+    }
+    // لو الإيميل ده هو إيميل الأدمن الأساسي (ADMIN_EMAILS)، نتأكد دايمًا إنه أدمن ومعتمد،
+    // حتى لو كان عنده مستند خادم قديم من قبل التغيير (مثلاً كان لسه معتمد كخادم عادي أو حتى pending)
+    if (ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((user.email||'').toLowerCase())) {
+      const d = snap.data();
+      if (d.role !== 'admin' || d.status !== 'approved') {
+        await updateDoc(ref, { role: 'admin', status: 'approved' });
+        snap = await getDoc(ref);
+      }
+    }
+    explicitAuthAction = false;
+    const data = snap.data();
+    if (data.status === 'pending') {
+      showPendingScreen('في انتظار الموافقة', 'طلبك اتبعت للأدمن ومسؤول فصلك وقيد المراجعة، هيتفعل حسابك بمجرد الموافقة ✋');
+      watchOwnPendingStatus(user);
+      return;
+    }
+    if (data.status !== 'approved') {
+      showPendingScreen('تم إيقاف الحساب', 'حسابك اتحذف أو اتوقف. لو ده حصل غلط كلم الأدمن.');
+      return;
+    }
+    currentUid = user.uid; currentName = data.name || (user.email||'').split('@')[0]; currentRole = data.role || 'servant'; currentEmail = (user.email||'').toLowerCase();
+    currentAssignedClass = data.assignedClass || '';
+    currentSupervisorClass = supervisedClassesOf(data).join(',');
+    currentPhone = data.phone || ''; currentAddress = data.address || '';
+    document.getElementById('splash-screen').style.display  = 'none';
+    document.getElementById('auth-screen').style.display    = 'none';
+    document.getElementById('pending-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display     = 'flex';
+    applyMonitorVisibility();
+    startHeartbeat();
+    listenOwnServantDoc(user.uid);
+    if (canHandleRequests()) startPendingRequestsListener();
+    startClassesListener();
+    initApp();
+    setTimeout(maybeOfferBio, 1200);
+  } catch(e) {
+    console.error(e);
+    showAuthScreen();
+  }
+}
+
+// الخادم اللي لسه بانتظار الموافقة: قراءة واحدة + تحديث لحظي على مستنده هو بس، فأول ما الأدمن يقبله يدخل لوحده
+let pendingSelfUnsub = null;
+function stopPendingSelfWatch() { if (pendingSelfUnsub) { pendingSelfUnsub(); pendingSelfUnsub = null; } }
+function watchOwnPendingStatus(user) {
+  stopPendingSelfWatch();
+  pendingSelfUnsub = onSnapshot(doc(db,'servants',user.uid), snap => {
+    if (!snap.exists()) {
+      if (snap.metadata.fromCache) return;
+      stopPendingSelfWatch();
+      showPendingScreen('تم إيقاف الحساب', 'حسابك اتحذف أو اتوقف. لو ده حصل غلط كلم الأدمن.');
+      return;
+    }
+    if (snap.data().status === 'approved') { stopPendingSelfWatch(); handleSignedInUser(user); }
+  }, err => console.error('pending self listener error:', err));
+}
+
+// ===== HEARTBEAT (أونلاين/أوفلاين) =====
+function startHeartbeat() { /* اتلغى: مفيش متابعة أونلاين لحظية عشان نوفر الـ reads */ }
+function stopHeartbeat() { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+
+// ===== الأدمن الأساسي (ثابت من ADMIN_EMAILS) =====
+function isPrimaryAdmin(email) {
+  return ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((email||'').toLowerCase());
+}
+
+// بث لحظي على مستند الخادم بتاعي: لو الأدمن الأساسي عمل لي ترقية/تنزيل من الأدمن أو حذفني بالكامل،
+// أتأثر فورًا وأنا شغال من غير ما أحتاج أعمل reload أو أعمل logout/login تاني
+function listenOwnServantDoc(uid) {
+  if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
+  ownServantUnsub = onSnapshot(doc(db,'servants',uid), snap => {
+    countDocSnapshotReads('servants (ملفي)', snap);
+    if (!snap.exists()) {
+      showToast('تم حذفك من التطبيق بواسطة الأدمن', 'error');
+      forceLogout();
+      return;
+    }
+    const d = snap.data();
+    if (d.status !== 'approved') {
+      showToast('تم إيقاف حسابك بواسطة الأدمن', 'error');
+      forceLogout();
+      return;
+    }
+    let roleOrClassChanged = false;
+    if (d.role !== currentRole) {
+      currentRole = d.role;
+      roleOrClassChanged = true;
+      applyMonitorVisibility();
+      if (canHandleRequests()) startPendingRequestsListener(); else stopPendingRequestsListener();
+      if (currentRole === 'admin') {
+        showToast('مبروك! الأدمن الأساسي خلاك أدمن 👑', 'success');
+      } else if (currentRole === 'supervisor') {
+        showToast('اتحددتلك مسؤولية فصل — بقى عندك "الخدام" في الرئيسية 🗝️', 'success');
+      } else {
+        showToast('اتغيّر دورك بواسطة الأدمن الأساسي', 'info');
+      }
+      // لو كنت واقف في تبويب مش متاح ليك بدورك الجديد، نرجّعه لتبويب الحضور
+      if ((document.getElementById('tab-monitor').style.display === 'block' && currentRole !== 'admin') ||
+          (document.getElementById('tab-classservants').style.display === 'block' && currentRole !== 'supervisor')) {
+        goHome();
+      }
+    }
+    currentPhone = d.phone || ''; currentAddress = d.address || '';
+    if (d.name && d.name !== currentName) { currentName = d.name; fillSettingsHeader(); }
+    // لو الأدمن حدد/غيّر/شال الفصل المخصص للخادم من تبويب "متابعة"، يتفعل فورًا من غير reload
+    if ((d.assignedClass || '') !== currentAssignedClass) {
+      currentAssignedClass = d.assignedClass || '';
+      roleOrClassChanged = true;
+      const allowed = getAllowedAssignedClasses(currentAssignedClass);
+      showToast(currentAssignedClass
+        ? `اتحددلك ${formatAssignedClasses(currentAssignedClass)} بواسطة الأدمن — هتشوف مخدومين هذه الفصول بس`
+        : 'الأدمن شال تحديد الفصول بتاعتك — بقيت تشوف كل الفصول', 'info');
+    }
+    const supStr = supervisedClassesOf(d).join(',');
+    if (supStr !== currentSupervisorClass) {
+      currentSupervisorClass = supStr;
+      roleOrClassChanged = true;
+      if (canHandleRequests()) startPendingRequestsListener(); else stopPendingRequestsListener();
+      renderSupPending();
+      if (document.getElementById('tab-classservants')?.style.display === 'block') { renderClassServAttList(); renderClassServList(); }
+    }
+    if (roleOrClassChanged) {
+      applyClassRestrictionUI();
+      if (todayAttendanceUnsub || todayVersesUnsub) restartTodayListeners();
+      loadStudents().then(() => {
+        updateStats(); renderTodayList();
+        if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
+        if (document.getElementById('tab-messages')?.style.display === 'block') renderWaTab();
+      });
+    }
+  }, err => console.error('own servant listener error:', err));
+}
+
+async function forceLogout() {
+  stopPendingRequestsListener();
+  if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
+  if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
+  if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
+  if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
+  stopHeartbeat();
+  await signOut(auth);
+}
+
+// ===== سجل الأنشطة =====
+async function logActivity(action, detail = '') {
+  if (!currentUid) return;
+  try {
+    await addDoc(collection(db,'activityLog'), {
+      uid: currentUid, name: currentName, action, detail, timestamp: serverTimestamp()
+    });
+  } catch(e) {}
+}
+
+// ===== INIT =====
+async function initApp() {
+  const now  = new Date();
+  const days = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  document.getElementById('today-date-top').textContent =
+    days[now.getDay()] + ' — ' + now.toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'});
+  applyClassRestrictionUI();
+  goHome();
+}
+
+// ===== PHONE FIELDS =====
+window.addPhoneField = () => {
+  const wrap = document.getElementById('phones-wrap');
+  const row  = document.createElement('div');
+  row.className = 'phone-row';
+  row.innerHTML = `<input type="tel" class="field-input phone-input" placeholder="رقم التليفون" dir="ltr">
+    <button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`;
+  wrap.appendChild(row);
+};
+
+window.toggleAddStudentForm = () => {
+  const fields = document.getElementById('add-student-fields');
+  const btn    = document.getElementById('add-student-toggle-btn');
+  const isOpen = fields.style.display === 'block';
+  fields.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = isOpen ? '➕ إضافة مخدوم' : '✕ إغلاق';
+  newGenderManuallySet = false; // فورم جديد = نسمح للتخمين التلقائي يشتغل من الأول
+};
+
+// ===== STUDENTS =====
+let studentsLoaded = false;
+const STU_KEY0 = 'stu_cache_v2'; let STU_KEY = STU_KEY0; // v2: كاش بيتحدّث بالتغييرات بس (updatedAt) بدل إعادة تحميل الكل
+async function ensureStudents() { if (!studentsLoaded) await loadStudents(); }
+// أي كتابة على students بتزوّد الرقم ده عشان كل الأجهزة تعرف إن فيه تغيير (والحذف له عدّاد لوحده لأنه مش بيظهر في تحديث التغييرات)
+let bumpTimer = null, bumpDel = false;
+function bumpStudentsRev(deleted = false) {
+  if (deleted) bumpDel = true;
+  clearTimeout(bumpTimer);
+  // بنجمّع أي كتابات ورا بعض (زي إضافة مجموعة للجروب) في كتابة واحدة على config/meta
+  bumpTimer = setTimeout(async () => {
+    const upd = { studentsRev: increment(1) };
+    if (bumpDel) upd.studentsDelRev = increment(1);
+    bumpDel = false;
+    try { await setDoc(doc(db,'config','meta'), upd, { merge:true }); } catch(e) {}
+  }, 2000);
+}
+function tsMs(t) {
+  if (!t) return 0;
+  if (typeof t.toMillis === 'function') return t.toMillis();
+  return (t.seconds || 0) * 1000 + Math.floor((t.nanoseconds || 0) / 1e6);
+}
+function saveStudentsCache(rev, delRev, scope = '', maxUpdSeen = 0) {
+  const maxUpd = allStudents.reduce((m, s) => Math.max(m, tsMs(s.updatedAt)), maxUpdSeen);
+  const payload = JSON.stringify({ rev, delRev, scope, ts: Date.now(), maxUpd, list: allStudents });
+  idbSet(STU_KEY, payload).then(ok => {
+    if (ok) { try { localStorage.removeItem(STU_KEY); } catch(e) {} }
+    else { try { localStorage.setItem(STU_KEY, payload); } catch(e) {} }
+  });
+}
+window.forceRefreshStudents = async () => { await loadStudents(true); showToast('تم تحديث المخدومين ✓','success'); };
+async function loadStudents(force = false) {
+  await waitClassesReady();
+  let rev = null, delRev = 0, classFieldMig = false;
+  try { const m = await getDoc(doc(db,'config','meta')); const d = m.exists() ? m.data() : {}; rev = d.studentsRev || 0; delRev = d.studentsDelRev || 0; classFieldMig = !!d.classFieldMig; } catch(e) {}
+  // الخادم بيقرا مخدومين نطاقه بس. المخدومين اللي لسه من غير فصل مش بيتجابوا بالاستعلام قبل ما الأدمن يعمل ترحيل واحد (classSection:'')، فلحد وقتها بنقرا الكل زي الأول
+  let scope = readScopeClasses();
+  if (!classFieldMig) scope = [];
+  const scopeKey = scope.join(',');
+  STU_KEY = scopeKey ? STU_KEY0 + '@' + scopeKey : STU_KEY0;
+  let cached = null; try { cached = JSON.parse((await idbGet(STU_KEY)) || localStorage.getItem(STU_KEY) || 'null'); } catch(e) {}
+  const inScope = x => !scope.length || scope.includes(x.classSection || '');
+  const byName = (a, b) => (a.name || '') < (b.name || '') ? -1 : ((a.name || '') > (b.name || '') ? 1 : 0);
+  const fullLoad = async () => {
+    const col = collection(db,'students');
+    const snap = await countedGetDocs(scope.length ? query(col, where('classSection','in', scope)) : query(col, orderBy('name')), scope.length ? 'students (نطاق الخادم)' : 'students');
+    allStudents = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort(byName);
+    saveStudentsCache(rev, delRev, scopeKey);
+  };
+  const usable = cached && !force && Array.isArray(cached.list) && (cached.scope || '') === scopeKey && (rev !== null ? cached.delRev === delRev : (Date.now() - cached.ts < 12*3600*1000));
+  if (usable && (rev === null || cached.rev === rev)) {
+    allStudents = cached.list;
+  } else if (usable) {
+    try {
+      const since = Timestamp.fromMillis(Math.max(0, (cached.maxUpd || 0) - 60000)); // هامش دقيقة للأمان
+      const snap = await countedGetDocs(query(collection(db,'students'), where('updatedAt','>=', since)), 'students (تحديث بالتغييرات بس)');
+      const map = new Map(cached.list.map(x => [x.id, x]));
+      let seen = cached.maxUpd || 0;
+      snap.docs.forEach(d => { const x = { id:d.id, ...d.data() }; seen = Math.max(seen, tsMs(x.updatedAt)); if (inScope(x)) map.set(d.id, x); else map.delete(d.id); });
+      allStudents = [...map.values()].sort(byName);
+      saveStudentsCache(rev, delRev, scopeKey, seen);
+    } catch(e) { console.error(e); await fullLoad(); }
+  } else {
+    await fullLoad();
+  }
+  if (currentRole === 'admin' && !classFieldMig && rev !== null && !scope.length) migrateClassField();
+  studentsLoaded = true;
+  // تبويب "المخدومين" بيعرض مخدومين الفصل الحالي بس (وفلتر الفصول للتلات فصول بيبي/كي جي)،
+  // والشاشات التانية (الحضور، الرسائل، التصدير) بتتقفل على فصل الخادم عن طريق classScope / ownClassStudents
+  updateStuCount();
+  renderStudentsList();
+}
+
+async function migrateClassField() {
+  try {
+    const missing = allStudents.filter(x => x.classSection === undefined || x.classSection === null);
+    for (let i = 0; i < missing.length; i += 400) {
+      const b = writeBatch(db);
+      missing.slice(i, i + 400).forEach(x => b.update(doc(db,'students',x.id), { classSection: '' }));
+      await b.commit();
+    }
+    missing.forEach(x => { x.classSection = ''; });
+    await setDoc(doc(db,'config','meta'), { classFieldMig: true }, { merge:true });
+  } catch(e) { console.error('class field migration failed:', e); }
+}
+
+window.addStudent = async () => {
+  const name = canonicalizeName(document.getElementById('new-name').value);
+  if (!name) { showToast('اكتب اسم المخدوم', 'error'); return; }
+  const dup = allStudents.find(s => normalizeArabic(s.name) === normalizeArabic(name));
+  if (dup && !confirm(`فيه مخدوم بنفس الاسم "${dup.name}" مسجل قبل كده. تحب تضيفه تاني كاسم مكرر؟`)) return;
+  const phones = [...document.querySelectorAll('.phone-input')]
+    .map(i => i.value.trim()).filter(Boolean);
+  const allowed = getAllowedAssignedClasses();
+  const targetClass = (currentRole !== 'admin' && allowed.length) ? (allowed.includes(currentClassTab) ? currentClassTab : allowed[0]) : '';
+  const data = {
+    name,
+    dob:     document.getElementById('new-dob').value || '',
+    address: document.getElementById('new-address').value.trim() || '',
+    gender:  document.getElementById('new-gender').value || '',
+    phones,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    classSection: ''
+  };
+  // لو الخادم مقيد بفصول معينة، أي مخدوم جديد بيضيفه يتحط أوتوماتيك في الفصل الحالي اللى شافه في الواجهة عشان يبقى ضمن الفصول المسموح له
+  if (currentRole !== 'admin' && allowed.length) data.classSection = targetClass;
+  await addDoc(collection(db,'students'), data); bumpStudentsRev();
+  document.getElementById('new-name').value = '';
+  document.getElementById('new-dob').value  = '';
+  document.getElementById('new-address').value = '';
+  document.getElementById('new-gender').value = '';
+  newGenderManuallySet = false;
+  document.getElementById('phones-wrap').innerHTML = `<div class="phone-row">
+    <input type="tel" class="field-input phone-input" placeholder="رقم التليفون" dir="ltr">
+    <button class="add-phone-btn" onclick="addPhoneField()">+</button>
+  </div>`;
+  showToast('تمت الإضافة ✓', 'success');
+  await loadStudents();
+  logActivity('إضافة مخدوم', name);
+  toggleAddStudentForm();
+};
+
+const canDeleteStudent = () => currentRole === 'admin' || isPrimaryAdmin(currentEmail);
+window.deleteStudent = async (id, name) => {
+  if (!canDeleteStudent()) { showToast('حذف المخدومين للأدمن بس', 'error'); return; }
+  if (!confirm(`هتحذف "${name}"؟`)) return;
+  try { await deleteDoc(doc(db,'students',id)); } catch(e) { console.error(e); showToast('مقدرتش أحذف — مفيش صلاحية', 'error'); return; }
+  bumpStudentsRev(true);
+  allStudents = allStudents.filter(s => s.id !== id);
+  delete todayAttendance[id];
+  updateStats(); renderTodayList(); renderStudentsList();
+  showToast('تم الحذف', 'success');
+  logActivity('حذف مخدوم', name);
+};
+
+// تنظيف الأسماء المخزّنة من حروف مخفية/همزات مختلفة (بتيجي غالبًا من استيراد إكسل)
+window.cleanAllNames = async () => {
+  await ensureAllClassesForAdmin();
+  const toFix = allStudents
+    .map(s => ({ id: s.id, oldName: s.name, newName: canonicalizeName(s.name) }))
+    .filter(x => x.oldName !== x.newName);
+  if (!toFix.length) { showToast('كل الأسامي سليمة ✓', 'success'); return; }
+  if (!confirm(`فيه ${toFix.length} اسم هيتم توحيد حروفه (أ/إ/آ ← ا، ومسافات/حروف مخفية). تصحّحهم دلوقتي؟`)) return;
+  for (const x of toFix) {
+    await updateDoc(doc(db,'students', x.id), { name: x.newName, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    const idx = allStudents.findIndex(s => s.id === x.id);
+    if (idx !== -1) allStudents[idx].name = x.newName;
+  }
+  renderStudentsList(); renderTodayList();
+  showToast(`تم تصحيح ${toFix.length} اسم ✓`, 'success');
+};
+
+// بيدور على كل مخدوم "النوع" بتاعه لسه فاضي، ويخمّنه من الاسم زي التخمين اللي بيحصل وقت الإضافة،
+// ويحفظ التخمينات اللي عرف يحددها دفعة واحدة (batch) — واللي مش عارف يحددها بيسيبها فاضية عشان تحددها بإيدك
+window.guessAllGenders = async () => {
+  await ensureAllClassesForAdmin();
+  const candidates = allStudents
+    .filter(s => !s.gender)
+    .map(s => ({ id: s.id, name: s.name, guess: guessGenderFromName(s.name) }))
+    .filter(x => x.guess);
+  const unknownCount = allStudents.filter(s => !s.gender).length - candidates.length;
+  if (!candidates.length) {
+    showToast(unknownCount ? `مفيش أسامي قدر يخمّنها (${unknownCount} لسه محتاجين تحديد يدوي)` : 'كل المخدومين محدد نوعهم بالفعل ✓', 'info');
+    return;
+  }
+  const male   = candidates.filter(x => x.guess === 'male').length;
+  const female = candidates.filter(x => x.guess === 'female').length;
+  const extra  = unknownCount ? `\nوهيفضل ${unknownCount} اسم محتاج تحدده يدوي لأن التخمين مش عارف يحسمه.` : '';
+  if (!confirm(`هيتحدد نوع ${candidates.length} مخدوم تلقائيًا (${male} ولد، ${female} بنت) بناءً على الاسم. تقدر تراجع/تغيّر أي حد بعد كده من "تعديل".${extra}\n\nتكمل؟`)) return;
+
+  try {
+    // Firestore بتسمح بحد أقصى 500 عملية في الـ batch الواحد
+    for (let i = 0; i < candidates.length; i += 450) {
+      const chunk = candidates.slice(i, i + 450);
+      const batch = writeBatch(db);
+      chunk.forEach(x => batch.update(doc(db,'students', x.id), { gender: x.guess, updatedAt: serverTimestamp() }));
+      await batch.commit(); bumpStudentsRev();
+    }
+    candidates.forEach(x => {
+      const idx = allStudents.findIndex(s => s.id === x.id);
+      if (idx !== -1) allStudents[idx].gender = x.guess;
+    });
+    renderStudentsList();
+    showToast(`تم تحديد نوع ${candidates.length} مخدوم ✓`, 'success');
+    logActivity('تحديد نوع تلقائي لمخدومين قدام', `${candidates.length} مخدوم`);
+  } catch(e) {
+    console.error(e);
+    showToast('حصل خطأ أثناء الحفظ', 'error');
+  }
+};
+
+// مفتاح العيلة = الاسم كامل عدا أول كلمة (يعني اسم الأب + الجد + ...) — بيستخدم لتحديد مين إخوة مين
+function familyKey(name) {
+  const words = normalizeArabic(name).split(' ').filter(Boolean);
+  if (words.length < 2) return null; // اسم كلمة واحدة مش كفاية نحكم عليه
+  return words.slice(1).join(' ');
+}
+
+// بيرجع خريطة: مفتاح العيلة -> عدد المخدومين اللي شايلينه (من بين كل المخدومين مش بس المفلترين)
+function computeSiblingCounts(list) {
+  const counts = {};
+  list.forEach(s => {
+    const key = familyKey(s.name);
+    if (!key) return;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  return counts;
+}
+
+window.setSiblingsFilter = (val, btn) => {
+  siblingsFilter = val;
+  document.querySelectorAll('#siblings-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderStudentsList();
+};
+
+window.setClassFilter = (val) => {
+  classFilter = val;
+  renderClassChips();
+  renderStudentsList();
+};
+
+let stuListCount = null; // عدد المخدومين بعد كل الفلاتر والبحث (بيتحدّث من renderStudentsList)
+function updateStuCount() {
+  const el = document.getElementById('stu-count');
+  if (!el) return;
+  el.textContent = stuListCount !== null ? stuListCount : (currentClassTab ? allStudents.filter(s => s.classSection === currentClassTab).length : allStudents.length);
+}
+function renderStudentsList() {
+  const cont = document.getElementById('students-list');
+  stuListCount = null;
+  updateStuCount();
+  if (!allStudents.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div>لا يوجد مخدومين بعد</div>`;
+    return;
+  }
+  const qRaw = (document.getElementById('students-search-input')?.value || '').trim();
+  const q = normalizeArabic(qRaw);
+  let list = q ? searchStudents(allStudents, q) : allStudents;
+
+  // فلتر الإخوات: بيتحسب على أساس كل المخدومين (مش بس اللي طلعوا من البحث) عشان يبقى دقيق
+  const siblingCounts = computeSiblingCounts(allStudents);
+  if (siblingsFilter === 'siblings') {
+    list = list.filter(s => { const k = familyKey(s.name); return k && siblingCounts[k] > 1; });
+  } else if (siblingsFilter === 'nonSiblings') {
+    list = list.filter(s => { const k = familyKey(s.name); return !k || siblingCounts[k] <= 1; });
+  }
+
+  const cf = effectiveClassFilter();
+  if (cf === 'none') list = list.filter(s => !s.classSection);
+  else if (cf && cf !== 'all') list = list.filter(s => s.classSection === cf);
+
+  // ترتيب اللستة عشان كل الإخوات (نفس الاسم بالظبط من اسم الأب لحد آخر اسم) يظهروا ورا بعض مجموعين — دايمًا، حتى وقت البحث
+  list = [...list].sort((a, b) => {
+    const ka = familyKey(a.name) || `__${a.id}`;
+    const kb = familyKey(b.name) || `__${b.id}`;
+    const c = ka.localeCompare(kb, 'ar');
+    return c !== 0 ? c : a.name.localeCompare(b.name, 'ar');
+  });
+
+  stuListCount = list.length;
+  updateStuCount();
+  if (!list.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>مفيش نتايج</div>`;
+    return;
+  }
+  cont.innerHTML = list.map(s => {
+    const dob = s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) : '';
+    const k = familyKey(s.name);
+    const isSibling = k && siblingCounts[k] > 1;
+    const siblingBadge = isSibling ? `<div class="s-sub">👨‍👩‍👧‍👦 ${siblingCounts[k]} إخوات مسجلين</div>` : '';
+    const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
+    const classBadge = classBadgeHTML(s.classSection);
+    return `<div class="student-item">
+      <div class="s-info">
+        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}</div>
+        ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
+        <div class="s-sub" style="margin-top:3px">${classBadge}</div>
+        ${siblingBadge}
+      </div>
+      <button class="action-btn" onclick="openProfile('${s.id}')">👤</button>
+      <button class="action-btn" onclick="openEditModal('${s.id}')">✏️</button>
+      ${canDeleteStudent() ? `<button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>` : ''}
+    </div>`;
+  }).join('');
+}
+window.renderStudentsList = renderStudentsList; // ضروري عشان oninput في الـ HTML يقدر يلاقيها (لأننا جوه type=module)
+
+// ===== WHATSAPP BULK MESSAGE TAB =====
+let waSiblingsFilter = 'all'; // 'all' | 'siblings' | 'nonSiblings'
+let waGenderFilter   = 'all'; // 'all' | 'male' | 'female'
+let waGroupFilter    = 'all'; // 'all' | 'notAdded' | 'added' — حالة الانضمام لجروب الواتساب
+let waBdayMonth      = 0;
+let waAbsenceFilter  = 'all';
+let waAttendanceFilter = 'all';
+let waChecked        = new Set();
+let waQueue          = [];
+let waQueueIndex      = 0;
+let waTemplates       = [];
+let waTemplatesLoaded = false;
+
+// تحويل رقم مصري لصيغة دولية لواتساب (01xxxxxxxxx -> 201xxxxxxxxx)
+function normalizeEgyptPhone(p) {
+  if (!p) return '';
+  let d = p.replace(/\D/g, '');
+  if (d.startsWith('0')) d = '20' + d.slice(1);
+  else if (!d.startsWith('20')) d = '20' + d;
+  return d;
+}
+
+// فتح رابط خارجي بدون تأخير "تبويب فارغ بيحمل" اللي بيحصل مع window.open
+function openExternalLink(url) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// الرقم اللي هيتبعت عليه على واتساب: الرقم المحدد يدويًا أولًا (waPhoneIndex)، وإلا أول رقم في الملف
+function getWaPhone(s) {
+  if (s.phones?.length) {
+    if (s.waPhoneIndex != null && s.phones[s.waPhoneIndex]) return s.phones[s.waPhoneIndex];
+    return s.phones[0] || '';
+  }
+  return '';
+}
+
+// تحديد رقم معين كرقم الواتساب الرسمي لهذا المخدوم
+window.markWaPhone = async (id, idx) => {
+  try {
+    await updateDoc(doc(db,'students',id), { waPhoneIndex: idx, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    const s = allStudents.find(x => x.id === id);
+    if (s) s.waPhoneIndex = idx;
+    showToast('تم تحديد رقم الواتساب ✓', 'success');
+    openProfile(id);
+  } catch(e) {
+    showToast('حصل خطأ أثناء الحفظ', 'error');
+  }
+};
+
+window.insertWaNamePlaceholder = () => {
+  const ta = document.getElementById('wa-message');
+  const start = ta.selectionStart ?? ta.value.length;
+  const end   = ta.selectionEnd   ?? ta.value.length;
+  const token = '{اسم_المخدوم}';
+  ta.value = ta.value.slice(0, start) + token + ta.value.slice(end);
+  ta.focus();
+  ta.selectionStart = ta.selectionEnd = start + token.length;
+};
+
+// ===== SAVED MESSAGE TEMPLATES (memory) =====
+async function loadWaTemplates() {
+  if (waTemplatesLoaded) return;
+  try {
+    const snap = await countedGetDocs(query(collection(db,'messageTemplates'), orderBy('name')), 'messageTemplates');
+    waTemplates = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    waTemplatesLoaded = true;
+  } catch(e) {
+    console.error(e);
+  }
+  renderWaTemplatesList();
+}
+
+function renderWaTemplatesList() {
+  const cont = document.getElementById('wa-templates-list');
+  if (!cont) return;
+  if (!waTemplates.length) {
+    cont.innerHTML = `<div class="tpl-empty">مفيش رسائل محفوظة لسه</div>`;
+    return;
+  }
+  cont.innerHTML = `<div class="tpl-row">` + waTemplates.map(t => `
+    <div class="tpl-chip" onclick="useWaTemplate('${t.id}')">
+      <span class="tpl-chip-name">${t.name}</span>
+      <button type="button" class="tpl-chip-del" onclick="event.stopPropagation();deleteWaTemplate('${t.id}')">✕</button>
+    </div>`).join('') + `</div>`;
+}
+
+window.saveCurrentWaMessage = async () => {
+  const text = document.getElementById('wa-message').value.trim();
+  if (!text) { showToast('اكتب نص الرسالة الأول', 'error'); return; }
+  const name = prompt('اكتب اسم للرسالة دي (علشان تلاقيها بسرعة):');
+  if (!name || !name.trim()) return;
+  try {
+    const ref = await addDoc(collection(db,'messageTemplates'), { name: name.trim(), text, timestamp: serverTimestamp() });
+    waTemplates.push({ id: ref.id, name: name.trim(), text });
+    waTemplates.sort((a,b) => a.name.localeCompare(b.name,'ar'));
+    renderWaTemplatesList();
+    showToast('اتحفظت الرسالة ✓', 'success');
+  } catch(e) {
+    showToast('حصل خطأ أثناء الحفظ', 'error');
+    console.error(e);
+  }
+};
+
+window.useWaTemplate = (id) => {
+  const t = waTemplates.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('wa-message').value = t.text;
+  showToast(`اتكتبت رسالة "${t.name}" ✓`, 'success');
+};
+
+window.deleteWaTemplate = async (id) => {
+  const t = waTemplates.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm(`تحذف الرسالة المحفوظة "${t.name}"؟`)) return;
+  try {
+    await deleteDoc(doc(db,'messageTemplates',id));
+    waTemplates = waTemplates.filter(x => x.id !== id);
+    renderWaTemplatesList();
+    showToast('اتحذفت ✓', 'success');
+  } catch(e) {
+    showToast('حصل خطأ أثناء الحذف', 'error');
+    console.error(e);
+  }
+};
+
+function waFirstName(s) {
+  return (s.name || '').trim().split(/\s+/)[0] || s.name;
+}
+
+function buildWaMessageFor(s) {
+  const tpl = document.getElementById('wa-message').value || '';
+  return tpl.split('{اسم_المخدوم}').join(waFirstName(s));
+}
+
+function waHasPhone(s) { return !!getWaPhone(s); }
+
+function waRecipientsSource() {
+  let list = [...classScope(ownClassStudents())]; // الرسائل تفضل لمخدومين فصل الخادم بس
+  const dates = attSessionDates();
+  if (waBdayMonth > 0) {
+    list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === waBdayMonth);
+  }
+  if (waAbsenceFilter !== 'all' && dates.length > 0) {
+    const n = parseInt(waAbsenceFilter);
+    const lastDates = dates.slice(-n);
+    list = list.filter(s => lastDates.every(d => !allAttendance[d]?.[s.id]));
+  }
+  if (waAttendanceFilter !== 'all' && dates.length > 0) {
+    const n = parseInt(waAttendanceFilter);
+    const lastDates = dates.slice(-n);
+    list = list.filter(s => lastDates.length === n && lastDates.every(d => !!allAttendance[d]?.[s.id]));
+  }
+  const siblingCounts = computeSiblingCounts(classScope(ownClassStudents()));
+  if (waSiblingsFilter === 'siblings') {
+    list = list.filter(s => { const k = familyKey(s.name); return k && siblingCounts[k] > 1; });
+  } else if (waSiblingsFilter === 'nonSiblings') {
+    list = list.filter(s => { const k = familyKey(s.name); return !k || siblingCounts[k] <= 1; });
+  }
+  if (waGenderFilter === 'male') {
+    list = list.filter(s => s.gender === 'male');
+  } else if (waGenderFilter === 'female') {
+    list = list.filter(s => s.gender === 'female');
+  }
+  if (waGroupFilter === 'notAdded') {
+    list = list.filter(s => !s.waGroupAdded);
+  } else if (waGroupFilter === 'added') {
+    list = list.filter(s => !!s.waGroupAdded);
+  }
+  return list;
+}
+
+window.setWaBdayMonth = (m) => {
+  waBdayMonth = parseInt(m);
+  document.getElementById('wa-bday-value').textContent = document.getElementById('wa-month-select').selectedOptions[0].textContent;
+  waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+  renderWaRecipientsList();
+};
+
+window.setWaAbsenceFilter = (v, btn) => {
+  waAbsenceFilter = v;
+  document.querySelectorAll('#wa-absence-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('wa-absence-value').textContent = btn.textContent.trim();
+  btn.closest('details')?.removeAttribute('open');
+  waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+  renderWaRecipientsList();
+};
+
+window.setWaAttendanceFilter = (v, btn) => {
+  waAttendanceFilter = v;
+  document.querySelectorAll('#wa-attendance-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('wa-attendance-value').textContent = btn.textContent.trim();
+  btn.closest('details')?.removeAttribute('open');
+  waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+  renderWaRecipientsList();
+};
+
+window.setWaSiblingsFilter = (val, btn) => {
+  waSiblingsFilter = val;
+  document.querySelectorAll('#wa-siblings-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+  renderWaRecipientsList();
+};
+
+window.setWaGenderFilter = (val, btn) => {
+  waGenderFilter = val;
+  document.querySelectorAll('#wa-gender-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+  renderWaRecipientsList();
+};
+
+window.setWaGroupFilter = (val, btn) => {
+  waGroupFilter = val;
+  document.querySelectorAll('#wa-group-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+  renderWaRecipientsList();
+};
+
+window.renderWaRecipientsList = renderWaRecipientsList;
+function renderWaRecipientsList() {
+  const cont = document.getElementById('wa-recipients-list');
+  const waNeedAtt = waAbsenceFilter !== 'all' || waAttendanceFilter !== 'all';
+  if (waNeedAtt && recentAttWeeks < filterWeeks()) {
+    cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+    ensureRecentAttendance(filterWeeks()).then(() => { waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id)); renderWaRecipientsList(); })
+      .catch(e => { console.error(e); cont.innerHTML = '<div class="empty-state">تعذّر تحميل بيانات الحضور<br><button class="action-btn" style="margin-top:10px" onclick="renderWaRecipientsList()">🔄 حاول تاني</button></div>'; });
+    return;
+  }
+  if (waNeedAtt && attIsStale() && !attRefreshBusy) {
+    attRefreshBusy = true;
+    const prevIds = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+    ensureRecentAttendance(filterWeeks()).then(() => {
+      attRefreshBusy = false;
+      const nextIds = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+      nextIds.forEach(id => { if (!prevIds.has(id)) waChecked.add(id); });
+      waChecked = new Set([...waChecked].filter(id => nextIds.has(id)));
+      renderWaRecipientsList();
+    }).catch(() => { attRefreshBusy = false; });
+  }
+  const list = waRecipientsSource();
+  if (!list.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div>لا يوجد مخدومين</div>`;
+  } else {
+    cont.innerHTML = list.map(s => {
+      const phone   = getWaPhone(s);
+      const checked = waChecked.has(s.id);
+      const added   = !!s.waGroupAdded;
+      return `<div class="wa-recipient-row ${!phone?'no-phone':''}">
+        <input type="checkbox" ${checked?'checked':''} ${!phone?'disabled':''} onchange="toggleWaRecipient('${s.id}', this.checked)">
+        <div class="s-info">
+          <div class="s-name">${s.name}</div>
+          <div class="s-sub">${phone ? phone : 'لا يوجد رقم تليفون'}</div>
+        </div>
+        <button type="button" title="${added ? 'اتضاف للجروب — دوس تشيل العلامة' : 'اعلّمه كمتضاف للجروب'}"
+          onclick="toggleWaGroupAdded('${s.id}', ${!added})"
+          style="flex-shrink:0;font-size:11px;font-weight:700;font-family:'Cairo',sans-serif;border-radius:20px;padding:5px 10px;cursor:pointer;white-space:nowrap;${added
+            ? 'background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:var(--success)'
+            : 'background:var(--surface2);border:1px solid var(--border);color:var(--text-dim)'}">${added ? '✅ في الجروب' : '➕ للجروب'}</button>
+      </div>`;
+    }).join('');
+  }
+  updateWaRecipientsCount();
+}
+
+function updateWaRecipientsCount() {
+  const withPhone = waRecipientsSource().filter(waHasPhone);
+  document.getElementById('wa-recipients-count').textContent =
+    `${waChecked.size} محدد من ${withPhone.length} برقم تليفون`;
+}
+
+window.toggleWaRecipient = (id, checked) => {
+  if (checked) waChecked.add(id); else waChecked.delete(id);
+  updateWaRecipientsCount();
+};
+
+window.toggleWaGroupAdded = async (id, value) => {
+  try {
+    await updateDoc(doc(db,'students',id), { waGroupAdded: value, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    const idx = allStudents.findIndex(s => s.id === id);
+    if (idx !== -1) allStudents[idx].waGroupAdded = value;
+    renderWaRecipientsList();
+  } catch(e) {
+    showToast('حصل خطأ أثناء الحفظ', 'error');
+  }
+};
+
+// نعلّم كل المخدومين اللي بيتصدّروا دلوقتي كـ"متضافين للجروب" عشان المرة الجاية تصدّر بس اللي لسه جداد
+async function markWaGroupAdded(list) {
+  for (const s of list) {
+    if (s.waGroupAdded) continue;
+    await updateDoc(doc(db,'students',s.id), { waGroupAdded: true, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    const idx = allStudents.findIndex(x => x.id === s.id);
+    if (idx !== -1) allStudents[idx].waGroupAdded = true;
+  }
+}
+
+window.waSelectAll = (val) => {
+  const list = waRecipientsSource().filter(waHasPhone);
+  if (val) list.forEach(s => waChecked.add(s.id));
+  else list.forEach(s => waChecked.delete(s.id));
+  renderWaRecipientsList();
+};
+
+window.startWaQueue = () => {
+  const msgTpl = document.getElementById('wa-message').value.trim();
+  if (!msgTpl) { showToast('اكتب نص الرسالة الأول', 'error'); return; }
+  const list = waRecipientsSource().filter(s => waChecked.has(s.id) && waHasPhone(s));
+  if (!list.length) { showToast('اختر مخدوم واحد على الأقل عنده رقم تليفون', 'error'); return; }
+  waQueue = list;
+  waQueueIndex = 0;
+  const box = document.getElementById('wa-queue-box');
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px" id="wa-queue-progress"></div>
+    <div style="font-size:18px;font-weight:900;margin-bottom:4px" id="wa-queue-name"></div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px" id="wa-queue-phone"></div>
+    <div style="display:flex;gap:10px">
+      <button onclick="sendCurrentWaQueueItem()" style="flex:2;background:linear-gradient(135deg,#25D366,#128C7E);border:none;border-radius:10px;color:#fff;font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;padding:13px;cursor:pointer">📱 فتح واتساب</button>
+      <button onclick="skipCurrentWaQueueItem()" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;padding:13px;cursor:pointer">تخطي</button>
+    </div>`;
+  renderWaQueueItem();
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+function renderWaQueueItem() {
+  if (waQueueIndex >= waQueue.length) {
+    document.getElementById('wa-queue-box').innerHTML =
+      `<div style="font-size:16px;font-weight:800;color:var(--success)">✅ تم الانتهاء من كل الرسائل (${waQueue.length})</div>`;
+    return;
+  }
+  const s = waQueue[waQueueIndex];
+  const phone = getWaPhone(s);
+  document.getElementById('wa-queue-progress').textContent = `${waQueueIndex+1} من ${waQueue.length}`;
+  document.getElementById('wa-queue-name').textContent = s.name;
+  document.getElementById('wa-queue-phone').textContent = phone;
+}
+
+window.sendCurrentWaQueueItem = () => {
+  const s = waQueue[waQueueIndex];
+  if (!s) return;
+  const phone = getWaPhone(s);
+  const num   = normalizeEgyptPhone(phone);
+  const msg   = encodeURIComponent(buildWaMessageFor(s));
+  openExternalLink(`https://api.whatsapp.com/send?phone=${num}&text=${msg}&type=phone_number&app_absent=0`);
+  waQueueIndex++;
+  renderWaQueueItem();
+};
+
+window.skipCurrentWaQueueItem = () => {
+  waQueueIndex++;
+  renderWaQueueItem();
+};
+
+// ===== VCF EXPORT (لعمل جروب واتساب بالأسامي) =====
+function vcfEscape(str) {
+  return (str || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+}
+
+function buildVcfContent(list) {
+  return list.map(s => {
+    const phone = getWaPhone(s);
+    const num = normalizeEgyptPhone(phone);
+    const cls = s.classSection ? ` - ${classLabel(s.classSection)}` : '';
+    const name = vcfEscape(s.name + cls);
+    return `BEGIN:VCARD\r\nVERSION:3.0\r\nFN:${name}\r\nTEL;TYPE=CELL:+${num}\r\nEND:VCARD`;
+  }).join('\r\n');
+}
+
+window.exportWaContactsVcf = async () => {
+  const list = waRecipientsSource().filter(s => waChecked.has(s.id) && waHasPhone(s));
+  if (!list.length) { showToast('اختر مخدوم واحد على الأقل عنده رقم تليفون', 'error'); return; }
+  const vcf = buildVcfContent(list);
+  const blob = new Blob([vcf], { type: 'text/vcard;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `مخدومين_${list.length}.vcf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  await markWaGroupAdded(list);
+  renderWaRecipientsList();
+  showToast(`اتصدّر ملف فيه ${list.length} جهة اتصال، واتعلّموا كـ"متضافين للجروب" ✓`, 'success');
+};
+
+window.renderWaTab = () => {
+  waChecked = new Set(waRecipientsSource().filter(waHasPhone).map(s => s.id));
+  renderWaRecipientsList();
+  loadWaTemplates();
+  const box = document.getElementById('wa-queue-box');
+  if (box) box.style.display = 'none';
+};
+
+// ===== ATTENDANCE =====
+let recentAttWeeks = 0;
+// تاريخ بيتحسب "جلسة" لو فيه حضور فعلي مسجّل فيه بس (مفتاح النهارده الفاضي كان بيخلي الكل غايب/الفلتر يتلخبط)
+function attSessionDates() { return Object.keys(allAttendance).filter(d => allAttendance[d] && Object.keys(allAttendance[d]).length).sort(); }
+// آخر مرة حضور النهارده اتزامن فيها مع السيرفر — لو عدّى أكتر من دقيقتين ومفيش بث لحظي شغال بنجدّده (قراءة حضور النهارده بس)
+let todayAttSyncAt = 0, attRefreshBusy = false;
+const ATT_TTL = 2 * 60 * 1000;
+const attIsStale = () => !todayAttendanceUnsub && (Date.now() - todayAttSyncAt) > ATT_TTL;
+async function refreshTodayAttendanceIfStale() {
+  if (!attIsStale()) return;
+  const today = todayKey();
+  const snap = await countedGetDocs(todayQuery('attendance', today), 'attendance (اليوم - تجديد للفلاتر)');
+  const prev = allAttendance[today] || {}, fresh = {};
+  snap.docs.forEach(d => { fresh[d.data().studentId] = d.id; });
+  for (const id in prev) if (outsideAllowed(id) && !fresh[id]) fresh[id] = prev[id];
+  if (Object.keys(fresh).length) allAttendance[today] = fresh; else delete allAttendance[today];
+  todayAttSyncAt = Date.now();
+}
+const filterWeeks = () => Math.max(parseInt(absenceFilter)||0, parseInt(attendanceFilter)||0, parseInt(waAbsenceFilter)||0, parseInt(waAttendanceFilter)||0) + 2;
+const ATT_CACHE_KEY = 'att_recent_cache_v1';
+// الاستدعاءات بتتنفذ ورا بعض (مش بالتوازي) عشان تبويب الافتقاد والرسائل ميتخانقوش على allAttendance
+let attLoadP = Promise.resolve();
+function ensureRecentAttendance(weeks) {
+  const run = attLoadP.catch(() => {}).then(() => _ensureRecentAttendance(weeks));
+  attLoadP = run;
+  return run;
+}
+let recentAttScope = null;
+async function _ensureRecentAttendance(weeks) {
+  weeks = Math.max(weeks || 4, 4);
+  { const k = readScopeClasses().join(','); if (recentAttScope !== null && recentAttScope !== k) recentAttWeeks = 0; recentAttScope = k; }
+  if (recentAttWeeks >= weeks) { await refreshTodayAttendanceIfStale(); return; }
+  const d = new Date(); d.setDate(d.getDate() - weeks*7);
+  const fromKey = toLocalDateKey(d), nowKey = todayKey();
+  // الأسابيع اللي فاتت مبتتغيّرش، فبنخزّنها على الجهاز ونقرا من آخر جلسة اتزامنت بس (جلسة النهارده تقريبًا)
+  // بدل ما نقرا كل الأسابيع من فايرستور في كل فتحة. وبنعمل تحميل كامل تاني كل 7 أيام للأمان.
+  const scopeKey0 = readScopeClasses().join(',');
+  let c = null; try { c = JSON.parse((await idbGet(ATT_CACHE_KEY + '@' + scopeKey0)) || 'null'); } catch(e) {}
+  const scope = readScopeClasses(), scopeKey = scope.join(',');
+  const fresh = !!(c && c.data && c.from && c.from <= fromKey && c.through && (c.scope || '') === scopeKey && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
+  const data = fresh ? c.data : {};
+  const qFrom = fresh ? c.through : fromKey;
+  let snap, usedKey = scopeKey;
+  try {
+    snap = await countedGetDocs(scope.length ? query(collection(db,'attendance'), where('date','>=', qFrom), where('classSection','in', scope)) : query(collection(db,'attendance'), where('date','>=', qFrom)), 'attendance (نطاق زمني)');
+  } catch(e) {
+    // الـ index المركب (classSection + date) لسه مش متعمل: بنرجع للقراءة القديمة ولينك إنشاء الـ index بيظهر في الـ console
+    if (!scope.length) throw e;
+    console.warn('أنشئ index مركب لـ attendance (classSection + date):', e && e.message);
+    snap = await countedGetDocs(query(collection(db,'attendance'), where('date','>=', qFrom)), 'attendance (نطاق زمني - بدون index)'); usedKey = '';
+  }
+  for (const k of Object.keys(data)) if (k >= qFrom) delete data[k]; // الأيام اللي هنقراها تاني بتتستبدل بالكامل (لو حد اتشال حضوره)
+  snap.docs.forEach(x => { const v = x.data(); if (!data[v.date]) data[v.date] = {}; data[v.date][v.studentId] = x.id; });
+  for (const k in data) {
+    if (k < fromKey) continue; // بنضيف للذاكرة الفترة المطلوبة بس زي الأول بالظبط (عدّاد الحضور في الفلتر بيعتمد عليها)
+    if (k === nowKey && todayAttendanceUnsub) continue; // البث اللحظي أحدث من القراءة دي
+    allAttendance[k] = { ...data[k] }; // استبدال كامل (مش دمج) عشان أي حضور اتشال ميفضلش ظاهر
+  }
+  todayAttSyncAt = Date.now();
+  idbSet(ATT_CACHE_KEY + '@' + scopeKey0, JSON.stringify({ from: fresh ? c.from : fromKey, through: nowKey, fullTs: fresh ? c.fullTs : Date.now(), scope: usedKey, data }));
+  recentAttWeeks = weeks;
+}
+const studentHist = {};
+async function loadStudentHist(id) {
+  const [a, v] = await Promise.all([
+    countedGetDocs(query(collection(db,'attendance'), where('studentId','==',id)), 'attendance (بروفايل مخدوم)'),
+    countedGetDocs(query(collection(db,'verses'), where('studentId','==',id)), 'verses (بروفايل مخدوم)')]);
+  const H = { att:{}, ver:{}, ts: Date.now() };
+  a.docs.forEach(x => { H.att[x.data().date] = x.id; });
+  v.docs.forEach(x => { const y = x.data(); H.ver[y.date] = { id:x.id, verse:y.verse||'' }; });
+  studentHist[id] = H;
+}
+async function loadAllAttendance() {
+  const snap = await countedGetDocs(collection(db,'attendance'), 'attendance (الكل - غير مستخدمة)');
+  allAttendance = {}; todayAttendance = {}; todayAttendanceTime = {};
+  const today = todayKey();
+  snap.docs.forEach(d => {
+    const data = d.data();
+    if (!allAttendance[data.date]) allAttendance[data.date] = {};
+    allAttendance[data.date][data.studentId] = d.id;
+    if (data.date === today) { todayAttendance[data.studentId] = d.id; todayAttendanceTime[data.studentId] = tsToMillis(data.timestamp); }
+  });
+  updateStats();
+}
+
+// حضور النهارده بس، بث لحظي: لما خادم يسجل أو يشيل حضور، كل الخدام التانيين
+// الفاتحين الموقع في نفس اللحظة يشوفوا التحديث فوراً من غير reload
+const clsOf = id => (allStudents.find(x => x.id === id)?.classSection) || '';
+// الخادم المقيّد بفصول بيسمع حضور وآيات فصوله بس (مش كل الفصول) عشان الـ reads متزيدش مع زيادة الفصول
+function todayQuery(col, today) {
+  const al = readScopeClasses();
+  const f = [where('date','==', today)];
+  if (al.length) f.push(where('classSection','in', al));
+  return query(collection(db,col), ...f);
+}
+// تسجيلات الخادم لمخدومين من فصول تانية مش داخلة في الاستعلام، فبنحتفظ بيها محليًا عشان متختفيش من الشاشة
+const outsideAllowed = id => { const al = readScopeClasses(); return al.length > 0 && !al.includes(clsOf(id)); };
+function restartTodayListeners() {
+  if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
+  if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
+  startTodayListeners();
+}
+// نقل صامت لمرة واحدة: آيات الأربع 30/09 كانت متحفظة على تاريخ الأربع، ودلوقتي بتتحسب على حضور الأسبوع اللي فات (خميس 24/09)
+async function migrateLegacyVerses() {
+  if (!localStorage.getItem('vmig_0930')) try {
+    const snap = await countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-30')), 'verses (نقل تاريخ قديم - مرة واحدة)');
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      const b = writeBatch(db);
+      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-24', classSection: d.data().classSection ?? clsOf(d.data().studentId) }));
+      await b.commit();
+    }
+    localStorage.setItem('vmig_0930', '1');
+  } catch(e) { console.error(e); }
+  // آيات الأربع 23/09 → خميس 17/09 (حضور أسبوعها). اللي ليه آية متسجلة أصلًا على 17/09 بنسيب آيته زي ما هي عشان ميتكررش
+  if (localStorage.getItem('vmig_0923b')) return;
+  try {
+    const [s23, s17] = await Promise.all([
+      countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-23')), 'verses (نقل تاريخ قديم 23/09 - مرة واحدة)'),
+      countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-17')), 'verses (نقل تاريخ قديم 17/09 - مرة واحدة)')
+    ]);
+    const had = new Set(s17.docs.map(d => d.data().studentId));
+    const docs = s23.docs.filter(d => !had.has(d.data().studentId));
+    for (let i = 0; i < docs.length; i += 400) {
+      const b = writeBatch(db);
+      docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-17', classSection: d.data().classSection ?? clsOf(d.data().studentId) }));
+      await b.commit();
+    }
+    localStorage.setItem('vmig_0923b', '1');
+  } catch(e) { console.error(e); }
+}
+function startTodayListeners() {
+  if (!todayAttendanceUnsub) listenTodayAttendance();
+  if (!todayVersesUnsub) migrateLegacyVerses().then(() => { if (!todayVersesUnsub) listenTodayVerses(); });
+}
+function stopTodayListeners() {
+  if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; todayAttSyncAt = Date.now(); }
+  if (todayVersesUnsub)     { todayVersesUnsub();     todayVersesUnsub     = null; }
+}
+let attListenKey = null;
+function listenTodayAttendance() {
+  if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
+  const today = todayKey();
+  attListenKey = today;
+  todayAttendanceUnsub = onSnapshot(
+    todayQuery('attendance', today),
+    snap => {
+      countSnapshotReads('attendance (اليوم - live)', snap);
+      const prevA = todayAttendance, prevAT = todayAttendanceTime;
+      todayAttendance = {}; todayAttendanceTime = {};
+      snap.docs.forEach(d => { todayAttendance[d.data().studentId] = d.id; todayAttendanceTime[d.data().studentId] = tsToMillis(d.data().timestamp); });
+      for (const id in prevA) if (outsideAllowed(id) && !todayAttendance[id]) { todayAttendance[id] = prevA[id]; todayAttendanceTime[id] = prevAT[id]; }
+      if (!allAttendance[today]) allAttendance[today] = {};
+      allAttendance[today] = { ...todayAttendance };
+      updateStats();
+      renderTodayList();
+      if (typeof onManualSearch === 'function') onManualSearch();
+    },
+    err => console.error('today attendance listener error:', err)
+  );
+}
+
+// حضور... يعني سماع الآية النهارده، بث لحظي بنفس فكرة الحضور بالظبط: أي خادم يسجل سماع لمخدوم،
+// كل الخدام التانيين الفاتحين نفس الفصل في نفس اللحظة يشوفوا التحديث فورًا من غير ما يعملوا reload
+let verseListenKey = null;
+function listenTodayVerses() {
+  if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
+  const today = verseKey();
+  verseListenKey = today;
+  todayVersesUnsub = onSnapshot(
+    todayQuery('verses', today),
+    snap => {
+      countSnapshotReads('verses (اليوم - live)', snap);
+      const prevV = todayVerses, prevVT = todayVerseTime;
+      todayVerses = {}; todayVerseTime = {};
+      snap.docs.forEach(d => {
+        const data = d.data();
+        todayVerses[data.studentId] = { id: d.id, verse: data.verse || '' };
+        todayVerseTime[data.studentId] = tsToMillis(data.timestamp);
+      });
+      for (const id in prevV) if (outsideAllowed(id) && !todayVerses[id]) { todayVerses[id] = prevV[id]; todayVerseTime[id] = prevVT[id]; }
+      if (!allVerses[today]) allVerses[today] = {};
+      allVerses[today] = { ...todayVerses };
+      renderTodayList();
+      if (typeof onManualSearch === 'function') onManualSearch();
+    },
+    err => console.error('today verses listener error:', err)
+  );
+}
+
+// ===== فلتر التسميع في الافتقاد: بنحمّل آيات آخر كام أسبوع (بنفس فكرة تحميل الحضور) =====
+let recentVerseWeeks = 0, recentVerseScope = null, recentVerseSyncAt = 0, verseRefreshBusy = false, verseLoadP = Promise.resolve();
+const verseFilterWeeks = () => (parseInt(verseFilter) || 0) + 2;
+const verseIsStale = () => !todayVersesUnsub && (Date.now() - recentVerseSyncAt) > ATT_TTL;
+// التاريخ بيتحسب "مرة" لو فيه سماع فعلي مسجّل فيه بس
+// جلسات التسميع الحقيقية بس: تاريخها لازم يكون يوم خميس (verseKey دايمًا خميس). أي تاريخ تاني (زي 23/09 من النقل القديم) بقايا مش جلسة
+const isThursdayKey = k => { const [y,m,d] = k.split('-').map(Number); return new Date(y, m-1, d).getDay() === 4; };
+// الأسبوع الجاري (verseKey) لسه ناقص لحد الجمعة بالليل، فمبنحسبوش جلسة في الفلتر عشان ميبقاش شرط "سمع كل المرات" مستحيل
+function verseSessionDates() { const cur = verseKey(); return Object.keys(allVerses).filter(d => d !== cur && isThursdayKey(d) && allVerses[d] && Object.keys(allVerses[d]).length).sort(); }
+function ensureRecentVerses(weeks) {
+  const run = verseLoadP.catch(() => {}).then(() => _ensureRecentVerses(weeks));
+  verseLoadP = run;
+  return run;
+}
+const VERSE_CACHE_KEY = 'verse_recent_cache_v2'; // v2: الكاش القديم كان ممكن يفضل ناقص آيات اتنقلت/اتصلّحت بعد ما اتخزن
+let verseForceFull = false, verseRetriedFull = false; // قراءة كاملة من فايرستور بدون كاش (بتتفعّل تلقائي لو الفلتر رجّع فاضي)
+// نفس فكرة الحضور: القراءة محصورة في فصل الخادم، والأسابيع اللي فاتت متخزنة على الجهاز، وبنقرا من آخر مزامنة بس
+async function _ensureRecentVerses(weeks) {
+  weeks = Math.max(weeks || 4, 4);
+  const scope = readScopeClasses(), scopeKey = scope.join(',');
+  if (recentVerseScope !== null && recentVerseScope !== scopeKey) recentVerseWeeks = 0;
+  recentVerseScope = scopeKey;
+  if (recentVerseWeeks >= weeks && !verseIsStale()) return;
+  const d = new Date(); d.setDate(d.getDate() - weeks * 7);
+  const fromKey = toLocalDateKey(d), nowKey = verseKey();
+  const liveToday = !!todayVersesUnsub; // البث اللحظي لأسبوع التسميع الحالي أحدث من أي قراءة
+  // تصليح لمرة واحدة على الجهاز: آيات قديمة اتسجلت من غير فصل فكانت مش بتظهر في استعلام الفصل
+  if (!localStorage.getItem('vbf_cls1') && allStudents.length) {
+    try {
+      const all = await countedGetDocs(query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (تصليح فصل الآيات - مرة واحدة)');
+      const miss = all.docs.filter(x => !x.data().classSection && clsOf(x.data().studentId));
+      for (let i = 0; i < miss.length; i += 400) {
+        const bt = writeBatch(db);
+        miss.slice(i, i + 400).forEach(x => bt.update(x.ref, { classSection: clsOf(x.data().studentId) }));
+        await bt.commit();
+      }
+      localStorage.setItem('vbf_cls1', '1');
+    } catch(e) { console.warn('verse classSection backfill failed', e); }
+  }
+  let c = null; try { c = JSON.parse((await idbGet(VERSE_CACHE_KEY + '@' + scopeKey)) || 'null'); } catch(e) {}
+  const forceFull = verseForceFull; verseForceFull = false;
+  const fresh = !forceFull && !!(c && c.data && c.from && c.from <= fromKey && c.through && (c.scope || '') === scopeKey && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
+  const data = fresh ? c.data : {};
+  const qFrom = fresh ? c.through : fromKey;
+  const cons = [where('date','>=', qFrom)];
+  if (liveToday) cons.push(where('date','<', nowKey)); // أسبوع التسميع الحالي جاي من البث اللحظي، مفيش داعي نقراه تاني
+  let snap = null, usedKey = scopeKey;
+  if (!(liveToday && qFrom >= nowKey)) {
+    try {
+      snap = await countedGetDocs(scope.length ? query(collection(db,'verses'), ...cons, where('classSection','in', scope)) : query(collection(db,'verses'), ...cons), 'verses (نطاق زمني - فلتر الافتقاد)');
+    } catch(e) {
+      if (!scope.length) throw e;
+      console.warn('أنشئ index مركب لـ verses (classSection + date):', e && e.message);
+      snap = await countedGetDocs(query(collection(db,'verses'), ...cons), 'verses (نطاق زمني - بدون index)'); usedKey = '';
+    }
+  }
+  if (snap) {
+    for (const k of Object.keys(data)) if (k >= qFrom) delete data[k];
+    snap.docs.forEach(x => {
+      const v = x.data();
+      if (usedKey === '' && scope.length && !scope.includes(v.classSection || clsOf(v.studentId))) return;
+      if (!data[v.date]) data[v.date] = {};
+      data[v.date][v.studentId] = { id: x.id, verse: v.verse || '' };
+    });
+  }
+  for (const k in data) {
+    if (k < fromKey) continue;
+    if (liveToday && k === nowKey) continue;
+    allVerses[k] = { ...data[k] };
+  }
+  for (const k of Object.keys(allVerses)) if (k >= fromKey && !(liveToday && k === nowKey) && !data[k]) delete allVerses[k];
+  recentVerseSyncAt = Date.now();
+  recentVerseWeeks = weeks;
+  idbSet(VERSE_CACHE_KEY + '@' + scopeKey, JSON.stringify({ from: fresh ? c.from : fromKey, through: nowKey, fullTs: fresh ? c.fullTs : Date.now(), scope: usedKey, data }));
+}
+
+// لو الموقع فاضل مفتوح عدّى سبت: بنصفّر قايمة التسميع ونسمع على أسبوع التسميع الجديد
+setInterval(() => {
+  if (todayAttendanceUnsub && attListenKey && todayKey() !== attListenKey) {
+    todayAttendance = {}; todayAttendanceTime = {};
+    listenTodayAttendance();
+    updateStats(); renderTodayList();
+  }
+  if (todayVersesUnsub && verseListenKey && verseKey() !== verseListenKey) {
+    todayVerses = {}; todayVerseTime = {};
+    listenTodayVerses();
+    renderTodayList();
+  }
+}, 60 * 1000);
+
+async function loadAllVerses() {
+  const snap = await countedGetDocs(collection(db,'verses'), 'verses (الكل - غير مستخدمة)');
+  allVerses = {}; todayVerses = {}; todayVerseTime = {};
+  const today = todayKey();
+  snap.docs.forEach(d => {
+    const data = d.data();
+    if (!allVerses[data.date]) allVerses[data.date] = {};
+    allVerses[data.date][data.studentId] = { id: d.id, verse: data.verse || '' };
+    if (data.date === today) { todayVerses[data.studentId] = { id: d.id, verse: data.verse || '' }; todayVerseTime[data.studentId] = tsToMillis(data.timestamp); }
+  });
+}
+
+async function markPresent(studentId) {
+  if (todayAttendance[studentId]) return false;
+  const ref = await addDoc(collection(db,'attendance'), { studentId, date:todayKey(), classSection: clsOf(studentId), timestamp:serverTimestamp() });
+  todayAttendance[studentId] = ref.id;
+  todayAttendanceTime[studentId] = Date.now();
+  if (!allAttendance[todayKey()]) allAttendance[todayKey()] = {};
+  allAttendance[todayKey()][studentId] = ref.id;
+  updateStats(); renderTodayList();
+  return true;
+}
+
+// ===== VERSE (independent from attendance) =====
+window.showVerseModal = async function(studentId) {
+  if (!verseOpen()) { showToast(VERSE_CLOSED_MSG, 'error'); return; }
+  const today = verseKey();
+  if (todayVerses[studentId]) return; // already marked
+  try {
+    const ref = await addDoc(collection(db,'verses'), { studentId, date: today, verse: '', classSection: clsOf(studentId), timestamp: serverTimestamp() });
+    todayVerses[studentId] = { id: ref.id, verse: '' };
+    todayVerseTime[studentId] = Date.now();
+    if (!allVerses[today]) allVerses[today] = {};
+    allVerses[today][studentId] = { id: ref.id, verse: '' };
+    renderTodayList();
+    onManualSearch();
+    showToast('✅ تم تسجيل السماع', 'success');
+    navigator.vibrate?.([60,30,60]);
+    const s = allStudents.find(x => x.id === studentId);
+    logActivity('تسجيل سماع آية', s?.name || '');
+  } catch(e) {
+    showToast('خطأ في الحفظ', 'error');
+  }
+};
+
+window.removeVerse = async (studentId) => {
+  const entry = todayVerses[studentId];
+  if (!entry) return;
+  if (!confirm('هتشيل السماع؟')) return;
+  await deleteDoc(doc(db,'verses',entry.id));
+  delete todayVerses[studentId];
+  delete todayVerseTime[studentId];
+  const today = verseKey();
+  if (allVerses[today]) delete allVerses[today][studentId];
+  renderTodayList();
+  onManualSearch();
+  showToast('تم حذف السماع', 'success');
+};
+
+
+window.removeAttendance = async (studentId) => {
+  const s = allStudents.find(x => x.id === studentId);
+  if (!confirm(`هتشيل حضور "${s?.name}" من النهارده؟`)) return;
+  const docId = todayAttendance[studentId];
+  if (docId) await deleteDoc(doc(db,'attendance',docId));
+  delete todayAttendance[studentId];
+  delete todayAttendanceTime[studentId];
+  if (allAttendance[todayKey()]) delete allAttendance[todayKey()][studentId];
+  updateStats(); renderTodayList();
+  onManualSearch();
+  showToast('تم حذف الحضور', 'success');
+};
+
+// ===== فلتر وترتيب قائمة اليوم =====
+window.setTodayListFilter = (mode, btn) => {
+  todayListFilter = mode;
+  document.querySelectorAll('#today-filter-all,#today-filter-attendance,#today-filter-verse').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTodayList();
+};
+
+window.toggleTodayListSort = () => {
+  todayListSortOrder = todayListSortOrder === 'first' ? 'last' : 'first';
+  const btn = document.getElementById('today-sort-btn');
+  if (btn) btn.textContent = todayListSortOrder === 'first' ? '⇅ الأول ↞ الأخير' : '⇅ الأخير ↞ الأول';
+  renderTodayList();
+};
+
+// وقت الحدث اللي بنرتب بيه، حسب الفلتر الحالي
+function todayListRelevantTime(s) {
+  const at = todayAttendanceTime[s.id];
+  const vt = todayVerseTime[s.id];
+  if (todayListFilter === 'attendance') return todayAttendance[s.id] ? (at ?? 0) : null;
+  if (todayListFilter === 'verse') return todayVerses[s.id] ? (vt ?? 0) : null;
+  const times = [at, vt].filter(t => t != null);
+  return times.length ? Math.min(...times) : null;
+}
+
+function renderTodayList() {
+  const cont = document.getElementById('today-list');
+  if (!allStudents.length) { cont.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div>أضف مخدومين أولاً</div>`; return; }
+
+  const visibleClasses = [currentClassTab];
+  let filtered = allStudents.filter(s => visibleClasses.includes(s.classSection)).filter(s => {
+    if (todayListFilter === 'attendance') return !!todayAttendance[s.id];
+    if (todayListFilter === 'verse')      return !!todayVerses[s.id];
+    return true; // 'all'
+  });
+
+  const withTime = filtered.filter(s => todayListRelevantTime(s) != null);
+  const withoutTime = filtered.filter(s => todayListRelevantTime(s) == null);
+  withTime.sort((a,b) => {
+    const diff = todayListRelevantTime(a) - todayListRelevantTime(b);
+    return todayListSortOrder === 'first' ? diff : -diff;
+  });
+  withoutTime.sort((a,b) => a.name.localeCompare(b.name, 'ar'));
+  const sorted = [...withTime, ...withoutTime];
+
+  if (!sorted.length) { cont.innerHTML=`<div class="empty-state"><div class="empty-icon">🔍</div>مفيش حد يطابق الفلتر ده النهارده</div>`; return; }
+
+  cont.innerHTML = sorted.map(s => {
+    const present = !!todayAttendance[s.id];
+    const verseEntry = todayVerses[s.id];
+    const hasVerse = !!verseEntry;
+    return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}">
+      ${studentAvatarHTML(s,'s-avatar')}
+      <div class="s-info">
+        <div class="s-name">${s.name}</div>
+        ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <div class="check-box att-box${present?' checked':''}" onclick="${present?`removeAttendance('${s.id}')`:`quickToggleAttendance('${s.id}')`}">${present?'✓':''}</div>
+        <div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseEntry.verse:'تسجيل آية'}" onclick="${hasVerse?`removeVerse('${s.id}')`:`showVerseModal('${s.id}')`}">${hasVerse?'✓':'📖'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateStats() {
+  const classesToCount = [currentClassTab];
+  const classStudents = allStudents.filter(s => classesToCount.includes(s.classSection));
+  const present = classStudents.filter(s => !!todayAttendance[s.id]).length;
+  const heardVerse = classStudents.filter(s => !!todayVerses[s.id]).length;
+  document.getElementById('stat-total').textContent   = classStudents.length;
+  document.getElementById('stat-present').textContent = present;
+  document.getElementById('stat-absent').textContent  = classStudents.length - present;
+}
+
+// ===== MANUAL SEARCH =====
+window.onManualSearch = () => {
+  const qRaw = document.getElementById('manual-input').value.trim();
+  const cont = document.getElementById('manual-results');
+  if (!qRaw) { cont.innerHTML=''; return; }
+  const q = normalizeArabic(qRaw);
+  const visibleClasses = [currentClassTab];
+  // بنوري كل المخدومين اللي اسمهم مطابق من أي فصل (مش بس فصل الخادم)، وبنفضّل فصله فوق،
+  // وبعدين اللي لسه معندوش فصل، وأخيرًا اللي في فصل تاني، عشان الخادم يقدر يسجل لأي حد يلاقيه
+  const groupRank = s => visibleClasses.includes(s.classSection) ? 0 : (!s.classSection ? 1 : 2);
+  const list = classScope(searchStudents(allStudents, q))
+    .sort((a, b) => groupRank(a) - groupRank(b))
+    .slice(0,30);
+  if (!list.length) {
+    cont.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:8px 4px">لا يوجد مخدوم بهذا الاسم</div>`;
+    return;
+  }
+  // لو الخادم في بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1: المخدوم اللي لسه متقسمش بيتوزع على التلات فصول دول بس
+  const pickGrp = babyKgClasses();
+  const pickClasses = pickGrp.some(c => c.id === currentClassTab) ? pickGrp : undefined;
+  cont.innerHTML = list.map(s => {
+    // لسه معندوش فصل؟ نوريله أزرار الفصول الأول عشان يتقسم قبل ما نسجله
+    if (!s.classSection) {
+      return `<div class="result-item" style="cursor:default;flex-wrap:wrap">
+        ${studentAvatarHTML(s,'result-avatar')}
+        <div style="flex:1;font-size:14px;font-weight:700;min-width:100%">${s.name} <span style="color:var(--text-dim);font-weight:600;font-size:11px">— هو في فصل إيه؟</span></div>
+        ${classPickButtonsHTML(s.id, pickClasses)}
+      </div>`;
+    }
+    const isPresent = !!todayAttendance[s.id];
+    const hasVerse  = !!todayVerses[s.id];
+    const verseText = todayVerses[s.id]?.verse || '';
+    const otherClass = !visibleClasses.includes(s.classSection);
+    const classBadge = classBadgeHTML(s.classSection, otherClass);
+    return `<div class="result-item" style="cursor:default">
+      ${studentAvatarHTML(s,'result-avatar')}
+      <div style="flex:1;font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>
+      <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
+      <div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>
+    </div>`;
+  }).join('');
+};
+
+// أول مرة يترقى فيها ولد: نحفظله الفصل (أ/ب) وبعدين نعرض خانة الحضور العادية بدل زرار الاختيار
+window.assignClassSection = async (id, section) => {
+  try {
+    await updateDoc(doc(db,'students',id), { classSection: section, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    const idx = allStudents.findIndex(x => x.id === id);
+    if (idx !== -1) allStudents[idx].classSection = section;
+    const s = allStudents[idx];
+    const already = !!todayAttendance[id];
+    if (!already) await markPresent(id);
+    showToast(`✅ ${s?.name || ''} — ${classLabel(section)} وتم تسجيل الحضور`, 'success');
+    navigator.vibrate?.([60,30,60]);
+    renderStudentsList();
+    updateStats();
+    renderTodayList();
+    logActivity('تحديد الفصل وتسجيل حضور', `${s?.name || ''} — ${classLabel(section)}`);
+    // نفضي خانة البحث عشان يتكتب اسم جديد على طول، زي باقي أزرار التسجيل السريع
+    const input = document.getElementById('manual-input');
+    if (input) { input.value = ''; document.getElementById('manual-results').innerHTML = ''; input.focus(); }
+  } catch(e) {
+    showToast('حصل خطأ أثناء الحفظ', 'error');
+  }
+};
+
+window.manualMark = async (id) => {
+  const ok = await markPresent(id);
+  if (ok) {
+    const s = allStudents.find(x => x.id === id);
+    showToast(`✅ ${s.name} — تم التسجيل`, 'success');
+    navigator.vibrate?.([60,30,60]);
+    onManualSearch();
+    logActivity('تسجيل حضور', s.name);
+  }
+};
+
+// تسجيل حضور بضغطة واحدة من قائمة اليوم (المربع الأخضر) من غير ما نلمس خانة البحث
+window.quickToggleAttendance = async (id) => {
+  const ok = await markPresent(id);
+  if (ok) {
+    const s = allStudents.find(x => x.id === id);
+    showToast(`✅ ${s?.name || ''} — تم التسجيل`, 'success');
+    navigator.vibrate?.([60,30,60]);
+    logActivity('تسجيل حضور', s?.name || '');
+  }
+};
+
+// الدوس على مربع الحضور: يتعمل حضور فورًا (وتبقى علامة صح خضرا)، وبعدين تتفضى خانة البحث عشان يتكتب اسم جديد على طول
+window.manualMarkAndClear = async (id) => {
+  const ok = await markPresent(id);
+  if (ok) {
+    const s = allStudents.find(x => x.id === id);
+    showToast(`✅ ${s.name} — تم التسجيل`, 'success');
+    navigator.vibrate?.([60,30,60]);
+    logActivity('تسجيل حضور', s.name);
+  }
+  const input = document.getElementById('manual-input');
+  input.value = '';
+  document.getElementById('manual-results').innerHTML = '';
+  input.focus();
+};
+
+// نفس فكرة manualMarkAndClear بس لتسجيل السماع (الآية): يتسجل السماع فورًا، وبعدين تتفضى خانة البحث عشان تكتب اسم جديد على طول
+window.manualVerseAndClear = async (id) => {
+  await showVerseModal(id);
+  const input = document.getElementById('manual-input');
+  input.value = '';
+  document.getElementById('manual-results').innerHTML = '';
+  input.focus();
+};
+
+// ===== FILTERS =====
+window.setBdayMonth = (m) => {
+  bdayMonth = parseInt(m);
+  renderFilterList();
+};
+
+window.setFilterSiblings = (v, btn) => {
+  filterSiblings = v;
+  document.querySelectorAll('#filter-siblings-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('fsiblings-value').textContent = btn.textContent.trim();
+  btn.closest('details')?.removeAttribute('open');
+  renderFilterList();
+};
+
+window.setAbsenceFilter = (v, btn) => {
+  absenceFilter = v;
+  document.querySelectorAll('#absence-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('absence-value').textContent = btn.textContent.trim();
+  btn.closest('details')?.removeAttribute('open');
+  renderFilterList();
+};
+
+window.setAttendanceFilter = (v, btn) => {
+  attendanceFilter = v;
+  document.querySelectorAll('#attendance-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('attendance-value').textContent = btn.textContent.trim();
+  btn.closest('details')?.removeAttribute('open');
+  renderFilterList();
+};
+
+window.setVerseFilter = (v, btn) => {
+  verseFilter = v;
+  verseRetriedFull = false;
+  document.querySelectorAll('#verse-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('verse-value').textContent = btn.textContent.trim();
+  btn.closest('details')?.removeAttribute('open');
+  renderFilterList();
+};
+
+window.setNoteFilter = (v, btn) => {
+  noteFilter = v;
+  document.querySelectorAll('#note-chips .filter-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('note-value').textContent = btn.textContent.trim();
+  btn.closest('details')?.removeAttribute('open');
+  renderFilterList();
+};
+
+window.renderFilterList = renderFilterList;
+function renderFilterList() {
+  const cont = document.getElementById('filter-list');
+  if ((absenceFilter !== 'all' || attendanceFilter !== 'all') && recentAttWeeks < filterWeeks()) {
+    cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+    ensureRecentAttendance(filterWeeks()).then(renderFilterList).catch(()=>{ cont.innerHTML = '<div class="empty-state">تعذّر التحميل<br><button class="action-btn" style="margin-top:10px" onclick="renderFilterList()">🔄 حاول تاني</button></div>'; });
+    return;
+  }
+  if ((absenceFilter !== 'all' || attendanceFilter !== 'all') && attIsStale() && !attRefreshBusy) {
+    attRefreshBusy = true;
+    ensureRecentAttendance(filterWeeks()).then(() => { attRefreshBusy = false; renderFilterList(); }).catch(() => { attRefreshBusy = false; });
+  }
+  const verseScopeChanged = recentVerseScope !== null && recentVerseScope !== readScopeClasses().join(','); // الفصل اتغيّر: لازم نحمّل تسميع الفصل الجديد
+  if (verseFilter !== 'all' && (verseScopeChanged || recentVerseWeeks < verseFilterWeeks() || verseIsStale()) && !verseRefreshBusy) {
+    cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+    verseRefreshBusy = true;
+    ensureRecentVerses(verseFilterWeeks()).then(() => { verseRefreshBusy = false; renderFilterList(); }).catch(() => { verseRefreshBusy = false; cont.innerHTML = '<div class="empty-state">تعذّر التحميل<br><button class="action-btn" style="margin-top:10px" onclick="renderFilterList()">🔄 حاول تاني</button></div>'; });
+    return;
+  }
+  if (verseFilter !== 'all' && verseRefreshBusy) return;
+  const dates = attSessionDates();
+  let list = [...allStudents];
+  const allowed = getAllowedAssignedClasses();
+  if (currentRole !== 'admin' && allowed.length) {
+    list = list.filter(s => allowed.includes(s.classSection));
+  }
+  list = classScope(list);
+  if (bdayMonth > 0) {
+    list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === bdayMonth);
+  }
+  if (absenceFilter !== 'all' && dates.length > 0) {
+    const n = parseInt(absenceFilter);
+    const lastDates = dates.slice(-n);
+    list = list.filter(s => lastDates.every(d => !allAttendance[d]?.[s.id]));
+  }
+  if (attendanceFilter !== 'all' && dates.length > 0) {
+    const n = parseInt(attendanceFilter);
+    const lastDates = dates.slice(-n);
+    list = list.filter(s => lastDates.length === n && lastDates.every(d => !!allAttendance[d]?.[s.id]));
+  }
+  if (verseFilter !== 'all') {
+    const vDates = verseSessionDates();
+    const n = parseInt(verseFilter);
+    const lastV = vDates.slice(-n);
+    window._verseMatchDbg = vDates.map(d => d + ' → ' + list.filter(s => allVerses[d]?.[s.id]).length + ' مطابق').join(' · ');
+    list = list.filter(s => lastV.length === n && lastV.every(d => !!allVerses[d]?.[s.id]));
+  }
+  if (noteFilter === 'noReason') {
+    list = list.filter(s => !Array.isArray(s.visitNotes) || s.visitNotes.length === 0);
+  } else if (noteFilter !== 'all') {
+    list = list.filter(s => Array.isArray(s.visitNotes) && s.visitNotes.includes(noteFilter));
+  }
+  if (filterSiblings !== 'all') {
+    const siblingCounts = computeSiblingCounts(allStudents);
+    if (filterSiblings === 'siblings') {
+      list = list.filter(s => { const k = familyKey(s.name); return k && siblingCounts[k] > 1; });
+    } else {
+      list = list.filter(s => { const k = familyKey(s.name); return !k || siblingCounts[k] <= 1; });
+    }
+  }
+  // تجميع الإخوات فوق بعض في نتايج الافتقاد بردو
+  list = [...list].sort((a, b) => {
+    const ka = familyKey(a.name) || `__${a.id}`;
+    const kb = familyKey(b.name) || `__${b.id}`;
+    const c = ka.localeCompare(kb, 'ar');
+    return c !== 0 ? c : a.name.localeCompare(b.name, 'ar');
+  });
+  document.getElementById('filter-count').textContent = `${list.length} مخدوم`;
+  if (!list.length && verseFilter !== 'all' && !verseRetriedFull) {
+    // النتيجة فاضية: ممكن الكاش المحلي ناقص، فبنعمل قراءة كاملة مرة واحدة من فايرستور ونعيد الفلتر
+    verseRetriedFull = true; verseForceFull = true; recentVerseWeeks = 0;
+    renderFilterList();
+    return;
+  }
+  if (!list.length) {
+    let dbg = '';
+    if (verseFilter !== 'all') {
+      const vd = verseSessionDates();
+      dbg = `<div style="margin-top:12px;font-size:11px;opacity:.7;direction:ltr;line-height:1.8">[تشخيص] جلسات التسميع: ${vd.length ? vd.map(d => d + ' (' + Object.keys(allVerses[d]).length + ')').join(' · ') : 'مفيش'}<br>مطابقة مع المخدومين الحاليين (من غير الأسبوع الجاري): ${window._verseMatchDbg || '-'}<br>الفصول: ${readScopeClasses().join(',') || 'الكل'} · مخدومين قبل الفلتر: ${classScope(allStudents.filter(s => { const al = getAllowedAssignedClasses(); return currentRole === 'admin' || !al.length || al.includes(s.classSection); })).length}</div>`;
+    }
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>لا يوجد نتائج${dbg}</div>`;
+    return;
+  }
+  cont.innerHTML = list.map(s => {
+    let attCount = 0;
+    dates.forEach(d => { if (allAttendance[d]?.[s.id]) attCount++; });
+    const dob = s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long'}) : '';
+    const notesHTML = (s.visitNotes?.length)
+      ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">${s.visitNotes.map(n => NOTE_LABELS[n]
+          ? `<span style="font-size:10px;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);color:#a07de0;border-radius:5px;padding:2px 6px">${NOTE_LABELS[n].emoji} ${NOTE_LABELS[n].text}</span>`
+          : '').join('')}</div>`
+      : `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px"><span style="font-size:10px;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text-dim);border-radius:5px;padding:2px 6px">${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}</span></div>`;
+    return `<div class="student-item">
+      ${studentAvatarHTML(s,'s-avatar')}
+      <div class="s-info">
+        <div class="s-name">${s.name}</div>
+        <div class="s-sub">${dob ? '🎂 '+dob+' · ' : ''}حضر ${attCount} مرة</div>
+        ${notesHTML}
+      </div>
+      <button class="action-btn" onclick="openProfile('${s.id}')">👤 ملف</button>
+      <button class="action-btn" onclick="openEditModal('${s.id}')">✏️ تعديل</button>
+    </div>`;
+  }).join('');
+}
+
+// ===== PROFILE =====
+let currentProfileId = null;
+// عرض صورة المخدوم في ملفه لو موجودة، وإلا حرف الاسم زي ما كان، مع دايرة كاميرا صغيرة للرفع
+function renderProfAvatar(s) {
+  const el = document.getElementById('prof-avatar');
+  el.style.backgroundImage = s.photo ? `url('${s.photo}')` : '';
+  el.innerHTML = (s.photo ? '' : `<span>${(s.name||'؟').trim()[0]||'؟'}</span>`) + `<div class="avatar-cam-badge">📷</div>`;
+}
+window.triggerProfilePhotoPick = () => document.getElementById('prof-photo-input').click();
+
+// بتصغّر الصورة وتحوّلها base64 عشان تتخزن في مستند الفايرستور من غير ما تتعدى حد الحجم بتاعه
+function resizeImageToDataURL(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height) { if (width > maxSize) { height = Math.round(height * maxSize / width); width = maxSize; } }
+        else { if (height > maxSize) { width = Math.round(width * maxSize / height); height = maxSize; } }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('تعذّرت قراءة الصورة'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('تعذّرت قراءة الملف'));
+    reader.readAsDataURL(file);
+  });
+}
+
+window.handleProfilePhotoChange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file || !currentProfileId) return;
+  const id = currentProfileId;
+  try {
+    showToast('جاري رفع الصورة…', 'info');
+    const dataUrl = await resizeImageToDataURL(file, 320, 0.7);
+    await updateDoc(doc(db,'students',id), { photo: dataUrl, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    const idx = allStudents.findIndex(x => x.id === id);
+    if (idx !== -1) allStudents[idx] = { ...allStudents[idx], photo: dataUrl };
+    if (currentProfileId === id) renderProfAvatar(allStudents[idx] || { photo: dataUrl, name: '' });
+    renderTodayList();
+    if (typeof renderFilterList === 'function') renderFilterList();
+    if (document.getElementById('manual-input')?.value) onManualSearch();
+    showToast('تم حفظ صورة المخدوم ✓', 'success');
+    logActivity('تحديث صورة مخدوم', allStudents[idx]?.name || '');
+  } catch (err) {
+    console.error(err);
+    showToast('حصل خطأ أثناء رفع الصورة', 'error');
+  }
+};
+
+window.openProfile = (id) => {
+  currentProfileId = id;
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  renderProfAvatar(s);
+  document.getElementById('prof-name').textContent   = s.name;
+  renderProfClassChips(s.classSection || '');
+  const H = (studentHist[id] && Date.now() - studentHist[id].ts < 300000) ? studentHist[id] : null;
+  const dates   = H ? Object.keys(H.att).sort() : [];
+  let count = 0, lastDate = null;
+  dates.forEach(d => { count++; lastDate = d; });
+  if (!H) loadStudentHist(id).then(() => { if (currentProfileId === id) openProfile(id); }).catch(()=>{});
+  document.getElementById('prof-count').textContent = count;
+  if (lastDate) {
+    const p = lastDate.split('-');
+    document.getElementById('prof-last').textContent = `${p[2]}/${p[1]}/${p[0]}`;
+    document.getElementById('prof-sub').textContent  = `آخر حضور: ${p[2]}/${p[1]}`;
+  } else {
+    document.getElementById('prof-last').textContent = 'لم يحضر بعد';
+    document.getElementById('prof-sub').textContent  = '';
+  }
+  const fields = [];
+  if (s.dob) fields.push({ icon:'🎂', key:'تاريخ الميلاد', val: new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) });
+  if (s.address) fields.push({ icon:'📍', key:'العنوان', val: s.address });
+  fields.push({ icon:'📝', key:'ملحوظات الافتقاد', val: (s.visitNotes?.length)
+    ? s.visitNotes.map(n => NOTE_LABELS[n] ? `${NOTE_LABELS[n].emoji} ${NOTE_LABELS[n].text}` : n).join('، ')
+    : `${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}` });
+  if (s.phones?.length) {
+    s.phones.forEach((p,i) => {
+      if (p) fields.push({ icon:'📞', key:`تليفون ${i===0?'':'('+(i+1)+')'}`, val: p, phone: true, idx: i });
+    });
+  }
+  // attendance + verse history combined
+  const relevantDates = [...new Set([...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse().slice(0,5);
+  const histHTML = relevantDates.length ? `
+    <div style="padding:0 16px 16px">
+      <div class="section-title" style="margin-bottom:10px">📅 سجل الحضور والتسميع</div>
+      ${relevantDates.map(d => {
+        const p = d.split('-');
+        const att   = !!H?.att[d];
+        const heard = !!H?.ver[d];
+        const verse = H?.ver[d]?.verse || '';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:600;color:var(--text-dim)">${p[2]}/${p[1]}/${p[0]}</span>
+          ${att
+            ? `<span style="font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</span>`
+            : `<span style="font-size:11px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-dim);opacity:.4;border-radius:5px;padding:2px 7px">حاضر</span>`}
+          ${heard
+            ? `<span style="font-size:11px;color:#a07de0;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);border-radius:5px;padding:2px 7px">📖 سماع${verse ? ' · ' + verse : ''}</span>`
+            : `<span style="font-size:11px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-dim);opacity:.4;border-radius:5px;padding:2px 7px">سماع</span>`}
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  document.getElementById('prof-details').innerHTML = (fields.length
+    ? `<div style="padding:16px">${fields.map(f => `<div class="prof-row">
+        <div style="font-size:18px;flex-shrink:0">${f.icon}</div>
+        <div style="flex:1">
+          <div class="prof-key">${f.key}</div>
+          ${f.phone
+            ? `<a href="tel:${f.val}" style="font-size:14px;font-weight:600;color:var(--text);text-decoration:none">${f.val}</a>`
+            : `<div class="prof-val">${f.val}</div>`}
+        </div>
+        ${f.phone ? `<a href="tel:${f.val}" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);border-radius:9px;color:var(--success);padding:7px 12px;font-size:12px;font-weight:700;text-decoration:none">📲 اتصل</a>
+        ${s.waPhoneIndex === f.idx || (s.waPhoneIndex == null && f.idx === 0)
+          ? `<span style="background:#25D366;border:1px solid #25D366;border-radius:9px;color:#fff;padding:7px 12px;font-size:12px;font-weight:700">✅ رقم الواتساب</span>`
+          : `<button onclick="markWaPhone('${s.id}',${f.idx})" style="background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);border-radius:9px;color:#25D366;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">📱 اجعله رقم الواتساب</button>`
+        }` : ''}
+      </div>`).join('')}</div>` : '') + histHTML;
+  document.getElementById('profile-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+};
+
+window.closeProfile = () => {
+  document.getElementById('profile-modal').style.display = 'none';
+  document.body.style.overflow = '';
+};
+
+// تغيير فصل الولد من صفحة الملف مباشرة (فصل أ / فصل ب / بدون فصل)
+window.setStudentClassFromProfile = async (section) => {
+  const id = currentProfileId;
+  if (!id) return;
+  try {
+    await updateDoc(doc(db,'students',id), { classSection: section, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    const idx = allStudents.findIndex(x => x.id === id);
+    if (idx !== -1) allStudents[idx].classSection = section;
+    renderProfClassChips(section);
+    renderStudentsList();
+    onManualSearch();
+    updateStats();
+    renderTodayList();
+    const s = allStudents[idx];
+    showToast(`✓ ${s?.name || ''} — ${classLabel(section)}`, 'success');
+    logActivity('تعديل الفصل', `${s?.name || ''} — ${classLabel(section)}`);
+  } catch(e) {
+    showToast('حصل خطأ أثناء الحفظ', 'error');
+  }
+};
+
+window.editFromProfile = () => {
+  if (!currentProfileId) return;
+  closeProfile();
+  openEditModal(currentProfileId);
+};
+window.closeProfileOutside = (e) => { if (e.target.id === 'profile-modal') closeProfile(); };
+
+// ===== VOICE ATTENDANCE =====
+let voiceRecognition = null, voiceListening = false, voiceRestartTimer = null;
+let voiceMode = 'attendance'; // 'attendance' (تسجيل حضور) أو 'verse' (تسجيل سماع آية)
+
+// بيدوّر في الكلام المسموع على أمر تغيير الوضع ("تسجيل آية" / "تسميع" / "تسجيل حضور")،
+// وبيرجع الوضع الجديد (لو لقى أمر) + باقي الكلام من غير كلمات الأمر (لو المستخدم قال اسم مع الأمر في نفس الجملة)
+function extractVoiceCommand(rawText) {
+  const norm = normalizeArabic(rawText);
+  let words = norm.split(' ').filter(Boolean);
+  let mode = null;
+  if (words.includes('تسميع')) {
+    mode = 'verse';
+    words = words.filter(w => w !== 'تسميع');
+  } else if (words.includes('تسجيل') && words.includes('ايه')) {
+    mode = 'verse';
+    words = words.filter(w => w !== 'تسجيل' && w !== 'ايه');
+  } else if (words.includes('تسجيل') && words.includes('حضور')) {
+    mode = 'attendance';
+    words = words.filter(w => w !== 'تسجيل' && w !== 'حضور');
+  }
+  return { mode, remainder: words.join(' ').trim() };
+}
+
+function updateVoiceModeUI() {
+  const badge = document.getElementById('voice-mode-badge');
+  const hint = document.getElementById('voice-hint');
+  if (!badge) return;
+  if (voiceMode === 'verse') {
+    badge.textContent = '📖 وضع: تسجيل سماع آية';
+    badge.style.background = 'rgba(124,92,191,0.14)';
+    badge.style.borderColor = 'rgba(124,92,191,0.35)';
+    badge.style.color = '#a07de0';
+    if (hint) hint.textContent = 'قول أسماء المخدومين واحد ورا التاني، هيتسجلوا "سماع" على طول — قول "تسجيل حضور" عشان ترجع لتسجيل الحضور';
+  } else {
+    badge.textContent = '✓ وضع: تسجيل حضور';
+    badge.style.background = 'rgba(46,204,113,0.12)';
+    badge.style.borderColor = 'rgba(46,204,113,0.3)';
+    badge.style.color = 'var(--success)';
+    if (hint) hint.textContent = 'قول اسم المخدوم (اسمين بيكفوا) — أو قول "تسجيل آية" عشان تبدأ تسجّل سماع';
+  }
+}
+
+window.toggleVoiceMode = () => {
+  voiceMode = voiceMode === 'verse' ? 'attendance' : 'verse';
+  updateVoiceModeUI();
+  showToast(voiceMode === 'verse' ? '📖 وضع تسجيل السماع شغال' : '✅ وضع تسجيل الحضور شغال', 'info');
+};
+
+function buildVoiceRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const r = new SR();
+  r.lang = 'ar-EG';
+  r.continuous = true;
+  r.interimResults = true;
+  r.maxAlternatives = 5; // نجرب أكتر من تفسير للصوت عشان لو أول تفسير غلط في اسم متشابه
+
+  r.onresult = (e) => {
+    let finalText = '', interimText = '';
+    let finalAlternatives = [];
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const result = e.results[i];
+      const t = result[0].transcript;
+      if (result.isFinal) {
+        finalText += t;
+        for (let a = 0; a < result.length; a++) finalAlternatives.push(result[a].transcript);
+      } else {
+        interimText += t;
+      }
+    }
+    const heardEl = document.getElementById('voice-heard');
+    if (heardEl) heardEl.textContent = (finalText || interimText).trim() || 'بيسمعك دلوقتي…';
+    if (finalText.trim()) processVoiceName(finalAlternatives.length ? finalAlternatives : [finalText.trim()]);
+  };
+
+  r.onerror = (e) => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return; // will auto-restart on end
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      showToast('🔒 اسمح للتطبيق بالميكروفون', 'error');
+      stopVoice();
+      return;
+    }
+    if (e.error === 'audio-capture') {
+      showToast('🎤 مفيش ميكروفون متاح', 'error');
+      stopVoice();
+      return;
+    }
+  };
+
+  r.onend = () => {
+    if (voiceListening) {
+      // Chrome auto-stops recognition after a pause; restart seamlessly while user hasn't stopped it
+      clearTimeout(voiceRestartTimer);
+      voiceRestartTimer = setTimeout(() => {
+        if (voiceListening) { try { voiceRecognition.start(); } catch {} }
+      }, 250);
+    }
+  };
+
+  return r;
+}
+
+window.startVoice = () => {
+  if (voiceListening) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { showToast('التسجيل بالصوت مش متاح على المتصفح ده، جرّب Chrome', 'error'); return; }
+  voiceRecognition = buildVoiceRecognition();
+  if (!voiceRecognition) { showToast('التسجيل بالصوت مش متاح', 'error'); return; }
+  try {
+    voiceRecognition.start();
+  } catch (e) {
+    showToast('تعذّر تشغيل الميكروفون', 'error');
+    return;
+  }
+  voiceListening = true;
+  voiceMode = 'attendance';
+  document.getElementById('voice-toggle-btn').style.display = 'none';
+  document.getElementById('voice-zone').style.display = 'block';
+  document.getElementById('voice-stop-btn').style.display = 'block';
+  document.getElementById('voice-heard').textContent = 'بيسمعك دلوقتي…';
+  document.getElementById('voice-candidates').innerHTML = '';
+  updateVoiceModeUI();
+};
+
+window.stopVoice = () => {
+  voiceListening = false;
+  clearTimeout(voiceRestartTimer);
+  try { voiceRecognition?.stop(); } catch {}
+  voiceRecognition = null;
+  document.getElementById('voice-zone').style.display = 'none';
+  document.getElementById('voice-stop-btn').style.display = 'none';
+  document.getElementById('voice-toggle-btn').style.display = 'block';
+  document.getElementById('voice-candidates').innerHTML = '';
+};
+
+async function processVoiceName(altTexts) {
+  let texts = (Array.isArray(altTexts) ? altTexts : [altTexts]).filter(Boolean);
+  if (!texts.length) return;
+  let displayText = texts[0];
+
+  // هل الكلام ده أمر تغيير وضع ("تسجيل آية" / "تسميع" / "تسجيل حضور")؟
+  const cmd = extractVoiceCommand(displayText);
+  if (cmd.mode) {
+    voiceMode = cmd.mode;
+    updateVoiceModeUI();
+    if (!cmd.remainder) {
+      // الجملة كانت الأمر بس من غير اسم — نوقف هنا ونستنى الاسم اللي جاي
+      showToast(voiceMode === 'verse' ? '📖 وضع تسجيل السماع شغال — قول الأسماء' : '✅ وضع تسجيل الحضور شغال — قول الأسماء', 'info');
+      document.getElementById('voice-candidates').innerHTML = '';
+      return;
+    }
+    // المستخدم قال الأمر واسم في نفس الجملة (زي "تسجيل آية مينا") — نكمل بالاسم الباقي في الوضع الجديد
+    texts = [cmd.remainder];
+    displayText = cmd.remainder;
+  }
+
+  // بنجمع درجات كل البدائل الصوتية اللي المتصفح رجّعها (مش بنوقف عند أول واحد بيدّي مرشحين)،
+  // عشان لو أول بديل سمعه غلط والبديل التاني/التالت كان أصح، برضه ناخد بالنتيجة الأدق من الكل
+  const bestById = new Map(); // studentId -> { s, score }
+  for (const t of texts) {
+    const q = normalizeArabic(t);
+    if (!q) continue;
+    const qClean = stripVoiceFillers(q);
+    const variants = qClean === q ? [q] : [qClean, q];
+    for (const v of variants) {
+      for (const { s, score } of scoreStudentsVoice(classScope(ownClassStudents()), v)) {
+        const prev = bestById.get(s.id);
+        if (!prev || score > prev.score) bestById.set(s.id, { s, score });
+      }
+    }
+  }
+  let list = [];
+  if (bestById.size) {
+    const scored = [...bestById.values()].sort((a, b) => b.score - a.score);
+    const topScore = scored[0].score;
+    // نرجّع بس اللي قريبين فعلاً من أعلى نتيجة (مش كل حاجة عدّت العتبة بالكاد)، وبحد أقصى 5 مرشحين
+    list = scored.filter(x => x.score >= topScore - 0.12).slice(0, 5).map(x => x.s);
+  }
+
+  const candWrap = document.getElementById('voice-candidates');
+  if (!candWrap) return;
+
+  if (!list.length) {
+    showToast(`❓ مفيش مخدوم اسمه "${displayText}"`, 'error');
+    candWrap.innerHTML = '';
+    return;
+  }
+
+  const isVerseMode = voiceMode === 'verse';
+  const alreadyDone = s => isVerseMode ? !!todayVerses[s.id] : !!todayAttendance[s.id];
+
+  if (list.length === 1) {
+    const s = list[0];
+    if (alreadyDone(s)) {
+      showToast(`${s.name} — ${isVerseMode ? 'مسجّل سماعه مسبقاً' : 'مسجّل مسبقاً'} ✓`, 'info');
+      candWrap.innerHTML = '';
+      return;
+    }
+    if (isVerseMode) {
+      await registerVerseVoice(s.id);
+    } else {
+      await markPresent(s.id);
+      showToast(`✅ ${s.name} — تم التسجيل بالصوت`, 'success');
+      navigator.vibrate?.([60,30,60]);
+      logActivity('تسجيل حضور (صوت)', s.name);
+    }
+    candWrap.innerHTML = '';
+    return;
+  }
+
+  // Multiple students match the spoken name — let the user pick who to mark
+  candWrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;margin:8px 0 6px">في ${list.length} مخدومين بنفس الاسم، اختار مين:</div>` +
+    list.map(s => {
+      const done = alreadyDone(s);
+      return `<div class="result-item" style="cursor:default">
+        ${studentAvatarHTML(s,'result-avatar')}
+        <div style="flex:1;font-size:14px;font-weight:700">${s.name}</div>
+        ${done
+          ? `<span class="present-badge">✓ ${isVerseMode?'سمع':'حاضر'}</span>`
+          : `<button onclick="voicePickStudent('${s.id}')" style="background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.3);border-radius:8px;color:var(--success);font-family:Cairo,sans-serif;font-size:12px;font-weight:700;padding:8px 12px;cursor:pointer">✓ ده</button>`}
+      </div>`;
+    }).join('');
+}
+
+// بيسجل "سماع آية" بالصوت (زي showVerseModal بالظبط) لكن من غير ما يعتمد على إن العنصر النشط في شاشة البحث اليدوي
+async function registerVerseVoice(studentId) {
+  if (!verseOpen()) { showToast(VERSE_CLOSED_MSG, 'error'); return; }
+  const today = verseKey();
+  if (todayVerses[studentId]) return;
+  try {
+    const ref = await addDoc(collection(db,'verses'), { studentId, date: today, verse: '', classSection: clsOf(studentId), timestamp: serverTimestamp() });
+    todayVerses[studentId] = { id: ref.id, verse: '' };
+    todayVerseTime[studentId] = Date.now();
+    if (!allVerses[today]) allVerses[today] = {};
+    allVerses[today][studentId] = { id: ref.id, verse: '' };
+    renderTodayList();
+    const s = allStudents.find(x => x.id === studentId);
+    showToast(`📖 ${s?.name || ''} — تم تسجيل السماع بالصوت`, 'success');
+    navigator.vibrate?.([60,30,60]);
+    logActivity('تسجيل سماع آية (صوت)', s?.name || '');
+  } catch(e) {
+    showToast('خطأ في الحفظ', 'error');
+  }
+}
+
+window.voicePickStudent = async (id) => {
+  const isVerseMode = voiceMode === 'verse';
+  if (isVerseMode ? todayVerses[id] : todayAttendance[id]) return;
+  if (isVerseMode) {
+    await registerVerseVoice(id);
+  } else {
+    const ok = await markPresent(id);
+    if (ok) {
+      const s = allStudents.find(x => x.id === id);
+      showToast(`✅ ${s.name} — تم التسجيل بالصوت`, 'success');
+      navigator.vibrate?.([60,30,60]);
+      logActivity('تسجيل حضور (صوت)', s.name);
+    }
+  }
+  document.getElementById('voice-candidates').innerHTML = '';
+  document.getElementById('voice-heard').textContent = 'بيسمعك دلوقتي…';
+};
+
+// ===== EXPORT =====
+let exportSelectedClasses = new Set();
+// الفصول اللي الخادم أصلاً يقدر يشوفها (لو أدمن أو مسموحله بكل الفصول بترجع كل الفصول)
+function exportClassChoices() {
+  // الأدمن كل الفصول. الخادم/المسؤول اللي متوزع على فصل أو أكتر: فصوله هو كلها (يختار منها أو كلها).
+  // اللي مش متوزع على فصل معيّن: فصله الحالي بس (إلا لو هو في بيبي/كي جي).
+  const allowed = getAllowedAssignedClasses();
+  if (currentRole === 'admin') return allClasses;
+  if (allowed.length) return allClasses.filter(c => allowed.includes(c.id));
+  return classScopeActive() ? allClasses.filter(c => c.id === currentClassTab) : allClasses;
+}
+function exportBaseStudents() {
+  const allowed = getAllowedAssignedClasses();
+  if (currentRole === 'admin') return allStudents;
+  if (allowed.length) return allStudents.filter(s => allowed.includes(s.classSection));
+  return classScope(allStudents);
+}
+// ملخص الفصول المتحددة كشيبس فيها ✕ (أو شيبس واحدة "كل الفصول" لو كلهم متحددين)
+function exportClassChipsHTML(target, set, choices) {
+  if (!set.size) return `<span style="font-size:12px;color:var(--text-dim)">مفيش فصل متحدد — دوس "إضافة فصل"</span>`;
+  const chip = (label, onclick) => `<span class="filter-chip active" style="display:inline-flex;align-items:center;gap:8px">${label}<span onclick="${onclick}" style="cursor:pointer;opacity:.85;font-size:11px">✕</span></span>`;
+  if (set.size >= choices.length) return chip(`🏫 كل الفصول (${choices.length})`, `clearExportClasses('${target}')`);
+  return choices.filter(c => set.has(c.id)).map(c => chip(`${c.emoji||'📘'} ${c.name}`, `removeExportClass('${target}','${c.id}')`)).join('');
+}
+function renderExportClassPicker() {
+  const choices = exportClassChoices();
+  const wrap = document.getElementById('export-classes-wrap');
+  if (choices.length <= 1) { wrap.style.display = 'none'; exportSelectedClasses = new Set(choices.map(c => c.id)); return; }
+  exportSelectedClasses = new Set([...exportSelectedClasses].filter(id => choices.some(c => c.id === id)));
+  wrap.style.display = 'block';
+  document.getElementById('export-classes-list').innerHTML = exportClassChipsHTML('students', exportSelectedClasses, choices);
+}
+// ===== نافذة "إضافة فصل" للتصدير (مخدومين / خدام): اختيار فصول معينة أو كله =====
+let exportClassPickTarget = null; // 'students' | 'servants'
+function exportPickSet(t) { return t === 'servants' ? exportServSelected : exportSelectedClasses; }
+function exportPickChoices(t) { return t === 'servants' ? exportServClassChoices() : exportClassChoices(); }
+function refreshExportClassUI() { renderExportClassPicker(); renderExportServScope(); }
+window.openExportClassPick = (target) => {
+  exportClassPickTarget = target;
+  renderExportClassPick();
+  document.getElementById('export-class-pick-modal').style.display = 'flex';
+};
+window.closeExportClassPick = () => {
+  document.getElementById('export-class-pick-modal').style.display = 'none';
+  exportClassPickTarget = null;
+  refreshExportClassUI();
+};
+window.closeExportClassPickOutside = (e) => { if (e.target.id === 'export-class-pick-modal') closeExportClassPick(); };
+function renderExportClassPick() {
+  const t = exportClassPickTarget; if (!t) return;
+  const choices = exportPickChoices(t), set = exportPickSet(t);
+  const all = choices.length > 0 && choices.every(c => set.has(c.id));
+  document.getElementById('ecp-all-btn').textContent = all ? '✖ إلغاء تحديد الكل' : '✔ اختيار كل الفصول';
+  document.getElementById('ecp-count').textContent = choices.filter(c => set.has(c.id)).length;
+  document.getElementById('ecp-list').innerHTML = choices.map(c => `
+    <div class="servant-item" onclick="toggleExportClassPickItem('${c.id}')" style="cursor:pointer;padding:9px 12px">
+      <input type="checkbox" ${set.has(c.id) ? 'checked' : ''} onclick="event.stopPropagation();toggleExportClassPickItem('${c.id}')" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
+      <div class="s-info"><div class="s-name" style="font-size:13px">${c.emoji||'📘'} ${c.name}</div></div>
+    </div>`).join('');
+}
+window.toggleExportClassPickItem = (id) => {
+  const set = exportPickSet(exportClassPickTarget);
+  if (set.has(id)) set.delete(id); else set.add(id);
+  renderExportClassPick();
+};
+window.toggleExportClassPickAll = () => {
+  const t = exportClassPickTarget, set = exportPickSet(t), choices = exportPickChoices(t);
+  const all = choices.every(c => set.has(c.id));
+  choices.forEach(c => { if (all) set.delete(c.id); else set.add(c.id); });
+  renderExportClassPick();
+};
+window.removeExportClass = (target, id) => { exportPickSet(target).delete(id); refreshExportClassUI(); };
+window.clearExportClasses = (target) => { exportPickSet(target).clear(); refreshExportClassUI(); };
+// المخدومين اللي هيتصدّروا فعلاً: لو فيه أكتر من فصل متاح، بنفلتر على الفصول المتحددة بس
+function exportTargetStudents() {
+  const choices = exportClassChoices();
+  const base = exportBaseStudents();
+  if (choices.length <= 1) return base;
+  return base.filter(s => exportSelectedClasses.has(s.classSection));
+}
+window.openExportModal = () => {
+  closeSettingsMenu();
+  // افتراضيًا كل الفصول متحددة عند فتح النافذة
+  exportSelectedClasses = new Set(exportClassChoices().map(c => c.id));
+  exportServSelected = new Set(exportServClassChoices().map(c => c.id));
+  refreshExportClassUI();
+  document.getElementById('export-modal').style.display = 'flex';
+};
+window.closeExportModal = () => { document.getElementById('export-modal').style.display = 'none'; };
+window.closeExportOutside = (e) => { if (e.target.id === 'export-modal') closeExportModal(); };
+
+// بيبني شيت الحضور/التسميع حسب اللي المستخدم اختاره بالظبط: حضور بس، آية بس، أو الاتنين مع بعض في نفس الشيت
+function buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse) {
+  const attDates = includeAtt ? Object.keys(expAtt).sort() : [];
+  const verDates = includeVerse ? Object.keys(expVer).sort() : [];
+  const fmt = d => { const p = d.split('-'); return `${p[2]}/${p[1]}`; };
+
+  let cols, dual;
+  if (includeAtt && includeVerse) {
+    // كل تاريخ حضور بيبقى عمود، وأي تاريخ آية من غيره ينضم لأقرب تاريخ حضور سابق له
+    cols = attDates.map(d => ({ dateKey: d, verseDates: [d] }));
+    verDates.forEach(vd => {
+      if (attDates.includes(vd)) return;
+      let target = null;
+      for (const c of cols) { if (c.dateKey <= vd) target = c; else break; }
+      if (target) target.verseDates.push(vd);
+      else cols.push({ dateKey: vd, verseDates: [vd] }); // مفيش تاريخ حضور قبله خالص
+    });
+    cols.sort((a,b) => a.dateKey.localeCompare(b.dateKey));
+    dual = true;
+  } else if (includeAtt) {
+    cols = attDates.map(d => ({ dateKey: d, verseDates: [] }));
+    dual = false;
+  } else {
+    cols = verDates.map(d => ({ dateKey: d, verseDates: [d] }));
+    dual = false;
+  }
+
+  const row1 = ['الاسم'];
+  const row2 = [''];
+  cols.forEach(c => {
+    if (dual) { row1.push(fmt(c.dateKey), ''); row2.push('حضور', 'آية'); }
+    else { row1.push(fmt(c.dateKey)); row2.push(includeAtt ? 'حضور' : 'آية'); }
+  });
+
+  const rows = exportTargetStudents().map(s => {
+    const r = [s.name];
+    cols.forEach(c => {
+      if (dual) {
+        const att = !!expAtt[c.dateKey]?.[s.id];
+        const vEntry = c.verseDates.map(vd => expVer[vd]?.[s.id]).find(Boolean);
+        r.push(att ? '✓' : '', vEntry ? (vEntry.verse || '✓') : '');
+      } else if (includeAtt) {
+        r.push(expAtt[c.dateKey]?.[s.id] ? '✓' : '');
+      } else {
+        const vEntry = expVer[c.dateKey]?.[s.id];
+        r.push(vEntry ? (vEntry.verse || '✓') : '');
+      }
+    });
+    return r;
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([row1, row2, ...rows]);
+  const perCol = dual ? 2 : 1;
+  const totalCols = 1 + cols.length * perCol;
+
+  ws['!merges'] = [{ s:{r:0,c:0}, e:{r:1,c:0} }];
+  cols.forEach((c,i) => {
+    if (dual) {
+      const start = 1 + i*2;
+      ws['!merges'].push({ s:{r:0,c:start}, e:{r:0,c:start+1} });
+    } else {
+      const col = 1 + i;
+      ws['!merges'].push({ s:{r:0,c:col}, e:{r:1,c:col} });
+    }
+  });
+
+  ws['!cols'] = [{ wch: 30 }, ...cols.flatMap(() => dual ? [{ wch: 10 }, { wch: 18 }] : [{ wch: includeAtt ? 10 : 20 }])];
+  ws['!views'] = [{ rightToLeft: true }];
+
+  const border = { top:{style:'thin',color:{rgb:'D9D9D9'}}, bottom:{style:'thin',color:{rgb:'D9D9D9'}}, left:{style:'thin',color:{rgb:'D9D9D9'}}, right:{style:'thin',color:{rgb:'D9D9D9'}} };
+  const headerStyle = { alignment:{ horizontal:'center', vertical:'center', wrapText:true }, font:{ bold:true, color:{ rgb:'FFFFFF' } }, fill:{ patternType:'solid', fgColor:{ rgb:'4472C4' } }, border };
+  const center = { alignment: { horizontal:'center', vertical:'center', wrapText: true }, border };
+  const nameCell = { alignment:{ horizontal:'right', vertical:'center' }, border };
+
+  for (let c = 0; c < totalCols; c++) {
+    [0,1].forEach(r => {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (ws[addr]) ws[addr].s = headerStyle;
+    });
+  }
+  // تلوين الصفوف بالتبادل (banded rows) وبوردر خفيف حوالين كل خلية عشان يبقى شكله جدول منسق فعلاً
+  const lastRow = rows.length + 1;
+  for (let r = 2; r <= lastRow; r++) {
+    const banded = (r % 2 === 0);
+    const bandFill = banded ? { patternType:'solid', fgColor:{ rgb:'F2F6FC' } } : null;
+    for (let c = 0; c < totalCols; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!ws[addr]) continue;
+      const base = c === 0 ? nameCell : center;
+      ws[addr].s = bandFill ? { ...base, fill: bandFill } : base;
+    }
+  }
+  // فلتر وترتيب زي أي جدول حقيقي في إكسل + تجميد صفوف العناوين وهي بتنزل
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:1,c:0}, e:{r:lastRow,c:totalCols-1} }) };
+  ws['!freeze'] = { xSplit:0, ySplit:2, topLeftCell: XLSX.utils.encode_cell({r:2,c:0}), activePane:'bottomLeft', state:'frozen' };
+  return ws;
+}
+
+// بيبني شيت بيانات المخدومين (بروفايل كامل: النوع، تاريخ الميلاد، العنوان، التليفونات، ملاحظات الافتقاد)
+function buildStudentsSheet() {
+  const genderLabel = g => g === 'male' ? 'ولد' : (g === 'female' ? 'بنت' : '');
+  const row1 = ['الاسم','النوع','تاريخ الميلاد','الفصل','العنوان','أرقام التليفونات','ملاحظات الافتقاد'];
+  const rows = [...exportTargetStudents()]
+    .sort((a,b) => a.name.localeCompare(b.name,'ar'))
+    .map(s => [
+      s.name || '',
+      genderLabel(s.gender),
+      s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) : '',
+      s.classSection ? classLabel(s.classSection) : '',
+      s.address || '',
+      (s.phones||[]).filter(Boolean).join(' / '),
+      (s.visitNotes?.length) ? s.visitNotes.map(n => NOTE_LABELS[n]?.text || n).join('، ') : ''
+    ]);
+  const ws = XLSX.utils.aoa_to_sheet([row1, ...rows]);
+  ws['!cols'] = [{wch:26},{wch:8},{wch:18},{wch:14},{wch:26},{wch:22},{wch:26}];
+  ws['!views'] = [{ rightToLeft: true }];
+
+  const border = { top:{style:'thin',color:{rgb:'D9D9D9'}}, bottom:{style:'thin',color:{rgb:'D9D9D9'}}, left:{style:'thin',color:{rgb:'D9D9D9'}}, right:{style:'thin',color:{rgb:'D9D9D9'}} };
+  const headStyle = { font:{ bold:true, color:{ rgb:'FFFFFF' } }, alignment:{ horizontal:'center', vertical:'center' }, fill:{ patternType:'solid', fgColor:{ rgb:'4472C4' } }, border };
+  for (let c = 0; c < row1.length; c++) {
+    const addr = XLSX.utils.encode_cell({ r:0, c });
+    if (ws[addr]) ws[addr].s = headStyle;
+  }
+  // تلوين الصفوف بالتبادل وبوردر خفيف عشان تبقى شكلها جدول منسق فعلاً
+  for (let r = 1; r <= rows.length; r++) {
+    const banded = (r % 2 === 0);
+    const fill = banded ? { patternType:'solid', fgColor:{ rgb:'F2F6FC' } } : null;
+    for (let c = 0; c < row1.length; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!ws[addr]) continue;
+      const align = { horizontal: c===0 || c===4 ? 'right' : 'center', vertical:'center' };
+      ws[addr].s = fill ? { alignment: align, border, fill } : { alignment: align, border };
+    }
+  }
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:rows.length,c:row1.length-1} }) };
+  ws['!freeze'] = { xSplit:0, ySplit:1, topLeftCell: XLSX.utils.encode_cell({r:1,c:0}), activePane:'bottomLeft', state:'frozen' };
+  return ws;
+}
+
+// ===== تصدير الخدام (للأدمن ومسؤول الفصل) =====
+let exportServSelected = new Set(); // الفصول المتحددة لتصدير الخدام
+function canExportServants() {
+  return currentRole === 'admin' || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0);
+}
+// الفصول اللي يقدر يصدّر خدامها: الأدمن كل الفصول، ومسؤول الفصل فصوله اللي مسؤول عنها بس
+function exportServClassChoices() {
+  if (currentRole === 'admin') return allClasses;
+  const sup = normalizeAssignedClasses(currentSupervisorClass);
+  return allClasses.filter(c => sup.includes(c.id));
+}
+function renderExportServScope() {
+  const wrap = document.getElementById('export-servants-wrap');
+  if (!wrap) return;
+  const ok = canExportServants();
+  wrap.style.display = ok ? 'block' : 'none';
+  if (!ok) return;
+  const choices = exportServClassChoices();
+  const cw = document.getElementById('export-serv-classes-wrap');
+  if (choices.length <= 1) { cw.style.display = 'none'; exportServSelected = new Set(choices.map(c => c.id)); return; }
+  exportServSelected = new Set([...exportServSelected].filter(id => choices.some(c => c.id === id)));
+  cw.style.display = 'block';
+  document.getElementById('export-serv-classes').innerHTML = exportClassChipsHTML('servants', exportServSelected, choices);
+}
+// الخدام اللي هيتصدّروا: الأدمن + كل الفصول = كل المعتمدين، غير كده الخدام المتوزعين على الفصل/الفصول المختارة (ومسؤول الفصل من غير نفسه)
+function exportTargetServants() {
+  let list = cachedServants.filter(x => x.status === 'approved');
+  if (currentRole !== 'admin') list = list.filter(x => x.id !== currentUid);
+  const choices = exportServClassChoices();
+  const cids = [...exportServSelected].filter(id => choices.some(c => c.id === id));
+  // الأدمن + كل الفصول متحددة = كل الخدام المعتمدين، غير كده الخدام المتوزعين على الفصول المتحددة بس
+  if (!(currentRole === 'admin' && cids.length >= choices.length)) {
+    list = list.filter(x => normalizeAssignedClasses(x.assignedClass).some(c => cids.includes(c)));
+  }
+  return list.sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+}
+// تنسيق شيت بسيط: صف عناوين ملوّن + صفوف بالتبادل + فلتر وتجميد (نفس شكل باقي الشيتات)
+function styleSimpleSheet(ws, ncols, nrows, wch) {
+  ws['!cols'] = wch.map(w => ({ wch: w }));
+  ws['!views'] = [{ rightToLeft: true }];
+  const border = { top:{style:'thin',color:{rgb:'D9D9D9'}}, bottom:{style:'thin',color:{rgb:'D9D9D9'}}, left:{style:'thin',color:{rgb:'D9D9D9'}}, right:{style:'thin',color:{rgb:'D9D9D9'}} };
+  const head = { font:{ bold:true, color:{ rgb:'FFFFFF' } }, alignment:{ horizontal:'center', vertical:'center', wrapText:true }, fill:{ patternType:'solid', fgColor:{ rgb:'4472C4' } }, border };
+  for (let c = 0; c < ncols; c++) { const a = XLSX.utils.encode_cell({ r:0, c }); if (ws[a]) ws[a].s = head; }
+  for (let r = 1; r <= nrows; r++) {
+    const fill = (r % 2 === 0) ? { patternType:'solid', fgColor:{ rgb:'F2F6FC' } } : null;
+    for (let c = 0; c < ncols; c++) {
+      const a = XLSX.utils.encode_cell({ r, c });
+      if (!ws[a]) continue;
+      const align = { horizontal: c === 0 ? 'right' : 'center', vertical:'center', wrapText:true };
+      ws[a].s = fill ? { alignment: align, border, fill } : { alignment: align, border };
+    }
+  }
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:nrows,c:ncols-1} }) };
+  ws['!freeze'] = { xSplit:0, ySplit:1, topLeftCell: XLSX.utils.encode_cell({r:1,c:0}), activePane:'bottomLeft', state:'frozen' };
+  return ws;
+}
+function buildServantsDataSheet(massCounts = {}) {
+  const roleLabel = x => x.role === 'admin' ? 'أدمن' : (x.role === 'supervisor' ? 'مسؤول فصل' : 'خادم');
+  const head = ['الاسم','التليفون','الإيميل','العنوان','الدور','الفصول','مسؤول عن','قداس (عدد)','مدارس أحد (عدد)','اجتماع خدام (عدد)','تحضير (عدد)'];
+  const rows = exportTargetServants().map(x => [
+    x.name || '', x.phone || '', x.email || '', x.address || '', roleLabel(x),
+    normalizeAssignedClasses(x.assignedClass).map(classLabel).join('، '),
+    supervisedClassesOf(x).map(classLabel).join('، '),
+    massCounts[x.id] || 0, x.sscCount || 0, x.meetingCount || 0, x.prepCount || 0
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
+  return styleSimpleSheet(ws, head.length, rows.length, [26,16,28,26,12,24,20,12,14,14,12]);
+}
+// شيت حضور خدام لنشاط واحد: صف لكل خادم وعمود لكل تاريخ + إجمالي. بيرجع null لو مفيش أي حضور للنشاط ده
+function buildServantsAttSheet(activity, byDate) {
+  const servants = exportTargetServants();
+  const ids = new Set(servants.map(x => x.id));
+  const dates = Object.keys(byDate).filter(d => Object.keys(byDate[d]).some(id => ids.has(id))).sort();
+  if (!dates.length) return null;
+  const fmt = d => { const q = d.split('-'); return `${q[2]}/${q[1]}/${q[0]}`; };
+  const head = ['الاسم','الفصول', ...dates.map(fmt), 'الإجمالي'];
+  const rows = servants.map(x => {
+    const marks = dates.map(d => byDate[d][x.id] ? '✓' : '');
+    return [x.name || '', normalizeAssignedClasses(x.assignedClass).map(classLabel).join('، '), ...marks, marks.filter(Boolean).length];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
+  return styleSimpleSheet(ws, head.length, rows.length, [26, 22, ...dates.map(() => 11), 10]);
+}
+
+// فلتر الفترة بيتحط على الاستعلام نفسه (date >= من) عشان القراءات تتحسب على الفترة بس، مش السجل كله
+function exportRangeQuery(col) {
+  const v = document.getElementById('export-range')?.value || '90';
+  if (v === 'all') return collection(db, col);
+  const d = new Date(); d.setDate(d.getDate() - parseInt(v, 10));
+  return query(collection(db, col), where('date', '>=', toLocalDateKey(d)));
+}
+window.runExportExcel = async () => {
+  await ensureAllClassesForAdmin();
+  const includeAtt = document.getElementById('export-opt-att').checked;
+  const includeVerse = document.getElementById('export-opt-verse').checked;
+  const includeStudents = document.getElementById('export-opt-students').checked;
+  const servOk = canExportServants();
+  const includeServData = servOk && !!document.getElementById('export-opt-serv-data')?.checked;
+  const includeServAtt  = servOk && !!document.getElementById('export-opt-serv-att')?.checked;
+  const anyStudentPart = includeAtt || includeVerse || includeStudents;
+  if (!anyStudentPart && !includeServData && !includeServAtt) { showToast('اختار حاجة واحدة على الأقل', 'error'); return; }
+  if (anyStudentPart && exportClassChoices().length > 1 && !exportSelectedClasses.size) { showToast('اختار فصل واحد على الأقل للمخدومين', 'error'); return; }
+  if ((includeServData || includeServAtt) && exportServClassChoices().length > 1 && !exportServSelected.size) { showToast('اختار فصل واحد على الأقل للخدام', 'error'); return; }
+
+  closeExportModal();
+  showToast('جاري تجهيز الملف…','info');
+
+  const wb = XLSX.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  const nameParts = [];
+
+  try {
+    // المخدومين بيتحمّلوا أول ما تفتح أي فصل — لو التصدير اتفتح من الرئيسية قبل كده القايمة بتبقى فاضية، فبنحمّلها الأول
+    if (anyStudentPart) await ensureStudents();
+    if (includeAtt || includeVerse) {
+      const expAtt = {}, expVer = {};
+      const proms = [];
+      if (includeAtt) proms.push(countedGetDocs(exportRangeQuery('attendance'), 'attendance (تصدير إكسل)').then(a => a.docs.forEach(x => { const d = x.data(); (expAtt[d.date] ||= {})[d.studentId] = x.id; })));
+      if (includeVerse) proms.push(countedGetDocs(exportRangeQuery('verses'), 'verses (تصدير إكسل)').then(v => v.docs.forEach(x => { const d = x.data(); (expVer[d.date] ||= {})[d.studentId] = { id:x.id, verse:d.verse||'' }; })));
+      await Promise.all(proms);
+      const sheetName = includeAtt && includeVerse ? 'حضور وتسميع' : (includeAtt ? 'حضور' : 'تسميع');
+      XLSX.utils.book_append_sheet(wb, buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse), sheetName);
+      if (includeAtt) nameParts.push('حضور');
+      if (includeVerse) nameParts.push('تسميع');
+    }
+    if (includeStudents) {
+      XLSX.utils.book_append_sheet(wb, buildStudentsSheet(), 'مخدومين');
+      nameParts.push('مخدومين');
+    }
+    if (includeServData || includeServAtt) {
+      if (!servantsLoadedFlag) await loadServantsOnce();
+      if (includeServData) {
+        // القداس مفيش له عدّاد جوه مستند الخادم زي باقي الأنشطة، فبنعدّه من سجلات الحضور
+        const massCounts = {};
+        const ms = await countedGetDocs(query(collection(db,'servantAttendance'), where('activity','==','mass')), 'servantAttendance قداس (تصدير بيانات الخدام)');
+        ms.docs.forEach(x => { const id = x.data().servantId; if (id) massCounts[id] = (massCounts[id] || 0) + 1; });
+        XLSX.utils.book_append_sheet(wb, buildServantsDataSheet(massCounts), 'الخدام');
+        nameParts.push('خدام');
+      }
+      if (includeServAtt) {
+        const snap = await countedGetDocs(exportRangeQuery('servantAttendance'), 'servantAttendance (تصدير إكسل)');
+        const byAct = {};
+        snap.docs.forEach(x => { const d = x.data(); if (!d.activity || !d.date || !d.servantId) return; ((byAct[d.activity] ||= {})[d.date] ||= {})[d.servantId] = true; });
+        let added = 0;
+        Object.keys(SERV_ATT_LABELS).forEach(act => {
+          const ws = byAct[act] ? buildServantsAttSheet(act, byAct[act]) : null;
+          if (ws) { XLSX.utils.book_append_sheet(wb, ws, `حضور ${SERV_ATT_LABELS[act]}`); added++; }
+        });
+        if (added) nameParts.push('حضور-خدام');
+        else showToast('مفيش سجل حضور خدام للفصول دي', 'info');
+      }
+    }
+  } catch(e) {
+    console.error(e);
+    showToast('تعذّر تحميل السجل','error');
+    return;
+  }
+
+  if (!wb.SheetNames.length) return;
+  XLSX.writeFile(wb, `${nameParts.join('-')}-${todayKey()}.xlsx`, { cellStyles: true });
+};
+
+// ===== TABS =====
+window.applyMonitorVisibility = () => {
+  const onAdmin = currentRole === 'admin';
+  const onSupervisor = currentRole === 'supervisor';
+  document.getElementById('tab-btn-monitor').style.display = 'none';
+  const c = document.getElementById('home-card-monitor'); if (c) c.style.display = 'none'; // الأدمن بيدخل المتابعة من كارت "الخدام" في رئيسيته
+  // المسؤول بيدخل الخدام من الرئيسية (كارت "الخدام")، مش من جوه الفصل
+  document.getElementById('tab-btn-classservants').style.display = 'none';
+  const c2 = document.getElementById('home-card-classservants'); if (c2) c2.style.display = 'none';
+  // "خدام الفصول": بيظهر للمسؤول اللي مسؤول عن أكتر من فصل، عشان يشوف خدام كل فصوله مع بعض
+  const tb2 = document.getElementById('tab-btn-allclassservants'); if (tb2) tb2.style.display = 'none';
+  const c3 = document.getElementById('home-card-allclassservants'); if (c3) c3.style.display = 'none';
+};
+// ===== الصفحة الرئيسية للأدمن: الفصول / الخدام =====
+function hideAdminScreens() {
+  ['tab-admin-home','tab-sup-home','tab-admin-classes','tab-pick-class'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+  hideRolesScreen();
+}
+// شاشة "المستخدمين والأدوار" لازم تتقفل مع أي تنقل تاني (هوم / تابات / فصول)، وإلا الشاشة الجديدة بتظهر فوقها أو تحتها
+function hideRolesScreen() {
+  const r = document.getElementById('tab-roles'); if (r) r.style.display = 'none';
+  document.getElementById('servant-profile-modal') && (document.getElementById('servant-profile-modal').style.display = 'none');
+}
+let adminClassMode = null; // null | 'edit' | 'del'
+window.setAdminClassMode = (m) => {
+  adminClassMode = (adminClassMode === m) ? null : m;
+  renderAdminClassCards();
+};
+window.adminClassCardClick = async (id, name) => {
+  const mode = adminClassMode;
+  if (mode === 'edit') { adminClassMode = null; renderAdminClassCards(); await editClassPrompt(id); }
+  else if (mode === 'del') { adminClassMode = null; renderAdminClassCards(); await deleteClass(id, name); }
+  else openClassFromAdmin(id);
+};
+function renderAdminClassCards() {
+  const grid = document.getElementById('admin-classes-grid');
+  if (!grid) return;
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const eb = document.getElementById('admin-mode-edit'), db_ = document.getElementById('admin-mode-del'), hint = document.getElementById('admin-mode-hint');
+  if (eb) eb.classList.toggle('active', adminClassMode === 'edit');
+  if (db_) db_.classList.toggle('active', adminClassMode === 'del');
+  if (hint) hint.textContent = adminClassMode === 'edit' ? 'اختار الفصل اللي عايز تعدّله' : adminClassMode === 'del' ? 'اختار الفصل اللي عايز تحذفه' : '';
+  const cls = adminClassMode === 'edit' ? ' mode-edit' : adminClassMode === 'del' ? ' mode-del' : '';
+  grid.innerHTML = allClasses.map(c => `
+    <button class="admin-card${cls}" data-cid="${esc(c.id)}">
+      <span class="ac-emoji">${esc(c.emoji||'📘')}</span>${esc(c.name)}
+    </button>`).join('') + `<button class="admin-card add" onclick="addClassPrompt()">➕ إضافة فصل</button>`;
+  grid.querySelectorAll('button[data-cid]').forEach(b => {
+    const c = allClasses.find(x => x.id === b.dataset.cid);
+    b.onclick = () => adminClassCardClick(c.id, c.name || '');
+  });
+}
+window.showAdminClasses = () => {
+  if (currentRole !== 'admin') return;
+  hideAdminScreens();
+  document.getElementById('tab-admin-classes').style.display = 'block';
+  adminClassMode = null;
+  renderAdminClassCards();
+};
+window.openClassFromAdmin = (id) => {
+  currentClassTab = id;
+  localStorage.setItem('attendanceClassTab', id);
+  classFilter = id;
+  adminClassChanged();
+  renderClassChips();
+  applyClassRestrictionUI();
+  showClassHome();
+};
+function hideAllScreens() {
+  stopVoice();
+  stopTodayListeners();
+  ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
+  hideAdminScreens();
+  hideRolesScreen();
+  document.getElementById('main-tabs').style.display = 'none';
+  document.getElementById('global-class-tabs').style.display = 'none';
+  document.getElementById('tab-home').style.display = 'none';
+  const st = document.getElementById('section-title'); if (st) st.style.display = 'none';
+}
+// الرئيسية: الأدمن بيشوف (الفصول / الخدام)، وباقي الخدام بيشوفوا كروت فصلهم على طول
+window.goHome = () => {
+  hideAllScreens();
+  const hdr = document.getElementById('class-home-header'); if (hdr) hdr.style.display = 'none';
+  if (currentRole === 'admin') document.getElementById('tab-admin-home').style.display = 'block';
+  else if (hasSupHome()) document.getElementById('tab-sup-home').style.display = 'block'; // المسؤول: الفصول / الخدام زي الأدمن
+  else if (needsClassPick()) showClassPicker(); // الرئيسية للي عنده أكتر من فصل = يختار فصل من فصوله
+  else showClassHome();
+  applyMonitorVisibility();
+};
+// الخادم المتوزع على أكتر من فصل (مش أدمن) لازم يختار الفصل اللي داخله الأول
+// المسؤول عن فصل (أو أكتر) بيبقى عنده رئيسية فيها "الفصول" و"الخدام" زي الأدمن
+function hasSupHome() { return currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0; }
+window.supOpenClasses = () => { if (needsClassPick()) showClassPicker(); else showClassHome(); };
+function needsClassPick() { return currentRole !== 'admin' && getAllowedAssignedClasses().length > 1; }
+function renderClassPicker() {
+  const grid = document.getElementById('pick-class-grid'); if (!grid) return;
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  grid.innerHTML = getAllowedAssignedClasses().map(id => `
+    <button class="admin-card" data-cid="${esc(id)}"><span class="ac-emoji">${esc(classEmoji(id))}</span>${esc(classLabel(id))}</button>`).join('');
+  grid.querySelectorAll('button[data-cid]').forEach(b => { b.onclick = () => pickClass(b.dataset.cid); });
+}
+window.showClassPicker = () => {
+  hideAllScreens();
+  const hdr = document.getElementById('class-home-header'); if (hdr) hdr.style.display = 'none';
+  renderClassPicker();
+  document.getElementById('tab-pick-class').style.display = 'block';
+  applyMonitorVisibility();
+};
+window.pickClass = (id) => {
+  classPicked = true;
+  currentClassTab = id;
+  localStorage.setItem('attendanceClassTab', id);
+  classFilter = id;
+  adminClassChanged();
+  renderClassChips();
+  applyClassRestrictionUI();
+  showClassHome();
+};
+window.classHomeBack = () => {
+  if (currentRole === 'admin') showAdminClasses();
+  else if (hasSupHome() && !needsClassPick()) goHome();
+  else showClassPicker();
+};
+// كروت الفصل (الحضور / المخدومين / الافتقاد / الرسائل) — الأدمن بيوصلها بعد ما يختار فصل، والخادم المتوزع بعد ما يختار فصله
+window.showClassHome = () => {
+  hideAllScreens();
+  const canGoBack = currentRole === 'admin' || needsClassPick() || hasSupHome();
+  const hdr = document.getElementById('class-home-header');
+  if (hdr) hdr.style.display = canGoBack ? 'block' : 'none';
+  const back = document.getElementById('class-home-back'); if (back) back.textContent = (currentRole === 'admin' || (hasSupHome() && !needsClassPick())) ? '→ رجوع' : '→ تغيير الفصل';
+  const t = document.getElementById('class-home-title'); if (t) t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab);
+  document.getElementById('tab-home').style.display = 'block';
+  applyMonitorVisibility();
+};
+// ===== زرار الرجوع فوق: تاب (حضور/مخدومين/…) ← كروت الفصل ← اختيار الفصل (أو الفصول للأدمن) =====
+function navLevel() {
+  const shown = id => document.getElementById(id)?.style.display === 'block';
+  if (shown('tab-admin-home')) return 'adminHome';
+  if (shown('tab-sup-home')) return 'supHome';
+  if (shown('tab-admin-classes')) return 'adminClasses';
+  if (shown('tab-pick-class')) return 'picker';
+  if (shown('tab-home')) return 'classHome';
+  if (['attendance','students','filters','messages','monitor','classservants'].some(t => shown('tab-' + t))) return 'tab';
+  return '';
+}
+function updateBackBtn() {
+  const b = document.getElementById('top-back-btn'); if (!b) return;
+  const lvl = navLevel();
+  const canGoBack = currentRole === 'admin' || needsClassPick() || hasSupHome();
+  const show = lvl === 'tab' || lvl === 'adminClasses' || lvl === 'picker' && hasSupHome() || (lvl === 'classHome' && canGoBack);
+  b.style.display = show ? 'flex' : 'none';
+}
+window.goBack = () => {
+  closeSettingsMenu();
+  const lvl = navLevel();
+  if (lvl === 'tab') {
+    if (currentRole === 'admin' && document.getElementById('tab-monitor').style.display === 'block') goHome();
+    else if (hasSupHome() && document.getElementById('tab-classservants').style.display === 'block') goHome(); // خدام المسؤول ← رئيسيته
+    else showClassHome(); // يرجع لكروت الفصل (حضور/مخدومين/…) من غير ما يعدّي على كل الفصول
+  }
+  else if (lvl === 'classHome') classHomeBack();
+  else if (lvl === 'picker' && hasSupHome()) goHome();
+  else if (lvl === 'adminClasses') goHome();
+};
+{
+  let backRaf = 0;
+  const schedule = () => { cancelAnimationFrame(backRaf); backRaf = requestAnimationFrame(updateBackBtn); };
+  const host = document.querySelector('.app-content');
+  if (host) new MutationObserver(schedule).observe(host, { subtree: true, attributes: true, attributeFilter: ['style'] });
+  schedule();
+}
+// زرار 🏠 في شريط التابات: الأدمن يرجع لكروت الفصل اللي فيه، والباقي للرئيسية
+window.tabsHome = () => {
+  if (currentRole === 'admin' && currentClassTab && document.getElementById('tab-monitor').style.display !== 'block') showClassHome();
+  else if (hasSupHome() && document.getElementById('tab-classservants').style.display !== 'block' && currentClassTab) showClassHome();
+  else goHome();
+};
+window.switchTab = async (tab) => {
+  let tabKey = tab;
+  if (tab === 'allclassservants') { tab = 'classservants'; classServScope = 'all'; }
+  else if (tab === 'classservants') classServScope = 'class';
+  if (tab !== 'attendance') { stopVoice(); stopTodayListeners(); }
+  if (tab === 'monitor' && currentRole !== 'admin') return;
+  if (tab === 'classservants' && currentRole !== 'supervisor') return;
+  hideAdminScreens();
+  document.getElementById('tab-home').style.display = 'none';
+  document.getElementById('main-tabs').style.display = 'flex';
+  document.getElementById('main-tabs').classList.add('home-only');
+  {
+    const allowedCls = getAllowedAssignedClasses();
+    const single = currentRole !== 'admin' && allowedCls.length === 1;
+    const showClassBar = tab !== 'monitor' && !(tab === 'classservants' && classServScope === 'all') && currentRole !== 'admin' && !single;
+    document.getElementById('global-class-tabs').style.display = showClassBar ? '' : 'none';
+    const titles = { attendance:'✅ الحضور', students:'🧒 المخدومين', filters:'📞 الافتقاد', messages:'📨 الرسائل' };
+    const tb = document.getElementById('section-title');
+    if (tb) {
+      if (titles[tab]) {
+        tb.textContent = (showClassBar ? '' : classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab) + ' — ') + titles[tab];
+        tb.style.display = 'block';
+      } else tb.style.display = 'none';
+    }
+  }
+  document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabKey));
+  ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
+  if (tab === 'monitor') { loadMonitorTab(); return; }
+  if (tab === 'classservants') { switchClassServSub('servants'); if (!servantsLoadedFlag) await loadServantsOnce(); renderClassServList(); return; }
+  await ensureStudents();
+  if (tab === 'attendance') { startTodayListeners(); updateStats(); renderTodayList(); }
+  if (tab === 'students')  { renderClassChips(); renderStudentsList(); }
+  if (tab === 'filters')   renderFilterList();
+  if (tab === 'messages')  renderWaTab();
+};
+
+// تبديل تاب الفصل فوق خالص في شاشة الحضور (فصل أ / فصل ب / كي جي ١) — كل حاجة في الشاشة (الإحصائيات، البحث، قائمة اليوم) بترجع بس للفصل المختار
+window.switchClassTab = (cls, btn) => {
+  const allowed = getAllowedAssignedClasses();
+  if (currentRole !== 'admin' && allowed.length && !allowed.includes(cls)) return;
+  currentClassTab = cls;
+  localStorage.setItem('attendanceClassTab', cls);
+  classFilter = cls;
+  adminClassChanged();
+  renderClassChips();
+  if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
+  if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
+  if (document.getElementById('tab-messages')?.style.display === 'block') renderWaTab();
+  document.querySelectorAll('.class-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  updateStats();
+  renderTodayList();
+  updateStuCount();
+  const input = document.getElementById('manual-input');
+  if (input && input.value.trim()) onManualSearch();
+  if (document.getElementById('tab-classservants')?.style.display === 'block' && classServScope === 'class') renderClassServAttList();
+};
+
+// لو الخادم متقيد بفصول معينة من الأدمن، نقفل شريط الفصول فوق على الفصول المسموح لها فقط،
+// ولو مش متقيد (أو أدمن) يفضل شايف كل الفصول التلاتة زي ما هو معتاد
+function applyClassRestrictionUI() {
+  const allowed = getAllowedAssignedClasses();
+  const restricted = currentRole !== 'admin' && allowed.length > 0;
+  if (restricted) {
+    if (!allowed.includes(currentClassTab)) currentClassTab = allowed[0];
+  } else if (!currentClassTab && allClasses.length) {
+    const saved = localStorage.getItem('attendanceClassTab');
+    currentClassTab = (saved && allClasses.some(c => c.id === saved)) ? saved : allClasses[0].id;
+  }
+  const bar = document.getElementById('global-class-tabs');
+  if (bar) {
+    bar.querySelectorAll('.class-tab').forEach(b => {
+      if (b.id === 'class-tab-all') { b.style.display = currentRole === 'admin' ? '' : 'none'; b.classList.toggle('active', adminAllClasses && !adminAutoAll); return; }
+      const cls = b.id.replace('class-tab-', '');
+      const visible = !restricted || allowed.includes(cls);
+      b.style.display = visible ? '' : 'none';
+      b.classList.toggle('active', cls === currentClassTab);
+      b.disabled = restricted && !allowed.includes(cls);
+    });
+  }
+  // تبويب "المخدومين" بيعرض كل الفصول دايمًا، فشيبس فلتر الفصل تفضل ظاهرة حتى للخادم المقيّد
+  // عشان يقدر يفلتر لفصله بس لو حب
+}
+window.applyClassRestrictionUI = applyClassRestrictionUI;
+
+// ===== MONITOR (ADMIN) =====
+// بث لحظي على قائمة الخدام كلها: أي قبول/رفض/ترقية/تنزيل/حذف بيحصل من أي أدمن (حتى من جهاز تاني)
+// يظهر فورًا عند كل الأدمنز الفاتحين تبويب "متابعة" من غير reload
+window.loadMonitorTab = async () => {
+  if (currentRole !== 'admin') return;
+  renderMonitorClassChips();
+  // الأدمن لما يفتح "الخدام" يفتحله تبويب "الخدام" (مش الحضور) تلقائي
+  switchMonitorSubTab('servants');
+  await loadServantsFresh();
+  const di = document.getElementById('activity-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
+  document.getElementById('activity-list').innerHTML = `<div class="empty-state">اختار التاريخ واضغط "عرض"</div>`;
+  const sd = document.getElementById('serv-att-date'); if (sd && !sd.value) sd.value = toLocalDateKey(new Date());
+};
+
+// ===== حضور الخدام (القداس / مدارس الأحد / اجتماع الخدام / التحضير) =====
+let servAttActivity = 'mass'; // 'mass' | 'sunday_school' | 'meeting' | 'preparation'
+const SERV_ATT_LABELS = { mass:'القداس', sunday_school:'مدارس الأحد', meeting:'اجتماع الخدام', preparation:'التحضير' };
+const SERV_ATT_EMOJI = { mass:'⛪', sunday_school:'📖', meeting:'🤝', preparation:'📝' };
+let monitorClassFilter = 'all';
+function monitorFilterServants(list) {
+  if (monitorClassFilter === 'all') return list;
+  const id = String(monitorClassFilter);
+  return list.filter(s => normalizeAssignedClasses(s.assignedClass).includes(id));
+}
+function renderMonitorClassChips() {
+  const cont = document.getElementById('monitor-class-chips');
+  if (!cont) return;
+  cont.innerHTML = `<button class="tab ${monitorClassFilter==='all'?'active':''}" onclick="setMonitorClass('all')">كل الفصول</button>` +
+    allClasses.map(c => `<button class="tab ${monitorClassFilter===c.id?'active':''}" onclick="setMonitorClass('${c.id}')">${c.name}</button>`).join('');
+}
+window.setMonitorClass = (id) => {
+  monitorClassFilter = id;
+  renderMonitorClassChips();
+  onMonitorSearch();
+};
+window.onMonitorSearch = () => {
+  if (document.getElementById('monitor-subtab-servants').style.display === 'block') renderServantsList();
+  else renderServAttList();
+};
+window.switchMonitorSubTab = (which) => {
+  document.getElementById('monitor-subtab-btn-attendance').classList.toggle('active', which === 'attendance');
+  document.getElementById('monitor-subtab-btn-servants').classList.toggle('active', which === 'servants');
+  document.getElementById('monitor-subtab-attendance').style.display = which === 'attendance' ? 'block' : 'none';
+  document.getElementById('monitor-subtab-servants').style.display   = which === 'servants'   ? 'block' : 'none';
+  document.getElementById('monitor-attendance-activities').style.display = which === 'attendance' ? 'block' : 'none';
+  const hero = document.getElementById('mon-hero'); if (hero) hero.classList.toggle('srv-mode', which === 'servants');
+  const hsub = document.getElementById('mon-hero-sub'); if (hsub && which === 'servants') hsub.textContent = 'إدارة الخدام وطلبات الانضمام';
+  if (which === 'attendance') renderServAttList(); else renderServantsList();
+};
+window.setServAttActivity = (activity, btn) => {
+  servAttActivity = activity;
+  document.querySelectorAll('#serv-att-activity-chips .tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderServAttList();
+};
+function servAttDocId(date, activity, servantId) { return `${date}_${activity}_${servantId}`; }
+// بيجيب مين متسجل حضوره للتاريخ والنشاط المختارين بس (قراءة صغيرة ومحدودة، مش كل السجل)
+// ===== مساعدات شاشة الخدام (أفاتار / شارات الفصول / الدور / ملخص الهيرو) =====
+function servantAvatarHTML(s) {
+  const first = normalizeAssignedClasses(s.assignedClass)[0];
+  const p = first ? classPalette(first) : { bg:'rgba(79,142,247,0.15)', text:'#4f8ef7' };
+  return `<div class="mon-avatar" style="background:${p.bg};color:${p.text}">${(s.name||'؟').trim()[0]||'؟'}</div>`;
+}
+function servantClassBadges(s) {
+  const ids = normalizeAssignedClasses(s.assignedClass);
+  if (!ids.length) return `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
+  return ids.map(cid => classBadgeHTML(cid)).join('');
+}
+function servantRoleChip(s) {
+  if (s.role === 'admin') return `<span class="mon-role admin">👑 أدمن</span>`;
+  if (s.role === 'supervisor') {
+    const sup = supervisedClassesOf(s), all = normalizeAssignedClasses(s.assignedClass);
+    const mixed = sup.length && all.some(c => !sup.includes(c));
+    return `<span class="mon-role sup">🗝️ مسؤول فصل${mixed ? ' (' + sup.map(classLabel).join(' + ') + ')' : ''}</span>`;
+  }
+  return '';
+}
+function updateMonHero(date, total, present) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('mon-stat-total', total);
+  set('mon-stat-present', present);
+  set('mon-stat-absent', Math.max(0, total - present));
+  let d = '';
+  try { d = new Date(date + 'T00:00:00').toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long' }); } catch (e) {}
+  set('mon-hero-sub', `${SERV_ATT_EMOJI[servAttActivity]} ${SERV_ATT_LABELS[servAttActivity]}${d ? ' · ' + d : ''}`);
+}
+async function renderServAttList() {
+  const cont = document.getElementById('serv-att-list');
+  if (!cont) return;
+  const date = document.getElementById('serv-att-date')?.value || toLocalDateKey(new Date());
+  if (!servantsLoadedFlag) await loadServantsOnce();
+  let servants = monitorFilterServants(cachedServants.filter(s => s.status === 'approved')).sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  const classBase = servants;
+  if (!servants.length) { updateMonHero(date, 0, 0); cont.innerHTML = `<div class="empty-state">مفيش خدام متسجلين لسه</div>`; return; }
+  const searchQ = normalizeArabic(document.getElementById('monitor-search-input')?.value || '');
+  if (searchQ) servants = servants.filter(s => normalizeArabic(s.name||'').includes(searchQ));
+  if (!servants.length) { cont.innerHTML = `<div class="empty-state">مفيش خادم بالاسم ده</div>`; return; }
+  cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+  try {
+    const snap = await countedGetDocs(query(collection(db,'servantAttendance'), where('date','==',date), where('activity','==',servAttActivity)), `servantAttendance (${SERV_ATT_LABELS[servAttActivity]})`);
+    const presentIds = new Set(snap.docs.map(d => d.data().servantId));
+    const presentTotal = classBase.filter(s => presentIds.has(s.id)).length;
+    updateMonHero(date, classBase.length, presentTotal);
+    const pct = classBase.length ? Math.round(presentTotal / classBase.length * 100) : 0;
+    const summary = `<div class="mon-summary">
+      <div class="mon-sum-row"><span><b>${presentTotal}</b> من ${classBase.length} حضروا ${SERV_ATT_EMOJI[servAttActivity]}</span><span class="mon-sum-pct">${pct}%</span></div>
+      <div class="mon-sum-track"><div class="mon-sum-fill" style="width:${pct}%"></div></div>
+    </div>`;
+    cont.innerHTML = summary + servants.map(s => {
+      const present = presentIds.has(s.id);
+      return `
+      <div class="servant-item mon-row ${present ? 'present' : ''}" onclick="toggleServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')">
+        ${servantAvatarHTML(s)}
+        <div class="s-info">
+          <div class="mon-name">${s.name||'—'}${servantRoleChip(s)}</div>
+          <div class="mon-badges">${servantClassBadges(s)}</div>
+        </div>
+        <div class="serv-att-check ${present ? 'checked' : ''}"></div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    console.error(e);
+    cont.innerHTML = `<div class="empty-state">تعذّر تحميل الحضور</div>`;
+  }
+}
+// بتسجل/تشيل حضور خادم في نشاط معين — ولو النشاط "مدارس الأحد" أو "اجتماع الخدام"، بيتحدّث عداد الخادم فورًا (من غير أي قراءة إضافية، الرقم موجود جوه مستند الخادم نفسه)
+window.toggleServantAttendance = async (servantId, name, date) => {
+  const id = servAttDocId(date, servAttActivity, servantId);
+  const countField = servAttActivity === 'sunday_school' ? 'sscCount' : servAttActivity === 'meeting' ? 'meetingCount' : servAttActivity === 'preparation' ? 'prepCount' : null;
+  try {
+    const alreadyPresent = document.querySelector(`[onclick*="toggleServantAttendance('${servantId}'"] .serv-att-check`)?.classList.contains('checked');
+    if (alreadyPresent) {
+      await deleteDoc(doc(db,'servantAttendance',id));
+      if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(-1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = Math.max(0,(sv[countField]||0)-1); }
+      showToast(`تم إلغاء حضور ${name}`, 'info');
+    } else {
+      await setDoc(doc(db,'servantAttendance',id), { servantId, name, date, activity: servAttActivity, timestamp: serverTimestamp() });
+      if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = (sv[countField]||0)+1; }
+      showToast(`تم تسجيل حضور ${name} في ${SERV_ATT_EMOJI[servAttActivity]} ${SERV_ATT_LABELS[servAttActivity]} ✓`, 'success');
+    }
+    renderServAttList();
+    if (document.getElementById('monitor-subtab-servants')?.style.display === 'block') renderServantsList(cachedServants.filter(x => x.status === 'approved'));
+  } catch(e) { console.error(e); showToast('حصل خطأ، حاول تاني', 'error'); }
+};
+
+// ===== خدام الفصل (تبويب مسؤول الفصل) — نسخة من حضور الخدام، مقصورة على خدام فصل المسؤول بس =====
+// عرض التاريخ بصيغة عربي مقروءة بدل خانة التاريخ الأصلية (اللي كانت بتظهر كلام مقلوب زي "موي/رهش/ةنس")
+// الـinput الأصلي بيفضل موجود فوق الشكل بشفافية كاملة، فالضغط عليه بيفتح منتقي التاريخ عادي
+function enhanceDateInput(inp) {
+  if (!inp || inp.dataset.dp) return;
+  inp.dataset.dp = '1';
+  const wrap = document.createElement('div');
+  wrap.className = 'date-pick';
+  inp.parentNode.insertBefore(wrap, inp);
+  wrap.innerHTML = '<span class="dp-ic">📅</span><span class="dp-txt"></span>';
+  wrap.appendChild(inp);
+  const txt = wrap.querySelector('.dp-txt');
+  const upd = () => {
+    const v = inp.value;
+    if (!v) { txt.textContent = 'اختار التاريخ'; txt.classList.add('empty'); return; }
+    const d = new Date(v + 'T00:00:00');
+    txt.textContent = isNaN(d) ? v : d.toLocaleDateString('ar-EG', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    txt.classList.remove('empty');
+  };
+  const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  Object.defineProperty(inp, 'value', { configurable:true, get() { return desc.get.call(this); }, set(v) { desc.set.call(this, v); upd(); } });
+  inp.addEventListener('input', upd);
+  inp.addEventListener('change', upd);
+  inp.addEventListener('click', () => { try { inp.showPicker && inp.showPicker(); } catch(e) {} });
+  upd();
+}
+['class-serv-att-date','serv-att-date','activity-date'].forEach(id => enhanceDateInput(document.getElementById(id)));
+
+let classServAttActivity = 'mass';
+window.setClassServAttActivity = (activity, btn) => {
+  classServAttActivity = activity;
+  document.querySelectorAll('#class-serv-att-activity-chips .tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderClassServAttList();
+};
+// ===== شاشة "الخدام" عند مسؤول الفصل: تبويب "الخدام" (بيفتح الأول) + تبويب "الحضور" =====
+window.switchClassServSub = (which) => {
+  document.getElementById('class-serv-subtab-btn-servants')?.classList.toggle('active', which === 'servants');
+  document.getElementById('class-serv-subtab-btn-att')?.classList.toggle('active', which === 'att');
+  const a = document.getElementById('class-serv-sub-servants'); if (a) a.style.display = which === 'servants' ? 'block' : 'none';
+  const b = document.getElementById('class-serv-sub-att');      if (b) b.style.display = which === 'att' ? 'block' : 'none';
+  if (which === 'servants') renderClassServList(); else renderClassServAttList();
+};
+// قايمة الخدام اللي المسؤول مسؤول عنهم بس (فصوله)، متجمعة بالفصل لو عنده أكتر من فصل — عرض فقط من غير أزرار إدارة
+function renderClassServList() {
+  const cont = document.getElementById('class-serv-list');
+  if (!cont || currentRole !== 'supervisor') return;
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const titleEl = document.getElementById('class-serv-scope-title'); if (titleEl) titleEl.textContent = '🏫 خدام الفصول';
+  const supervised = normalizeAssignedClasses(currentSupervisorClass);
+  if (!supervised.length) { cont.innerHTML = `<div class="empty-state">إنت مش مسؤول عن أي فصل</div>`; return; }
+  if (!servantsLoadedFlag) { cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`; return; }
+  const q = normalizeArabic(document.getElementById('class-serv-list-search')?.value || '');
+  const base = cachedServants.filter(x => x.status === 'approved' && x.id !== currentUid);
+  const groups = supervised.map(cid => ({
+    cid,
+    list: base.filter(x => normalizeAssignedClasses(x.assignedClass).includes(cid) && (!q || normalizeArabic(x.name||'').includes(q)))
+              .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
+  })).filter(g => g.list.length);
+  if (!groups.length) { cont.innerHTML = `<div class="empty-state">${q ? 'مفيش خادم بالاسم ده' : 'مفيش خدام معتمدين في فصولك لسه'}</div>`; return; }
+  const multi = supervised.length > 1;
+  cont.innerHTML = groups.map(g => (multi ? `<div class="section-title" style="margin:14px 0 8px">${esc(classEmoji(g.cid))} ${esc(classLabel(g.cid))} (${g.list.length})</div>` : '') +
+    g.list.map(x => `
+      <div class="servant-item mon-row">
+        ${servantAvatarHTML(x)}
+        <div class="s-info">
+          <div class="mon-name">${esc(x.name)||'—'}${servantRoleChip(x)}</div>
+          <div class="mon-badges">${servantClassBadges(x)}</div>
+          <div class="mon-stats">
+            <span class="mon-stat-chip ${x.sscCount?'has':''}">📖 مدارس أحد <b>${x.sscCount||0}</b></span>
+            <span class="mon-stat-chip ${x.meetingCount?'has':''}">🤝 اجتماع <b>${x.meetingCount||0}</b></span>
+          </div>
+        </div>
+      </div>`).join('')).join('');
+}
+async function renderClassServAttList() {
+  const cont = document.getElementById('class-serv-att-list');
+  if (!cont) return;
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const dateEl = document.getElementById('class-serv-att-date');
+  if (dateEl && !dateEl.value) dateEl.value = toLocalDateKey(new Date());
+  const date = dateEl?.value || toLocalDateKey(new Date());
+  const allMode = classServScope === 'all';
+  // المسؤول بيشوف بس الفصول اللي هو مسؤول عنها: "خدام الفصل" = الفصل اللي واقف عليه، و"خدام الفصول" = كل فصوله
+  const supervised = normalizeAssignedClasses(currentSupervisorClass);
+  const scopeClasses = allMode ? supervised : (supervised.includes(currentClassTab) ? [currentClassTab] : []);
+  const titleEl = document.getElementById('class-serv-scope-title');
+  if (titleEl) titleEl.textContent = allMode ? '🏫 خدام الفصول' : `${classEmoji(currentClassTab)} خدام ${classLabel(currentClassTab)}`;
+  if (!servantsLoadedFlag) await loadServantsOnce();
+  if (!scopeClasses.length) { cont.innerHTML = `<div class="empty-state">إنت مش مسؤول عن ${esc(classLabel(currentClassTab))} — اختار فصل إنت مسؤول عنه من فوق</div>`; return; }
+  const searchQ = normalizeArabic(document.getElementById('class-serv-att-search-input')?.value || '');
+  const base = cachedServants.filter(s => s.status === 'approved' && s.id !== currentUid);
+  const groups = scopeClasses.map(cid => ({
+    cid,
+    list: base.filter(s => normalizeAssignedClasses(s.assignedClass).includes(cid) && (!searchQ || normalizeArabic(s.name||'').includes(searchQ)))
+              .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
+  })).filter(g => g.list.length);
+  if (!groups.length) { cont.innerHTML = `<div class="empty-state">${searchQ ? 'مفيش خادم بالاسم ده' : (allMode ? 'مفيش خدام تانيين في فصولك' : 'مفيش خدام تانيين في الفصل ده')}</div>`; return; }
+  cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+  try {
+    const snap = await countedGetDocs(query(collection(db,'servantAttendance'), where('date','==',date), where('activity','==',classServAttActivity)), `servantAttendance فصل (${SERV_ATT_LABELS[classServAttActivity]})`);
+    const presentIds = new Set(snap.docs.map(d => d.data().servantId));
+    cont.innerHTML = groups.map(g => (allMode ? `<div class="section-title" style="margin:14px 0 8px">${esc(classEmoji(g.cid))} ${esc(classLabel(g.cid))} (${g.list.length})</div>` : '') +
+      g.list.map(s => `
+      <div class="servant-item" onclick="toggleClassServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')" style="cursor:pointer">
+        <div class="s-info">
+          <div class="s-name">${esc(s.name)||'—'}</div>
+        </div>
+        <div class="serv-att-check ${presentIds.has(s.id)?'checked':''}"></div>
+      </div>`).join('')).join('');
+  } catch(e) {
+    console.error(e);
+    cont.innerHTML = `<div class="empty-state">تعذّر تحميل الحضور</div>`;
+  }
+}
+window.toggleClassServantAttendance = async (servantId, name, date) => {
+  const activity = classServAttActivity;
+  const id = servAttDocId(date, activity, servantId);
+  const countField = activity === 'sunday_school' ? 'sscCount' : activity === 'meeting' ? 'meetingCount' : activity === 'preparation' ? 'prepCount' : null;
+  try {
+    const alreadyPresent = document.querySelector(`#class-serv-att-list [onclick*="toggleClassServantAttendance('${servantId}'"] .serv-att-check`)?.classList.contains('checked');
+    if (alreadyPresent) {
+      await deleteDoc(doc(db,'servantAttendance',id));
+      if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(-1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = Math.max(0,(sv[countField]||0)-1); }
+      showToast(`تم إلغاء حضور ${name}`, 'info');
+    } else {
+      await setDoc(doc(db,'servantAttendance',id), { servantId, name, date, activity, timestamp: serverTimestamp() });
+      if (countField) { await updateDoc(doc(db,'servants',servantId), { [countField]: increment(1) }); const sv = cachedServants.find(x=>x.id===servantId); if (sv) sv[countField] = (sv[countField]||0)+1; }
+      showToast(`تم تسجيل حضور ${name} في ${SERV_ATT_EMOJI[activity]} ${SERV_ATT_LABELS[activity]} ✓`, 'success');
+    }
+    renderClassServAttList();
+  } catch(e) { console.error(e); showToast('حصل خطأ، حاول تاني', 'error'); }
+};
+
+let cachedServants = [];
+let servantsLoadedFlag = false;
+// بيجيب قايمة الخدام من فايرستور مرة واحدة بس لكل جلسة (وبيعيد استخدام نفس النسخة في "متابعة" وشاشة الإعدادات/الأدوار
+// من غير قراءة تانية) — مرّر force=true بعد أي تعديل فعلي (قبول/رفض/ترقية...) عشان يجيب النسخة الجديدة
+let servantsLoadedAt = 0;
+// تحميل الخدام من الكاش لو اتحمّلوا من أقل من 5 دقايق (بدل 70 قراءة في كل فتحة)
+function loadServantsFresh(maxAgeMs = 5 * 60 * 1000) {
+  return loadServantsOnce(!servantsLoadedFlag || (Date.now() - servantsLoadedAt) > maxAgeMs);
+}
+// بعد أي إجراء على خادم بنعدّل النسخة اللي على الجهاز مباشرة بدل ما نحمّل الـ70 خادم تاني (patch=null يعني حذف)
+function patchServantLocal(id, patch) {
+  if (patch === null) cachedServants = cachedServants.filter(x => x.id !== id);
+  else cachedServants = cachedServants.map(x => x.id === id ? { ...x, ...patch } : x);
+  return loadServantsOnce(); // بيعرض من الكاش
+}
+async function loadServantsOnce(force) {
+  if (servantsLoadedFlag && !force) { renderPendingList(cachedServants.filter(x => x.status === 'pending')); renderServantsList(cachedServants.filter(x => x.status === 'approved')); renderSettingsPeopleList(); return; }
+  const pendingEl = document.getElementById('pending-list');
+  if (pendingEl) pendingEl.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+  try {
+    const snap = await countedGetDocs(collection(db,'servants'), 'servants (متابعة)');
+    cachedServants = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    servantsLoadedFlag = true; servantsLoadedAt = Date.now();
+    renderPendingList(cachedServants.filter(x => x.status === 'pending'));
+    renderServantsList(cachedServants.filter(x => x.status === 'approved'));
+    renderSettingsPeopleList();
+  } catch(e) {
+    console.error(e);
+    if (pendingEl) pendingEl.innerHTML = `<div class="empty-state">تعذّر تحميل الطلبات</div>`;
+  }
+}
+
+// بث لحظي على طلبات الانضمام المعلقة بس (عادةً صفر أو كام مستند) — أي طلب جديد يظهر عند الأدمن فورًا من غير reload،
+// والقراءات بتبقى بس على الطلب الجديد أو اللي اتحسم، مش على كل الخدام
+let pendingReqUnsub = null, pendingReqSeenServer = false;
+function stopPendingRequestsListener() {
+  if (pendingReqUnsub) { pendingReqUnsub(); pendingReqUnsub = null; }
+  pendingReqSeenServer = false;
+}
+function refreshPendingUI() {
+  renderPendingList(cachedServants.filter(x => x.status === 'pending'));
+  if (servantsLoadedFlag && document.getElementById('monitor-subtab-servants')?.style.display === 'block') renderServantsList(cachedServants.filter(x => x.status === 'approved'));
+  if (servantsLoadedFlag) renderSettingsPeopleList();
+}
+// تعديل النسخة المحلية بس (من غير ما نحمّل قايمة الخدام كلها) وبعدين تحديث الشاشة
+function patchCachedOnly(id, patch) {
+  if (patch === null) cachedServants = cachedServants.filter(x => x.id !== id);
+  else cachedServants = cachedServants.map(x => x.id === id ? { ...x, ...patch } : x);
+  refreshPendingUI();
+}
+async function resolvePendingRemoved(id, lastData) {
+  const c = cachedServants.find(x => x.id === id);
+  if (!c || c.status !== 'pending') return; // اتعالج محليًا (قبول/رفض من الجهاز ده)
+  if (lastData && lastData.status && lastData.status !== 'pending') { patchCachedOnly(id, lastData); return; }
+  try {
+    const sn = await getDoc(doc(db,'servants',id));
+    patchCachedOnly(id, sn.exists() ? { ...sn.data() } : null);
+  } catch(e) { patchCachedOnly(id, null); }
+}
+function startPendingRequestsListener() {
+  if (pendingReqUnsub || !canHandleRequests()) return;
+  pendingReqUnsub = onSnapshot(query(collection(db,'servants'), where('status','==','pending')), snap => {
+    countSnapshotReads('servants (طلبات الانضمام - live)', snap);
+    const initial = !pendingReqSeenServer;
+    if (!snap.metadata.fromCache) pendingReqSeenServer = true;
+    let newcomers = 0;
+    snap.docChanges().forEach(ch => {
+      const id = ch.doc.id, data = { id, ...ch.doc.data() };
+      if (ch.type === 'removed') { resolvePendingRemoved(id, ch.doc.data()); return; }
+      const i = cachedServants.findIndex(x => x.id === id);
+      if (i >= 0) cachedServants[i] = { ...cachedServants[i], ...data };
+      else { cachedServants.push(data); if (ch.type === 'added' && canHandleRequest(data)) newcomers++; }
+    });
+    if (!initial && newcomers) showToast(newcomers > 1 ? `📥 وصل ${newcomers} طلبات انضمام جديدة` : '📥 وصل طلب انضمام جديد', 'info');
+    refreshPendingUI();
+  }, err => console.error('pending requests listener error:', err));
+}
+
+// مين يقدر يقبل/يرفض طلبات الانضمام: الأدمن (كل الطلبات) + مسؤول الفصل (طلبات الفصول اللي هو مسؤول عنها بس)
+function canHandleRequests() { return currentRole === 'admin' || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0); }
+function canHandleRequest(s) {
+  if (currentRole === 'admin') return true;
+  if (currentRole !== 'supervisor') return false;
+  const sup = normalizeAssignedClasses(currentSupervisorClass);
+  return normalizeAssignedClasses(s && s.assignedClass).some(c => sup.includes(c));
+}
+function renderSupPending() {
+  const sec = document.getElementById('sup-pending-section'); if (!sec) return;
+  const mine = currentRole === 'supervisor' ? cachedServants.filter(x => x.status === 'pending' && canHandleRequest(x)) : [];
+  const badge = document.getElementById('sup-pending-badge');
+  if (badge) { badge.textContent = mine.length ? `📥 ${mine.length}` : ''; badge.style.display = mine.length ? 'inline-block' : 'none'; }
+  sec.style.display = mine.length ? '' : 'none';
+  const cnt = document.getElementById('sup-pending-count'); if (cnt) cnt.textContent = mine.length;
+  const cont = document.getElementById('sup-pending-list'); if (!cont) return;
+  const q = n => String(n||'').replace(/'/g, "\\'");
+  cont.innerHTML = mine.map(s => `
+    <div class="servant-item" style="flex-wrap:wrap">
+      <div class="s-avatar">${(s.name||'؟').trim()[0]||'؟'}</div>
+      <div class="s-info">
+        <div class="s-name">${s.name||'—'} ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
+        <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}${s.phone ? ' · '+s.phone : ''}</div>
+        ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
+      </div>
+      <button class="export-btn" onclick="approveServant('${s.id}','${q(s.name)}','${servantRoleIds(s).join(',')}')">✓ قبول</button>
+      <button class="del-btn" onclick="rejectServant('${s.id}','${q(s.name)}','${servantRoleIds(s).join(',')}')">✕ رفض</button>
+    </div>`).join('');
+}
+function renderPendingList(list) {
+  renderSupPending();
+  renderClassServList();
+  const ps = document.getElementById('pending-section'); if (ps) ps.style.display = list.length ? '' : 'none';
+  document.getElementById('pending-count').textContent = list.length;
+  { const mp = document.getElementById('mon-stat-pending'); if (mp) mp.textContent = list.length; }
+  const cont = document.getElementById('pending-list');
+  if (!list.length) { cont.innerHTML = `<div class="empty-state">لا يوجد طلبات انضمام جديدة</div>`; return; }
+  cont.innerHTML = list.map(s => `
+    <div class="servant-item" style="flex-wrap:wrap">
+      <div class="s-avatar">${(s.name||'؟').trim()[0]||'؟'}</div>
+      <div class="s-info">
+        <div class="s-name">${s.name||'—'} ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
+        <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}${s.phone ? ' · '+s.phone : ''}</div>
+        ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
+      </div>
+      <button class="export-btn" onclick="approveServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${servantRoleIds(s).join(',')}')">✓ قبول</button>
+      <button class="del-btn" onclick="rejectServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${servantRoleIds(s).join(',')}')">✕ رفض</button>
+    </div>`).join('');
+}
+
+// مبسّطة: اسم الخادم بس + رقمين على الشمال (مدارس أحد + اجتماع خدام) — دوس على الاسم يفتحلك ملفه بكل تفاصيله وأزرار الإدارة
+function renderServantsList(list) {
+  const base = monitorFilterServants(list || cachedServants.filter(x => x.status === 'approved'));
+  document.getElementById('servants-count').textContent = base.length;
+  { const t = document.getElementById('mon-stat-total'); if (t) t.textContent = base.length; }
+  const q = normalizeArabic(document.getElementById('monitor-search-input')?.value || '');
+  const filtered = q ? base.filter(s => normalizeArabic(s.name||'').includes(q)) : base;
+  const cont = document.getElementById('servants-list');
+  // الأسماء المضافة مقدمًا ولسه مسجلتش — بتظهر تحت المعتمدين وتقدر تفتح ملفها (الأدوار بتتحمل مرة واحدة أول ما تفتح الخانة دي)
+  if (!rolesLoadedFlag && !rolesTriedForServantsList) { rolesTriedForServantsList = true; loadRolesOnce(); }
+  const pendingPeople = pendingPeopleList().filter(x => (monitorClassFilter === 'all' || x.classes.includes(String(monitorClassFilter))) && (!q || normalizeArabic(x.name).includes(q)));
+  const pendingHTML = pendingPeople.length ? `<div class="section-title" style="margin:16px 0 8px">⏳ لسه مسجلوش حساب (${pendingPeople.length})</div>` + pendingPeople.map(x => {
+    const first = x.classes[0], pal = first ? classPalette(first) : { bg:'rgba(79,142,247,0.15)', text:'#4f8ef7' };
+    const isSup = x.sup.size > 0;
+    return `
+      <div class="servant-item mon-row" style="opacity:.85" onclick="openPendingProfile(decodeURIComponent('${pEnc(x.name)}'))">
+        <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${(x.name||'؟').trim()[0]||'؟'}</div>
+        <div class="s-info">
+          <div class="mon-name">${dEsc(x.name)}${isSup ? '<span class="mon-role sup">🗝️ مسؤول فصل</span>' : ''}<span class="mon-role" style="background:rgba(255,255,255,0.06);color:var(--text-dim);border:1px solid var(--border)">⏳ لسه مسجلش</span></div>
+          <div class="mon-badges">${x.classes.map(cid => classBadgeHTML(cid)).join('')}</div>
+        </div>
+      </div>`;
+  }).join('') : '';
+  if (!filtered.length) { cont.innerHTML = (q && !pendingHTML ? `<div class="empty-state">مفيش خادم بالاسم ده</div>` : (!q && !pendingHTML ? `<div class="empty-state">لا يوجد خدام معتمدين بعد</div>` : '')) + pendingHTML; return; }
+  cont.innerHTML = filtered
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
+    .map(s => `
+      <div class="servant-item mon-row" onclick="openServantProfile('${s.id}')">
+        ${servantAvatarHTML(s)}
+        <div class="s-info">
+          <div class="mon-name">${s.name||'—'}${servantRoleChip(s)}</div>
+          <div class="mon-badges">${servantClassBadges(s)}</div>
+          <div class="mon-stats">
+            <span class="mon-stat-chip ${s.sscCount?'has':''}">📖 مدارس أحد <b>${s.sscCount||0}</b></span>
+            <span class="mon-stat-chip ${s.meetingCount?'has':''}">🤝 اجتماع <b>${s.meetingCount||0}</b></span>
+          </div>
+        </div>
+      </div>`).join('') + pendingHTML;
+}
+let rolesTriedForServantsList = false;
+// كل الأسماء المضافة مقدمًا في أدوار الفصول ولسه ملهاش حساب: [{ name, classes, sup:Set }] — الاسم بيظهر مرة واحدة حتى لو في أكتر من دور
+function pendingPeopleList() {
+  const registered = new Set(cachedServants.map(x => nameKey(x.name)));
+  const names = uniqueNames(allRoles.filter(r => !r.isAdmin && Array.isArray(r.classes)).flatMap(r => r.pendingNames || []))
+    .filter(n => !registered.has(nameKey(n)));
+  return names.map(n => ({ name: n, ...pendingPersonMap(n) }))
+    .filter(x => x.classes.length)
+    .sort((a,b) => a.name.localeCompare(b.name,'ar'));
+}
+// ===== ملف الخادم (بيفتح لما تدوس على اسمه في تبويب "متابعة") =====
+let servantProfileId = '';
+// شارات فصول الخادم في ملفه: كل فصل هو فيه + دوره الحالي فيه + زرار يبدّل دوره + زرار ينقله لفصل تاني (كله للخادم ده بس، من غير ما يأثر على باقي الخدام)
+function renderServantProfileClassChips(s) {
+  const box = document.getElementById('sprof-class-chips');
+  const assigned = normalizeAssignedClasses(s.assignedClass);
+  if (!assigned.length) {
+    box.innerHTML = `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
+    return;
+  }
+  const sup = supervisedClassesOf(s);
+  const canEdit = currentRole === 'admin' && s.role !== 'admin';
+  const free = allClasses.filter(c => !assigned.includes(c.id));
+  box.innerHTML = assigned.map(cid => {
+    const isSup = sup.includes(cid);
+    const btns = canEdit ? `
+      <button class="action-btn" onclick="setServantClassRole('${s.id}','${cid}',${!isSup})">${isSup ? '🧑‍🏫 خليه خادم' : '🗝️ خليه مسؤول'}</button>
+      <button class="action-btn" onclick="openServantClassPicker('${s.id}','${cid}')">🔁 فصل تاني</button>` : '';
+    return `<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">${classBadgeHTML(cid)}<span style="font-size:11px;color:var(--text-dim)">${isSup ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل'}</span>${btns}</span>`;
+  }).join('') + (canEdit && free.length ? `<button class="action-btn" onclick="openServantClassPicker('${s.id}','')">➕ ضيف فصل</button>` : '');
+}
+
+// بيطبّق خريطة (فصول الخادم + مين مسؤول فيها) على الخادم ده لوحده: بيلاقي/يعمل دور لكل نوع (نوع + فصول بالظبط) وبيربطه بيه،
+// ومبنلمسش أي دور قديم فباقي الخدام مش بيتأثروا
+async function applyServantClassMap(sid, classes, supSet) {
+  if (!rolesLoadedFlag) await loadRolesOnce();
+  const supList = classes.filter(c => supSet.has(c));
+  const srvList = classes.filter(c => !supSet.has(c));
+  const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+  const newRoleIds = [];
+  for (const [type, cls] of [['classSupervisor', supList], ['classServant', srvList]]) {
+    if (!cls.length) continue;
+    let r = allRoles.find(x => !x.isAdmin && (x.type || (x.isSupervisor ? 'classSupervisor' : 'classServant')) === type && Array.isArray(x.classes) && sameSet(x.classes, cls));
+    if (!r) {
+      const data = { name: `${ROLE_TYPE_SHORT[type]} — ${cls.map(c => classLabel(c)).join(' + ')}`, type, isAdmin: false, isSupervisor: type === 'classSupervisor', classes: cls, pendingNames: [] };
+      const ref = await addDoc(collection(db,'roles'), data);
+      r = { id: ref.id, ...data };
+      allRoles.push(r);
+    }
+    newRoleIds.push(r.id);
+  }
+  const svPatch = {
+    roleIds: newRoleIds, roleId: newRoleIds[0] || '',
+    role: supList.length ? 'supervisor' : 'servant',
+    assignedClass: classes.join(','), supervisorClass: supList.join(',')
+  };
+  await updateDoc(doc(db,'servants',sid), svPatch);
+  await patchServantLocal(sid, svPatch);
+  await loadRolesOnce(true);
+  openServantProfile(sid);
+}
+function servantEditable(sid) {
+  const sv = cachedServants.find(x => x.id === sid);
+  return (currentRole === 'admin' && sv && sv.role !== 'admin') ? sv : null;
+}
+
+// تغيير دور خادم واحد في فصل واحد (خادم ⇄ مسؤول)
+window.setServantClassRole = async (sid, cid, toSupervisor) => {
+  const sv = servantEditable(sid); if (!sv) return;
+  if (!confirm(`تخلي "${sv.name||''}" ${toSupervisor ? 'مسؤول فصل' : 'خادم عادي'} في ${classLabel(cid)} بس؟ باقي الخدام مش هيتأثروا`)) return;
+  try {
+    const classes = normalizeAssignedClasses(sv.assignedClass);
+    const sup = new Set(supervisedClassesOf(sv));
+    if (toSupervisor) sup.add(cid); else sup.delete(cid);
+    await applyServantClassMap(sid, classes, sup);
+    showToast('تم تغيير دوره في الفصل ده ✓', 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء تغيير الدور', 'error'); }
+};
+
+// نقل الخادم من فصل لفصل تاني (بنفس دوره في الفصل القديم)، أو إضافة فصل جديد له (fromCid فاضي)، أو شيله من فصل
+async function changeServantClass(sid, fromCid, toCid) {
+  const sv = servantEditable(sid); if (!sv) return;
+  try {
+    let classes = normalizeAssignedClasses(sv.assignedClass);
+    const sup = new Set(supervisedClassesOf(sv));
+    const wasSup = fromCid && sup.has(fromCid);
+    if (fromCid) { classes = classes.filter(c => c !== fromCid); sup.delete(fromCid); }
+    if (toCid && !classes.includes(toCid)) { classes.push(toCid); if (wasSup) sup.add(toCid); }
+    if (!classes.length) { showToast('لازم يفضل في فصل واحد على الأقل', 'error'); return; }
+    await applyServantClassMap(sid, classes, sup);
+    showToast(!toCid ? 'اتشال من الفصل ✓' : (fromCid ? 'اتنقل للفصل التاني ✓' : 'اتضاف للفصل ✓'), 'success');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء تغيير الفصل', 'error'); }
+}
+// نافذة اختيار الفصل: fromCid = الفصل الحالي (نقل) أو '' (إضافة فصل)
+window.openServantClassPicker = (sid, fromCid) => {
+  const sv = servantEditable(sid); if (!sv) return;
+  const assigned = normalizeAssignedClasses(sv.assignedClass);
+  const options = allClasses.filter(c => !assigned.includes(c.id));
+  document.getElementById('class-picker-overlay')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'class-picker-overlay'; ov.className = 'modal-overlay';
+  ov.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:400';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const box = document.createElement('div');
+  box.className = 'modal-box'; box.style.cssText = 'width:100%;padding:18px';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:16px;font-weight:900;margin-bottom:6px';
+  title.textContent = fromCid ? `نقل ${sv.name||''} من ${classLabel(fromCid)} إلى:` : `إضافة ${sv.name||''} لفصل:`;
+  box.appendChild(title);
+  if (fromCid) {
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:12px;color:var(--text-dim);margin-bottom:12px';
+    hint.textContent = 'هيفضل بنفس دوره (خادم/مسؤول). باقي الخدام مش هيتأثروا.';
+    box.appendChild(hint);
+  }
+  const chips = document.createElement('div');
+  chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin:12px 0';
+  if (!options.length) chips.innerHTML = '<div class="empty-state" style="padding:10px">مفيش فصول تانية متاحة</div>';
+  options.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'filter-chip'; b.textContent = `${c.emoji||'📘'} ${c.name}`;
+    b.onclick = () => { ov.remove(); changeServantClass(sid, fromCid, c.id); };
+    chips.appendChild(b);
+  });
+  box.appendChild(chips);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+  if (fromCid && assigned.length > 1) {
+    const rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'del-btn'; rm.textContent = '🗑 شيله من الفصل ده';
+    rm.onclick = () => { if (confirm(`تشيل "${sv.name||''}" من ${classLabel(fromCid)}؟`)) { ov.remove(); changeServantClass(sid, fromCid, ''); } };
+    row.appendChild(rm);
+  }
+  const cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'action-btn'; cancel.textContent = 'إلغاء';
+  cancel.onclick = () => ov.remove();
+  row.appendChild(cancel);
+  box.appendChild(row);
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+};
+window.openServantProfile = (id) => {
+  const s = cachedServants.find(x => x.id === id);
+  if (!s) return;
+  servantProfileId = id; pendingProfileName = '';
+  document.getElementById('sprof-stats').style.display = '';
+  document.getElementById('sprof-avatar').textContent = (s.name||'؟').trim()[0] || '؟';
+  document.getElementById('sprof-name').textContent = (s.name||'—') + (s.role==='admin' ? ' 👑' : (s.role==='supervisor' ? ' 🗝️' : ''));
+  document.getElementById('sprof-sub').textContent = s.role==='admin' ? 'أدمن' : (s.role==='supervisor' ? (supervisedClassesOf(s).length && normalizeAssignedClasses(s.assignedClass).some(c => !supervisedClassesOf(s).includes(c)) ? 'مسؤول ' + supervisedClassesOf(s).map(classLabel).join(' + ') + ' وخادم في باقي فصوله' : 'مسؤول فصل') : 'خادم فصل');
+  document.getElementById('sprof-ssc').textContent = s.sscCount||0;
+  document.getElementById('sprof-meeting').textContent = s.meetingCount||0;
+  document.getElementById('sprof-prep').textContent = s.prepCount||0;
+  const assigned = normalizeAssignedClasses(s.assignedClass);
+  renderServantProfileClassChips(s);
+  const contactLines = [];
+  contactLines.push(s.status === 'pending' ? '⏳ سجّل حساب وبانتظار موافقة الأدمن' : '✅ مسجل حساب');
+  if (s.email) contactLines.push(`📧 <span dir="ltr">${s.email}</span>`);
+  if (s.phone) contactLines.push(`📞 <span dir="ltr">${s.phone}</span>`);
+  if (s.address) contactLines.push(`📍 ${s.address}`);
+  document.getElementById('sprof-contact').innerHTML = contactLines.join('<br>') || '';
+  renderServantProfileActions(s);
+  document.getElementById('servant-profile-modal').style.display = 'flex';
+};
+function renderServantProfileActions(s) {
+  const viewerIsPrimary = isPrimaryAdmin(currentEmail);
+  const sIsPrimary = isPrimaryAdmin(s.email);
+  const nameEsc = (s.name||'').replace(/'/g,"\\'");
+  let html = '';
+  if (s.role === 'admin') {
+    if (sIsPrimary) html = `<span class="s-sub" style="white-space:nowrap">👑 الأدمن الأساسي</span>`;
+    else if (viewerIsPrimary) html = `<button class="action-btn" onclick="demoteServant('${s.id}','${nameEsc}');closeServantProfile()">🔻 شيله من الأدمن</button>
+      <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}','${servantRoleIds(s).join(',')}');closeServantProfile()">🗑 حذف</button>`;
+  } else {
+    html = `<button class="action-btn" onclick="promoteServant('${s.id}','${nameEsc}');closeServantProfile()">👑 خليه أدمن</button>
+      <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}','${servantRoleIds(s).join(',')}');closeServantProfile()">🗑 حذف</button>`;
+  }
+  document.getElementById('sprof-actions').innerHTML = html;
+}
+window.closeServantProfile = () => {
+  document.getElementById('servant-profile-modal').style.display = 'none'; servantProfileId = ''; pendingProfileName = '';
+  // لو الملف اتفتح من شاشة "المستخدمين والأدوار" بنفضل فيها ونحدّث القايمة (لو حاجة اتغيّرت)
+  if (document.getElementById('tab-roles')?.style.display === 'block' && document.getElementById('roles-list-view')?.style.display !== 'none') renderRolesList();
+};
+window.closeServantProfileOutside = (e) => { if (e.target.id === 'servant-profile-modal') closeServantProfile(); };
+
+// ===== ملف خادم لسه مسجلش حساب (اسمه مضاف مقدمًا في دور/أدوار) =====
+// نفس شكل ملف الخادم المسجل، بس من غير إحصائيات، والإيميل بيظهر لما يسجل. أي تعديل بيتطبق على الاسم ده لوحده (نفس فكرة applyServantClassMap)
+let pendingProfileName = '';
+const pEnc = n => encodeURIComponent(n).replace(/'/g, '%27');
+function pendingPersonMap(name) {
+  const classes = [], sup = new Set();
+  allRoles.forEach(r => {
+    if (r.isAdmin || !Array.isArray(r.classes) || !nameVariantsIn(r, name).length) return;
+    r.classes.forEach(c => { if (!classes.includes(c)) classes.push(c); if (r.isSupervisor) sup.add(c); });
+  });
+  return { classes, sup };
+}
+window.openPendingProfile = (name) => {
+  const { classes, sup } = pendingPersonMap(name);
+  if (!classes.length) { showToast('الاسم ده مبقاش مضاف في أي فصل', 'info'); renderRolesList(); return; }
+  pendingProfileName = name; servantProfileId = '';
+  document.getElementById('sprof-avatar').textContent = (name||'؟').trim()[0] || '؟';
+  document.getElementById('sprof-name').textContent = name + (sup.size ? ' 🗝️' : '');
+  document.getElementById('sprof-sub').textContent = '⏳ لسه مسجلش حساب';
+  document.getElementById('sprof-stats').style.display = 'none';
+  const e = pEnc(name);
+  document.getElementById('sprof-class-chips').innerHTML = classes.map(cid => {
+    const isSup = sup.has(cid);
+    return `<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">${classBadgeHTML(cid)}<span style="font-size:11px;color:var(--text-dim)">${isSup ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل'}</span>
+      <button class="action-btn" onclick="setPendingClassRole(decodeURIComponent('${e}'),'${cid}',${!isSup})">${isSup ? '🧑‍🏫 خليه خادم' : '🗝️ خليه مسؤول'}</button>
+      <button class="action-btn" onclick="openPendingClassPicker(decodeURIComponent('${e}'),'${cid}')">🔁 فصل تاني</button></span>`;
+  }).join('') + (allClasses.some(c => !classes.includes(c.id)) ? `<button class="action-btn" onclick="openPendingClassPicker(decodeURIComponent('${e}'),'')">➕ ضيف فصل</button>` : '');
+  document.getElementById('sprof-contact').innerHTML = `📧 لسه مسجلش حساب — الإيميل هيظهر هنا أول ما يسجل ويتقبل`;
+  document.getElementById('sprof-actions').innerHTML = `<button class="del-btn" onclick="deletePendingName(decodeURIComponent('${e}'))">🗑 حذف الاسم</button>`;
+  document.getElementById('servant-profile-modal').style.display = 'flex';
+};
+async function applyPendingClassMap(name, classes, supSet) {
+  const supList = classes.filter(c => supSet.has(c));
+  const srvList = classes.filter(c => !supSet.has(c));
+  const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+  const targets = [];
+  for (const [type, cls] of [['classSupervisor', supList], ['classServant', srvList]]) {
+    if (!cls.length) continue;
+    let r = allRoles.find(x => !x.isAdmin && (x.type || (x.isSupervisor ? 'classSupervisor' : 'classServant')) === type && Array.isArray(x.classes) && sameSet(x.classes, cls));
+    if (!r) {
+      const data = { name: `${ROLE_TYPE_SHORT[type]} — ${cls.map(c => classLabel(c)).join(' + ')}`, type, isAdmin: false, isSupervisor: type === 'classSupervisor', classes: cls, pendingNames: [] };
+      const ref = await addDoc(collection(db,'roles'), data);
+      r = { id: ref.id, ...data }; allRoles.push(r);
+    }
+    targets.push(r.id);
+  }
+  // بنشيل الاسم من أي دور قديم مش من الأدوار الجديدة، وبنضيفه للأدوار الجديدة — باقي أسماء الأدوار دي مبتتلمسش
+  for (const r of allRoles.filter(x => !x.isAdmin && nameVariantsIn(x, name).length && !targets.includes(x.id))) {
+    await updateDoc(doc(db,'roles',r.id), { pendingNames: arrayRemove(...nameVariantsIn(r, name)) });
+  }
+  for (const id of targets) {
+    const r = allRoles.find(x => x.id === id);
+    if (!nameVariantsIn(r, name).length) await updateDoc(doc(db,'roles',id), { pendingNames: arrayUnion(name) });
+  }
+  await loadRolesOnce(true);
+}
+window.setPendingClassRole = async (name, cid, toSup) => {
+  if (!confirm(`تخلي "${name}" ${toSup ? 'مسؤول فصل' : 'خادم عادي'} في ${classLabel(cid)} بس؟ (هيتفعل أول ما يسجل)`)) return;
+  try {
+    const { classes, sup } = pendingPersonMap(name);
+    if (toSup) sup.add(cid); else sup.delete(cid);
+    await applyPendingClassMap(name, classes, sup);
+    showToast('تم تغيير دوره في الفصل ده ✓', 'success');
+    openPendingProfile(name);
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء تغيير الدور', 'error'); }
+};
+async function changePendingClass(name, fromCid, toCid) {
+  try {
+    let { classes, sup } = pendingPersonMap(name);
+    const wasSup = fromCid && sup.has(fromCid);
+    if (fromCid) { classes = classes.filter(c => c !== fromCid); sup.delete(fromCid); }
+    if (toCid && !classes.includes(toCid)) { classes.push(toCid); if (wasSup) sup.add(toCid); }
+    if (!classes.length) { showToast('لازم يفضل في فصل واحد على الأقل، أو احذف الاسم', 'error'); return; }
+    await applyPendingClassMap(name, classes, sup);
+    showToast(!toCid ? 'اتشال من الفصل ✓' : (fromCid ? 'اتنقل للفصل التاني ✓' : 'اتضاف للفصل ✓'), 'success');
+    openPendingProfile(name);
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء تغيير الفصل', 'error'); }
+}
+window.openPendingClassPicker = (name, fromCid) => {
+  const { classes } = pendingPersonMap(name);
+  const options = allClasses.filter(c => !classes.includes(c.id));
+  document.getElementById('class-picker-overlay')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'class-picker-overlay'; ov.className = 'modal-overlay';
+  ov.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:400';
+  ov.onclick = ev => { if (ev.target === ov) ov.remove(); };
+  const box = document.createElement('div');
+  box.className = 'modal-box'; box.style.cssText = 'width:100%;padding:18px';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:16px;font-weight:900;margin-bottom:6px';
+  title.textContent = fromCid ? `نقل ${name} من ${classLabel(fromCid)} إلى:` : `إضافة ${name} لفصل:`;
+  box.appendChild(title);
+  const chips = document.createElement('div');
+  chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin:12px 0';
+  if (!options.length) chips.innerHTML = '<div class="empty-state" style="padding:10px">مفيش فصول تانية متاحة</div>';
+  options.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'filter-chip'; b.textContent = `${c.emoji||'📘'} ${c.name}`;
+    b.onclick = () => { ov.remove(); changePendingClass(name, fromCid, c.id); };
+    chips.appendChild(b);
+  });
+  box.appendChild(chips);
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+  if (fromCid && classes.length > 1) {
+    const rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'del-btn'; rm.textContent = '🗑 شيله من الفصل ده';
+    rm.onclick = () => { if (confirm(`تشيل "${name}" من ${classLabel(fromCid)}؟`)) { ov.remove(); changePendingClass(name, fromCid, ''); } };
+    row.appendChild(rm);
+  }
+  const cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'action-btn'; cancel.textContent = 'إلغاء';
+  cancel.onclick = () => ov.remove();
+  row.appendChild(cancel);
+  box.appendChild(row); ov.appendChild(box); document.body.appendChild(ov);
+};
+window.deletePendingName = async (name) => {
+  if (!confirm(`تحذف الاسم "${name}" من كل الأدوار؟ مش هيظهر في قايمة التسجيل تاني.`)) return;
+  try {
+    for (const r of allRoles.filter(x => !x.isAdmin && nameVariantsIn(x, name).length)) {
+      await updateDoc(doc(db,'roles',r.id), { pendingNames: arrayRemove(...nameVariantsIn(r, name)) });
+    }
+    await loadRolesOnce(true);
+    closeServantProfile();
+    showToast('تم حذف الاسم', 'info');
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحذف', 'error'); }
+};
+// ===== داشبورد الخدام (تحت عنوان "الخدام" عند الأدمن) =====
+// بيستخدم البيانات المحمّلة أصلاً (cachedServants + allStudents + allClasses) وعدّادات الحضور المخزنة على كل خادم — من غير أي قراءة إضافية من فايرستور
+const dEsc = t => String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+const DASH_SECTIONS = [
+  { id:'kpi',     name:'📋 ملخص عام',                  desc:'عدد الخدام والمخدومين والفصول ومتوسط المخدومين للخادم' },
+  { id:'ssc',     name:'📖 الأكثر حضورًا لمدارس الأحد',  desc:'ترتيب الخدام حسب عدد مرات حضور مدارس الأحد' },
+  { id:'meeting', name:'🤝 الأكثر حضورًا لاجتماع الخدام', desc:'ترتيب الخدام حسب عدد مرات حضور الاجتماع' },
+  { id:'prep',    name:'📝 الأكثر حضورًا للتحضير',       desc:'ترتيب الخدام حسب عدد مرات حضور التحضير' },
+  { id:'total',   name:'🏆 إجمالي الحضور',              desc:'مجموع حضور كل خادم (مدارس أحد + اجتماع + تحضير)' },
+  { id:'classes', name:'🏫 توزيع الخدام على الفصول',     desc:'عدد الخدام والمخدومين في كل فصل ونسبة المخدومين لكل خادم' },
+  { id:'noAtt',   name:'⏳ خدام مسجلوش حضور',           desc:'خدام معتمدين ملهمش أي حضور متسجل لسه' },
+  { id:'noClass', name:'⚠️ مخدومين بدون فصل',           desc:'مخدومين لسه متقسموش على فصل' },
+  { id:'list',    name:'📄 قائمة الخدام بالتليفونات',    desc:'كل فصل وتحته خدامه وأرقام تليفوناتهم' }
+];
+const DASH_DEFAULT = ['kpi','ssc','meeting','prep','classes','noAtt'];
+
+function getDashPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('dashSections') || 'null');
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch (e) {}
+  return DASH_DEFAULT.slice();
+}
+function saveDashPrefs(ids) { try { localStorage.setItem('dashSections', JSON.stringify(ids)); } catch (e) {} }
+
+window.openDashModal = () => {
+  const active = getDashPrefs();
+  document.getElementById('dash-options').innerHTML = DASH_SECTIONS.map(s => `
+    <label class="dash-opt">
+      <input type="checkbox" value="${s.id}" ${active.includes(s.id) ? 'checked' : ''}>
+      <span class="dash-opt-txt">
+        <span class="dash-opt-name">${s.name}</span>
+        <div class="dash-opt-desc">${s.desc}</div>
+      </span>
+    </label>`).join('');
+  document.getElementById('dash-modal').style.display = 'flex';
+};
+window.closeDashModal = () => { document.getElementById('dash-modal').style.display = 'none'; };
+window.closeDashModalOutside = (e) => { if (e.target.id === 'dash-modal') closeDashModal(); };
+
+function dashApprovedServants() { return cachedServants.filter(x => x.status === 'approved'); }
+function dashServantStats(sv) {
+  const ssc = sv.sscCount || 0, meeting = sv.meetingCount || 0, prep = sv.prepCount || 0;
+  return { ssc, meeting, prep, total: ssc + meeting + prep };
+}
+function dashBarChart(rows, color, suffix) {
+  if (!rows.length) return `<div class="dash-empty">مفيش بيانات</div>`;
+  const max = Math.max(...rows.map(r => r.value), 1);
+  return rows.map((r, i) => {
+    const rank = i < 3 ? `top${i + 1}` : '';
+    const pct = Math.round(r.value / max * 100);
+    return `<div class="dash-bar-row">
+      <div class="dash-bar-head">
+        <span class="dash-rank ${rank}">${i + 1}</span>
+        <span class="dash-bar-name">${dEsc(r.name)}</span>
+        <span class="dash-bar-val" style="color:${color}">${r.value}${suffix || ''}</span>
+      </div>
+      <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${Math.max(pct, 3)}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+}
+function dashCard(title, inner) { return `<div class="dash-card"><div class="dash-card-title">${title}</div>${inner}</div>`; }
+function dashServantPhone(sv) { return sv.phone ? dEsc(sv.phone) : 'لا يوجد رقم هاتف'; }
+
+function buildDashboardHTML() {
+  const active = getDashPrefs();
+  const servants = dashApprovedServants();
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'ar');
+  const noClassStudents = allStudents.filter(s => !s.classSection).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+  const rowsBy = key => servants.map(sv => ({ name: sv.name || '—', value: dashServantStats(sv)[key] })).sort((a, b) => b.value - a.value);
+  let out = '';
+
+  if (active.includes('kpi')) {
+    const avg = servants.length ? (allStudents.length / servants.length).toFixed(1) : '0';
+    const noAttCount = servants.filter(sv => dashServantStats(sv).total === 0).length;
+    out += dashCard('📋 ملخص عام', `<div class="dash-kpis">
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--accent)">${servants.length}</div><div class="dash-kpi-lbl">عدد الخدام</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--accent2)">${allStudents.length}</div><div class="dash-kpi-lbl">عدد المخدومين</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--success)">${allClasses.length}</div><div class="dash-kpi-lbl">عدد الفصول</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--text)">${avg}</div><div class="dash-kpi-lbl">متوسط المخدومين للخادم</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--warning)">${noAttCount}</div><div class="dash-kpi-lbl">خدام مسجلوش حضور</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-num" style="color:var(--danger)">${noClassStudents.length}</div><div class="dash-kpi-lbl">مخدومين بدون فصل</div></div>
+    </div>`);
+  }
+  if (active.includes('ssc'))     out += dashCard('📖 الأكثر حضورًا لمدارس الأحد', dashBarChart(rowsBy('ssc'), 'var(--success)'));
+  if (active.includes('meeting')) out += dashCard('🤝 الأكثر حضورًا لاجتماع الخدام', dashBarChart(rowsBy('meeting'), 'var(--accent)'));
+  if (active.includes('prep'))    out += dashCard('📝 الأكثر حضورًا للتحضير', dashBarChart(rowsBy('prep'), '#f1c40f'));
+  if (active.includes('total'))   out += dashCard('🏆 إجمالي الحضور', dashBarChart(rowsBy('total'), 'var(--accent2)'));
+
+  if (active.includes('classes')) {
+    const inner = allClasses.length ? allClasses.map(c => {
+      const sv = servants.filter(x => normalizeAssignedClasses(x.assignedClass).includes(c.id));
+      const st = allStudents.filter(x => x.classSection === c.id);
+      const ratio = sv.length ? (st.length / sv.length).toFixed(1) : null;
+      return `<div class="dash-li">
+        <span class="dash-li-name">${dEsc(c.emoji || '📘')} ${dEsc(c.name)}</span>
+        <span class="dash-li-val">${sv.length} خادم · ${st.length} مخدوم</span>
+        <span class="dash-pill ${ratio === null ? 'bad' : 'ok'}">${ratio === null ? 'مفيش خدام' : ratio + ' لكل خادم'}</span>
+      </div>`;
+    }).join('') : `<div class="dash-empty">مفيش فصول</div>`;
+    const allCls = servants.filter(x => !normalizeAssignedClasses(x.assignedClass).length).length;
+    out += dashCard('🏫 توزيع الخدام على الفصول', inner + (allCls ? `<div class="dash-empty" style="margin-top:6px">🔓 ${allCls} خادم على كل الفصول (مش محسوبين فوق)</div>` : ''));
+  }
+
+  if (active.includes('noAtt')) {
+    const rows = servants.filter(sv => dashServantStats(sv).total === 0).sort(byName);
+    const inner = rows.length
+      ? rows.map(sv => `<div class="dash-li"><span class="dash-li-name">${dEsc(sv.name || '—')}</span><span class="dash-pill bad">مفيش حضور</span></div>`).join('')
+      : `<div class="dash-empty">تمام ✅ كل الخدام ليهم حضور متسجل</div>`;
+    out += dashCard('⏳ خدام مسجلوش حضور', inner);
+  }
+
+  if (active.includes('noClass')) {
+    const inner = noClassStudents.length
+      ? noClassStudents.map(s => `<div class="dash-li"><span class="dash-li-name">${dEsc(s.name)}</span><span class="dash-phone">${(s.phones || []).filter(Boolean).map(dEsc).join(' — ') || 'لا يوجد رقم هاتف'}</span></div>`).join('')
+      : `<div class="dash-empty">تمام ✅ كل المخدومين ليهم فصل</div>`;
+    out += dashCard('⚠️ مخدومين بدون فصل', inner);
+  }
+
+  if (active.includes('list')) {
+    const groups = allClasses.map(c => ({ title: `${dEsc(c.emoji || '📘')} ${dEsc(c.name)}`, list: servants.filter(x => normalizeAssignedClasses(x.assignedClass).includes(c.id)).sort(byName) }));
+    const allClsList = servants.filter(x => !normalizeAssignedClasses(x.assignedClass).length).sort(byName);
+    if (allClsList.length) groups.push({ title: '🔓 كل الفصول', list: allClsList });
+    const inner = groups.map(g => {
+      const rows = g.list.length
+        ? g.list.map(sv => `<div class="dash-li"><span class="dash-li-name">${dEsc(sv.name || '—')}</span><span class="dash-phone">${dashServantPhone(sv)}</span></div>`).join('')
+        : `<div class="dash-empty">مفيش خدام في الفصل ده</div>`;
+      return `<div class="dash-sub-name">${g.title} <span style="font-size:11px;color:var(--text-dim);font-weight:700">(${g.list.length})</span></div>${rows}`;
+    }).join('');
+    out += dashCard('📄 قائمة الخدام بالتليفونات', inner || `<div class="dash-empty">مفيش خدام</div>`);
+  }
+
+  return out || `<div class="dash-empty">مختارتش أي قسم — دوس ⚙️ واختار الأقسام</div>`;
+}
+
+window.openDashboard = async () => {
+  await ensureAllClassesForAdmin();
+  const boxes = document.querySelectorAll('#dash-options input[type=checkbox]');
+  if (boxes.length) saveDashPrefs(Array.from(boxes).filter(b => b.checked).map(b => b.value));
+  closeDashModal();
+  try { await ensureStudents(); if (!servantsLoadedFlag) await loadServantsOnce(); } catch (e) { console.error(e); }
+  const servants = dashApprovedServants();
+  if (!servants.length) { showToast('مفيش خدام معتمدين لسه', 'info'); return; }
+  document.getElementById('dash-subtitle').textContent = `${servants.length} خادم · ${allStudents.length} مخدوم · ${allClasses.length} فصل`;
+  document.getElementById('dash-body').innerHTML = buildDashboardHTML();
+  document.getElementById('dash-view').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+};
+window.closeDashboard = () => {
+  document.getElementById('dash-view').style.display = 'none';
+  document.body.style.overflow = '';
+};
+
+// نسخة فاتحة من الداشبورد للطباعة / الحفظ كـ PDF
+function buildDashboardPrintDocument(bodyHtml) {
+  const servants = dashApprovedServants();
+  return `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+<title>داشبورد الخدام</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root { --surface2:#f4f6fa; --border:#e3e7ef; --text-dim:#6b7385; --accent:#4f8ef7; --accent2:#7c5cbf; --success:#27ae60; --danger:#e74c3c; --warning:#c49b06; --radius:12px; --radius-sm:8px; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Cairo',sans-serif; color:#1a1f2e; padding:20px; max-width:720px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:900; }
+  .sub { font-size:12px; color:var(--text-dim); margin:4px 0 16px; }
+  .dash-card { border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:14px; page-break-inside:avoid; }
+  .dash-card-title { font-size:15px; font-weight:800; margin-bottom:14px; }
+  .dash-kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .dash-kpi { background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 8px; text-align:center; }
+  .dash-kpi-num { font-size:22px; font-weight:900; }
+  .dash-kpi-lbl { font-size:10px; color:var(--text-dim); margin-top:4px; }
+  .dash-bar-row { margin-bottom:11px; }
+  .dash-bar-head { display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:4px; }
+  .dash-rank { width:20px; height:20px; border-radius:6px; background:var(--surface2); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; color:var(--text-dim); }
+  .dash-rank.top1 { background:#fdf3cf; color:#c49b06; } .dash-rank.top2 { background:#eef1f2; color:#8d9698; } .dash-rank.top3 { background:#fbe7d6; color:#c4600f; }
+  .dash-bar-name { flex:1; font-weight:700; } .dash-bar-val { font-weight:800; }
+  .dash-bar-track { height:7px; background:var(--surface2); border-radius:6px; overflow:hidden; } .dash-bar-fill { height:100%; border-radius:6px; }
+  .dash-li { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; border-bottom:1px solid #f0f0f0; font-size:12px; }
+  .dash-li:last-child { border-bottom:none; } .dash-li-name { font-weight:700; flex:1; } .dash-li-val { font-size:11px; color:var(--text-dim); }
+  .dash-phone { font-size:11px; color:#555; direction:ltr; }
+  .dash-pill { font-size:10px; font-weight:700; padding:3px 8px; border-radius:20px; }
+  .dash-pill.bad { background:#fdeceb; color:var(--danger); } .dash-pill.ok { background:#eafaf1; color:#27ae60; } .dash-pill.warn { background:#fef9e7; color:#c49b06; }
+  .dash-sub-name { font-size:13px; font-weight:800; margin:12px 0 5px; padding-bottom:4px; border-bottom:1px solid var(--border); }
+  .dash-empty { color:#999; font-size:11px; text-align:center; padding:8px 0; }
+  @media print { body { padding:0; } }
+</style></head>
+<body>
+  <h1>📊 داشبورد الخدام</h1>
+  <div class="sub">${servants.length} خادم · ${allStudents.length} مخدوم · ${allClasses.length} فصل · ${new Date().toLocaleDateString('ar-EG', { day:'numeric', month:'long', year:'numeric' })}</div>
+  ${bodyHtml}
+</body></html>`;
+}
+window.printDashboard = () => {
+  const win = window.open('', '_blank');
+  if (!win) { showToast('امنع حظر النوافذ المنبثقة للموقع ده من إعدادات المتصفح', 'error'); return; }
+  win.document.open();
+  win.document.write(buildDashboardPrintDocument(buildDashboardHTML()));
+  win.document.close();
+  setTimeout(() => { try { win.focus(); win.print(); } catch (e) {} }, 500);
+};
+
+
+window.renderActivityList = async function() {
+  const cont = document.getElementById('activity-list');
+  const v = document.getElementById('activity-date').value;
+  if (!v) { cont.innerHTML = `<div class="empty-state">اختار تاريخ الأول</div>`; return; }
+  cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+  try {
+    const start = new Date(v + 'T00:00:00'), end = new Date(start.getTime() + 86400000);
+    const snap = await countedGetDocs(query(collection(db,'activityLog'), where('timestamp','>=',start), where('timestamp','<',end), orderBy('timestamp','desc'), limit(100)), 'activityLog');
+    if (snap.empty) { cont.innerHTML = `<div class="empty-state">لا يوجد أنشطة في اليوم ده</div>`; return; }
+    cont.innerHTML = snap.docs.map(d => {
+      const a = d.data();
+      const t = a.timestamp?.toDate ? a.timestamp.toDate().toLocaleString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
+      return `<div class="activity-item"><b>${a.name||'؟'}</b> — ${a.action}${a.detail?': '+a.detail:''}<br>${t}</div>`;
+    }).join('');
+  } catch(e) {
+    cont.innerHTML = `<div class="empty-state">تعذّر تحميل الأنشطة</div>`;
+  }
+};
+
+// ملحوظة: قايمة الخدام هنا مش بث لحظي (onSnapshot)، دي قراءة مرة واحدة متخزنة في cachedServants —
+// عشان كده كل عملية تغيير هنا لازم تعمل loadServantsOnce(true) عشان تجيب النسخة الجديدة من السيرفر
+window.approveServant = async (id, name, roleIds) => {
+  if (!canHandleRequest(cachedServants.find(x => x.id === id))) { showToast('الطلب ده مش من فصولك', 'error'); return; }
+  if (!rolesLoadedFlag) { try { await loadRolesOnce(); } catch(e) {} }
+  try { await updateDoc(doc(db,'servants',id), { status:'approved' }); }
+  catch(e) { console.error(e); showToast('مش مسموحلك تقبل الطلب ده — راجع صلاحيات Firestore', 'error'); return; }
+  patchServantLocal(id, { status:'approved' });
+  // لو اسمه كان مختار من قايمة أسماء الدور الجاهزة، بيتمسح من القايمة دلوقتي (بعد القبول) عشان محدش تاني يختاره
+  if (name && roleIds) {
+    try { for (const rid of String(roleIds).split(',').filter(Boolean)) { const v = nameVariantsIn(allRoles.find(x => x.id === rid), name); await updateDoc(doc(db,'roles',rid), { pendingNames: arrayRemove(...(v.length ? v : [name])) }); } loadRolesOnce(true); } catch(e) { console.error(e); }
+  }
+  showToast('تم قبول الخادم ✓', 'success');
+};
+window.rejectServant = async (id, name, roleIds) => {
+  if (!canHandleRequest(cachedServants.find(x => x.id === id))) { showToast('الطلب ده مش من فصولك', 'error'); return; }
+  if (!confirm(`هترفض طلب "${name}"؟`)) return;
+  if (!rolesLoadedFlag) { try { await loadRolesOnce(); } catch(e) {} }
+  try { await deleteDoc(doc(db,'servants',id)); }
+  catch(e) { console.error(e); showToast('مش مسموحلك ترفض الطلب ده — راجع صلاحيات Firestore', 'error'); return; }
+  patchServantLocal(id, null);
+  // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
+  if (name && roleIds) {
+    try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
+  }
+  showToast('تم رفض الطلب', 'info');
+};
+window.deleteServant = async (id, name, roleIds) => {
+  if (!confirm(`هتحذف الخادم "${name}"؟ هيفقد صلاحية الدخول للتطبيق فورًا حتى لو داخل بيسجل حضور دلوقتي`)) return;
+  await deleteDoc(doc(db,'servants',id)); patchServantLocal(id, null);
+  // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
+  if (name && roleIds) {
+    try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
+  }
+  showToast('تم حذف الخادم', 'success');
+};
+window.promoteServant = async (id, name) => {
+  if (!confirm(`هتخلي "${name}" أدمن؟ هيقدر يشوف تبويب "متابعة" ويوافق على الخدام ويحذفهم زيك بالظبط`)) return;
+  await updateDoc(doc(db,'servants',id), { role:'admin' }); patchServantLocal(id, { role:'admin' });
+  showToast(`${name} بقى أدمن ✓`, 'success');
+};
+window.demoteServant = async (id, name) => {
+  if (!confirm(`هتشيل "${name}" من الأدمن؟ هيرجع خادم عادي فورًا ومش هيقدر يدخل تبويب "متابعة" تاني`)) return;
+  await updateDoc(doc(db,'servants',id), { role:'servant' }); patchServantLocal(id, { role:'servant' });
+  showToast(`تم تنزيل ${name} من الأدمن`, 'info');
+};
+
+// ===== المستخدمين والأدوار (roles) =====
+// دور = اسم + هل هو أدمن + قايمة فصول. بتحفظ الدور يطبّق على كل أعضاءه مرة واحدة (roleId بيتسجل على مستند كل خادم عضو).
+let allRoles = [];
+let rolesLoadedFlag = false;
+let rolesReturnTab = ''; // التاب اللي كان مفتوح قبل ما ندخل شاشة الأدوار، عشان نرجعله لما نقفل
+let editingRoleId = '';        // '' = دور جديد
+let editingRoleType = 'classServant'; // 'classServant' | 'classSupervisor' | 'admin'
+let editingRoleClasses = [];   // [classId,...]
+let editingRoleMemberIds = []; // [servantId,...]
+let editingRolePendingNames = []; // أسماء خدام لسه ملهمش حساب، هيلاقوا اسمهم وقت التسجيل ويختاروه
+const ROLE_TYPE_LABELS = { classServant:'🧑‍🏫 خادم فصل', classSupervisor:'🗝️ مسؤول فصل', admin:'👑 أدمن' };
+const ROLE_TYPE_SHORT   = { classServant:'خادم فصل', classSupervisor:'مسؤول فصل', admin:'أدمن' };
+
+window.closeRolesModal = () => {
+  document.getElementById('tab-roles').style.display = 'none';
+  if (rolesReturnTab) switchTab(rolesReturnTab); else goHome();
+  rolesReturnTab = '';
+};
+
+async function loadRolesOnce(force) {
+  if (rolesLoadedFlag && !force) { renderRolesList(); return; }
+  if (!servantsLoadedFlag) await loadServantsOnce();
+  try {
+    const snap = await countedGetDocs(collection(db,'roles'), 'roles (المستخدمين والأدوار)');
+    allRoles = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    rolesLoadedFlag = true;
+    renderRolesList();
+    if (document.getElementById('monitor-subtab-servants')?.style.display === 'block') renderServantsList();
+  } catch(e) { console.error(e); document.getElementById('roles-unassigned-list').innerHTML = `<div class="empty-state">تعذّر تحميل الأدوار</div>`; }
+}
+
+function showRolesListView() {
+  document.getElementById('roles-list-view').style.display = 'block';
+  document.getElementById('role-editor-view').style.display = 'none';
+  document.getElementById('roles-modal-title').textContent = 'المستخدمين والأدوار';
+}
+
+// فلتر الفصول فوق شاشة "المستخدمين والأدوار" — تدوس "تحديد فصل" فتظهر شرايط الفصول،
+// تختار فصل أو أكتر، ويظهرلك تحت بس خدام الفصول اللي اخترتها (مع دور كل واحد جنب اسمه)
+let rolesClassFilter = []; // [classId,...]
+window.toggleRolesClassFilter = () => {
+  const box = document.getElementById('roles-class-filter-chips');
+  box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+  if (box.style.display === 'flex') renderRolesClassFilterChips();
+};
+function renderRolesClassFilterChips() {
+  const box = document.getElementById('roles-class-filter-chips');
+  box.innerHTML = allClasses.map(c => {
+    const active = rolesClassFilter.includes(c.id);
+    return `<button type="button" class="filter-chip ${active?'active':''}" onclick="toggleRolesClassFilterChip('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('');
+}
+window.toggleRolesClassFilterChip = (classId) => {
+  rolesClassFilter = rolesClassFilter.includes(classId) ? rolesClassFilter.filter(x => x !== classId) : [...rolesClassFilter, classId];
+  renderRolesClassFilterChips();
+  renderRolesList();
+};
+
+// دوس على تعديل دور خادم فورمالي (عنده roleId) من جوه القايمة على طول
+window.openRoleEditorFromList = (roleId, e) => {
+  if (e) e.stopPropagation();
+  openRoleEditor(roleId);
+};
+
+function renderRolesList() {
+  // مفيش قايمة أدوار منفصلة فوق ولا رسالة "لسه مفيش أدوار" — أي دور بيتوزع بيظهر على طول
+  // في قايمة الفصول تحت — دوس على اسم أي خادم يفتحلك ملفه عادي زي باقي الخدام (من غير زرار قلم مخصوص)
+  if (!rolesClassFilter.length) {
+    document.getElementById('roles-unassigned-list').innerHTML = `<div class="empty-state" style="padding:16px">دوس "🔍 تحديد فصل" فوق واختار فصل أو أكتر عشان تشوف الخدام</div>`;
+    return;
+  }
+  const approved = cachedServants.filter(s => (s.status === 'approved' || s.status === 'pending') && s.role !== 'admin');
+  const roleRowHTML = (s, cid) => {
+    const label = (s.status === 'pending' ? '⏳ بانتظار الموافقة · ' : '✅ مسجل · ') + (supervisedClassesOf(s).includes(cid) ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل');
+    return `<div class="servant-item" onclick="openServantProfile('${s.id}')" style="cursor:pointer;padding:9px 12px">
+      <div class="s-info"><div class="s-name" style="font-size:13px">${s.name||'—'}</div></div>
+      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">${label}</span>
+    </div>`;
+  };
+  // أسماء خدام مضافة مقدمًا في أدوار الفصل ده ولسه مسجلوش — بتظهر تحت الفصل برضه (وبتختفي أول ما يسجل الخادم ويتمسح الاسم من الدور)
+  const escTxt = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const pendingRowHTML = (n, cid) => {
+    // مسؤولية الاسم في الفصل ده: مسؤول فصل لو مضاف في دور مسؤول لنفس الفصل، غير كده خادم فصل
+    const isSup = allRoles.some(r => !r.isAdmin && r.isSupervisor && Array.isArray(r.classes) && r.classes.includes(cid) && (r.pendingNames || []).includes(n));
+    return `<div class="servant-item" onclick="openPendingProfile(decodeURIComponent('${pEnc(n)}'))" style="cursor:pointer;padding:9px 12px;opacity:.75">
+      <div class="s-info"><div class="s-name" style="font-size:13px">${escTxt(n)}</div></div>
+      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">⏳ لسه مسجلش حساب · ${isSup ? '🗝️ مسؤول فصل' : '🧑‍🏫 خادم فصل'}</span>
+    </div>`;
+  };
+  const registeredNames = new Set(cachedServants.map(s => nameKey(s.name)));
+  const html = rolesClassFilter.map(cid => {
+    const c = classById(cid);
+    // خادم بيظهر في الفصل ده لو الفصل ده من ضمن فصوله، أو لو مقيدش بفصول معينة أصلاً (شايف كل الفصول)
+    const members = approved
+      .filter(s => { const list = normalizeAssignedClasses(s.assignedClass); return !list.length || list.includes(cid); })
+      .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+    const pending = uniqueNames(allRoles
+      .filter(r => !r.isAdmin && Array.isArray(r.classes) && r.classes.includes(cid))
+      .flatMap(r => r.pendingNames || []))
+      .filter(n => !registeredNames.has(nameKey(n)))
+      .sort((a,b) => a.localeCompare(b,'ar'));
+    const total = members.length + pending.length;
+    const title = `<div class="section-title" style="margin:14px 0 6px">${c?c.emoji||'📘':'📘'} ${c?c.name:cid} (${total})</div>`;
+    if (!total) return title + `<div class="empty-state" style="padding:10px">مفيش خدام في الفصل ده</div>`;
+    return title + members.map(m => roleRowHTML(m, cid)).join('') + pending.map(n => pendingRowHTML(n, cid)).join('');
+  }).join('');
+  document.getElementById('roles-unassigned-list').innerHTML = html;
+}
+
+window.openRoleEditor = (roleId) => {
+  editingRoleId = roleId || '';
+  const r = editingRoleId ? allRoles.find(x => x.id === editingRoleId) : null;
+  editingRoleType = r ? (r.type || (r.isAdmin ? 'admin' : (r.isSupervisor ? 'classSupervisor' : 'classServant'))) : 'classServant';
+  editingRoleClasses = (r && Array.isArray(r.classes)) ? [...r.classes] : [];
+  editingRoleMemberIds = editingRoleId ? cachedServants.filter(s => servantInRole(s, editingRoleId)).map(s => s.id) : [];
+  editingRolePendingNames = (r && Array.isArray(r.pendingNames)) ? [...r.pendingNames] : [];
+  roleAutoAddedIds = [];
+  roleAutoAddedPending = [];
+  rolePurgeNames = [];
+  roleDismissedPending = [];
+  document.getElementById('roles-modal-title').textContent = r ? 'تعديل دور' : 'دور جديد';
+  document.getElementById('role-delete-btn').style.display = r ? 'block' : 'none';
+  document.getElementById('role-add-members-modal').style.display = 'none';
+  renderRoleTypeChips();
+  renderRoleClassChips();
+  renderRoleMembersChips();
+  renderRolePendingNames();
+  updateRoleEffectHint();
+  document.getElementById('roles-list-view').style.display = 'none';
+  document.getElementById('role-editor-view').style.display = 'block';
+};
+window.closeRoleEditor = () => { showRolesListView(); renderRolesList(); };
+
+window.setRoleType = (type) => {
+  editingRoleType = type;
+  // لو غيّرت النوع لمسؤول/أدمن: بنشيل أي خدام اتضافوا تلقائي بسبب اختيار الفصل — الصلاحيات دي لازم تتدي لناس بالاسم بس
+  if (type !== 'classServant') {
+    editingRoleMemberIds = editingRoleMemberIds.filter(id => !roleAutoAddedIds.includes(id));
+    editingRolePendingNames = editingRolePendingNames.filter(n => !roleAutoAddedPending.includes(n));
+    roleAutoAddedIds = []; roleAutoAddedPending = [];
+    renderRoleMembersChips(); renderRolePendingNames();
+  }
+  renderRoleTypeChips(); renderRoleClassChips(); updateRoleEffectHint();
+};
+function renderRoleTypeChips() {
+  document.getElementById('role-type-chips').innerHTML = Object.keys(ROLE_TYPE_LABELS).map(t =>
+    `<button type="button" class="filter-chip ${editingRoleType===t?'active':''}" onclick="setRoleType('${t}')">${ROLE_TYPE_LABELS[t]}</button>`).join('');
+  document.getElementById('role-classes-section').style.display = editingRoleType === 'admin' ? 'none' : 'block';
+  document.getElementById('role-pending-names-section').style.display = editingRoleType === 'admin' ? 'none' : 'block';
+}
+function renderRoleClassChips() {
+  const cont = document.getElementById('role-classes-chips');
+  if (editingRoleType === 'admin') { cont.innerHTML = ''; return; }
+  if (!allClasses.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش فصول متضافة</div>`; return; }
+  cont.innerHTML = allClasses.map(c => {
+    const active = editingRoleClasses.includes(c.id);
+    return `<button type="button" class="filter-chip ${active?'active':''}" onclick="toggleRoleClass('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
+  }).join('');
+}
+// في الدور الجديد بس: أول ما تختار فصل، خدام الفصل ده بيتضافوا لخانة الأعضاء تلقائي (وتقدر تشيل أي حد بالـ ✕)،
+// ولو شلت الفصل بيتشال معاه الخدام اللي اتضافوا بسببه (إلا لو تبع فصل تاني لسه مختاره)
+let roleAutoAddedIds = [];
+let roleAutoAddedPending = []; // أسماء لسه مسجلتش اتضافت تلقائي بسبب اختيار فصل
+let rolePurgeNames = [];       // أسماء مسحها الأدمن ووافق يتمسحوا من كل الأدوار التانية كمان (بيتنفذ عند الحفظ)
+let roleDismissedPending = []; // أسماء اتمسحت في الجلسة دي — منرجعش نضيفها تلقائي لو الفصل اتختار تاني
+// أسماء مضافة مقدمًا (لسه مسجلوش) في أي دور تاني للفصل ده
+function rolePendingNamesForClass(classId) {
+  const registered = new Set(cachedServants.map(x => nameKey(x.name)));
+  return uniqueNames(allRoles
+    .filter(r => !r.isAdmin && r.id !== editingRoleId && Array.isArray(r.classes) && r.classes.includes(classId))
+    .flatMap(r => r.pendingNames || []))
+    .filter(n => !registered.has(nameKey(n)));
+}
+function roleClassServantIds(classId) {
+  return cachedServants
+    .filter(s => s.status === 'approved' && s.role !== 'admin' && normalizeAssignedClasses(s.assignedClass).includes(classId))
+    .map(s => s.id);
+}
+window.toggleRoleClass = (classId) => {
+  const wasActive = editingRoleClasses.includes(classId);
+  editingRoleClasses = wasActive ? editingRoleClasses.filter(x => x !== classId) : [...editingRoleClasses, classId];
+  // الإضافة التلقائية لكل خدام الفصل بتحصل لدور "خادم فصل" بس — مسؤول الفصل والأدمن بيتضاف ليهم ناس بالاسم بس
+  if (!editingRoleId && editingRoleType === 'classServant') {
+    if (!wasActive) {
+      roleClassServantIds(classId).forEach(id => {
+        if (!editingRoleMemberIds.includes(id)) { editingRoleMemberIds.push(id); roleAutoAddedIds.push(id); }
+      });
+      // مبننسخش الأسماء اللي لسه مسجلتش من أدوار تانية — الاسم بيفضل في دوره الأصلي بس، عشان ميتكررش في القايمة
+    } else {
+      const stillCovered = new Set(editingRoleClasses.flatMap(roleClassServantIds));
+      const toRemove = roleAutoAddedIds.filter(id => !stillCovered.has(id));
+      editingRoleMemberIds = editingRoleMemberIds.filter(id => !toRemove.includes(id));
+      roleAutoAddedIds = roleAutoAddedIds.filter(id => !toRemove.includes(id));
+      const stillPending = new Set(editingRoleClasses.flatMap(rolePendingNamesForClass));
+      const pendRemove = roleAutoAddedPending.filter(n => !stillPending.has(n));
+      editingRolePendingNames = editingRolePendingNames.filter(n => !pendRemove.includes(n));
+      roleAutoAddedPending = roleAutoAddedPending.filter(n => !pendRemove.includes(n));
+    }
+    renderRoleMembersChips();
+    renderRolePendingNames();
+  }
+  renderRoleClassChips();
+  updateRoleEffectHint();
+};
+
+window.openRoleAddMembersModal = () => {
+  document.getElementById('role-add-members-search').value = '';
+  renderRoleAddMemberResults();
+  document.getElementById('role-add-members-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => document.getElementById('role-add-members-search').focus(), 50);
+};
+window.closeRoleAddMembersModal = () => {
+  document.getElementById('role-add-members-modal').style.display = 'none';
+  document.body.style.overflow = '';
+  renderRoleMembersChips();
+  renderRolePendingNames();
+  updateRoleEffectHint();
+};
+window.closeRoleAddMembersOutside = (e) => { if (e.target.id === 'role-add-members-modal') closeRoleAddMembersModal(); };
+window.renderRoleAddMemberResults = () => {
+  const q = normalizeArabic(document.getElementById('role-add-members-search')?.value || '');
+  const cont = document.getElementById('role-add-members-results');
+  const escTxt = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const registered = cachedServants
+    .filter(s => s.status === 'approved' && (editingRoleType === 'admin' || s.role !== 'admin') && (!q || normalizeArabic(s.name||'').includes(q)))
+    .map(s => ({ kind:'reg', id:s.id, name:s.name||'—' }));
+  // الأسماء اللي لسه مسجلتش حساب: كل الأسماء المضافة مقدمًا في أي دور (ماعدا دور الأدمن) + اللي اتضافت في الدور ده دلوقتي
+  let pending = [];
+  if (editingRoleType !== 'admin') {
+    const regKeys = new Set(cachedServants.map(x => nameKey(x.name)));
+    pending = uniqueNames([
+      ...editingRolePendingNames,
+      ...allRoles.filter(r => !r.isAdmin).flatMap(r => r.pendingNames || [])
+    ])
+      .filter(n => !regKeys.has(nameKey(n)) && (!q || normalizeArabic(n).includes(q)))
+      .map(n => ({ kind:'pend', name:n }));
+  }
+  const results = [...registered, ...pending].sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+  document.getElementById('role-add-members-selected-count').textContent = editingRoleMemberIds.length + editingRolePendingNames.length;
+  cont.innerHTML = results.length ? results.map(it => {
+    if (it.kind === 'reg') {
+      const selected = editingRoleMemberIds.includes(it.id);
+      return `<div class="servant-item" onclick="toggleRoleMemberSelection('${it.id}')" style="cursor:pointer;padding:9px 12px">
+        <input type="checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();toggleRoleMemberSelection('${it.id}')" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
+        <div class="s-info"><div class="s-name" style="font-size:13px">${escTxt(it.name)}</div></div>
+      </div>`;
+    }
+    const selected = editingRolePendingNames.some(x => nameKey(x) === nameKey(it.name));
+    const inRoles = allRoles.filter(r => !r.isAdmin && r.id !== editingRoleId && nameVariantsIn(r, it.name).length).map(r => r.name);
+    const arg = `decodeURIComponent('${pEnc(it.name)}')`;
+    return `<div class="servant-item" onclick="toggleRolePendingSelection(${arg})" style="cursor:pointer;padding:9px 12px;opacity:.85">
+      <input type="checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();toggleRolePendingSelection(${arg})" style="width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;margin-left:10px">
+      <div class="s-info"><div class="s-name" style="font-size:13px">${escTxt(it.name)}</div>${inRoles.length ? `<div style="font-size:10px;color:var(--text-dim)">مضاف في: ${escTxt(inRoles.join(' ، '))}</div>` : ''}</div>
+      <span style="font-size:11px;color:var(--text-dim);flex-shrink:0;white-space:nowrap">⏳ لسه مسجلش</span>
+    </div>`;
+  }).join('') : `<div class="empty-state" style="padding:14px">مفيش نتايج</div>`;
+};
+window.toggleRoleMemberSelection = (id) => {
+  editingRoleMemberIds = editingRoleMemberIds.includes(id)
+    ? editingRoleMemberIds.filter(x => x !== id)
+    : [...editingRoleMemberIds, id];
+  renderRoleAddMemberResults();
+};
+window.toggleRolePendingSelection = (name) => {
+  const k = nameKey(name);
+  if (editingRolePendingNames.some(x => nameKey(x) === k)) {
+    editingRolePendingNames = editingRolePendingNames.filter(x => nameKey(x) !== k);
+    roleAutoAddedPending = roleAutoAddedPending.filter(x => nameKey(x) !== k);
+  } else {
+    editingRolePendingNames.push(name);
+    rolePurgeNames = rolePurgeNames.filter(x => nameKey(x) !== k);
+    roleDismissedPending = roleDismissedPending.filter(x => nameKey(x) !== k);
+  }
+  renderRoleAddMemberResults();
+};
+window.removeRoleMember = (id) => {
+  editingRoleMemberIds = editingRoleMemberIds.filter(x => x !== id);
+  roleAutoAddedIds = roleAutoAddedIds.filter(x => x !== id);
+  renderRoleMembersChips();
+  updateRoleEffectHint();
+};
+function renderRoleMembersChips() {
+  document.getElementById('role-members-count').textContent = editingRoleMemberIds.length + editingRolePendingNames.length;
+  const cont = document.getElementById('role-members-chips');
+  if (!editingRoleMemberIds.length && !editingRolePendingNames.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش أعضاء في الدور ده</div>`; return; }
+  const escTxt = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const registeredChips = editingRoleMemberIds.map(id => {
+    const s = cachedServants.find(x => x.id === id);
+    return `<span class="filter-chip active" style="display:flex;align-items:center;gap:6px">${s ? (s.name||'؟') : '؟'}
+      <span onclick="removeRoleMember('${id}')" style="cursor:pointer;font-weight:900">✕</span></span>`;
+  });
+  // أسماء لسه مسجلتش (من قايمة الأسماء المضافة مقدمًا) — بتظهر مع الأعضاء بعلامة ⏳
+  const pendingChips = editingRolePendingNames.slice().sort((a,b) => a.localeCompare(b,'ar')).map(n =>
+    `<span class="filter-chip active" style="display:flex;align-items:center;gap:6px;opacity:.8">⏳ ${escTxt(n)}
+      <span onclick="removeRolePendingName('${n.replace(/'/g,"\\'")}')" style="cursor:pointer;font-weight:900">✕</span></span>`);
+  cont.innerHTML = [...registeredChips, ...pendingChips].join('');
+}
+function updateRoleEffectHint() {
+  document.getElementById('role-effect-hint').innerHTML = `التغيير ده هيأثر على <b>${editingRoleMemberIds.length}</b> شخص دلوقتي${editingRolePendingNames.length ? ` (+ ${editingRolePendingNames.length} لسه مسجلوش، هيتطبق عليهم أول ما يسجلوا)` : ''}`;
+}
+
+// أسماء خدام مضافين مقدمًا في الدور ده لسه ملهمش حساب — لما أي حد يسجل ويختار نفس الفصل، هيلاقي اسمه في القايمة ويختاره بدل ما يكتب اسم جديد
+function renderRolePendingNames() {
+  const cont = document.getElementById('role-pending-names-list');
+  if (!cont) return;
+  if (!editingRolePendingNames.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش أسماء مضافة</div>`; return; }
+  cont.innerHTML = editingRolePendingNames.slice().sort((a,b) => a.localeCompare(b,'ar')).map(n => `
+    <div class="tpl-chip">
+      <span class="tpl-chip-name">${n}</span>
+      <button class="tpl-chip-del" onclick="removeRolePendingName('${n.replace(/'/g,"\\'")}')" title="حذف">✕</button>
+    </div>`).join('');
+}
+window.addRolePendingName = () => {
+  const name = (prompt('اسم الخادم اللي لسه هيسجل؟') || '').replace(/\s+/g,' ').trim();
+  if (!name) return;
+  if (editingRolePendingNames.some(x => nameKey(x) === nameKey(name))) { showToast('الاسم ده مضاف فعلاً في الدور ده', 'error'); return; }
+  const dupRoles = allRoles.filter(r => r.id !== editingRoleId && !r.isAdmin && nameVariantsIn(r, name).length && (r.classes || []).some(c => editingRoleClasses.includes(c)));
+  if (dupRoles.length && !confirm(`الاسم \"${name}\" مضاف قبل كده في: ${dupRoles.map(r => r.name).join(' ، ')}\n\nتضيفه هنا كمان؟ (لو ده نفس الشخص الأفضل تشيله من الدور التاني)`)) return;
+  editingRolePendingNames.push(name);
+  rolePurgeNames = rolePurgeNames.filter(x => x !== name);
+  roleDismissedPending = roleDismissedPending.filter(x => x !== name);
+  renderRolePendingNames();
+  renderRoleMembersChips();
+  updateRoleEffectHint();
+};
+window.removeRolePendingName = (name) => {
+  // لو الاسم ده مضاف كمان في أدوار تانية، هيرجع يظهر تلقائي كل مرة تختار الفصل ده — فبنسأل لو عايز يتمسح من الكل
+  const others = allRoles.filter(r => r.id !== editingRoleId && (r.pendingNames || []).includes(name));
+  if (others.length && confirm(`الاسم "${name}" مضاف كمان في: ${others.map(r => r.name).join(' ، ')}\n\nتمسحه من كل الأدوار دي كمان (بعد الحفظ)؟\nموافق = يتمسح نهائي | إلغاء = يتشال من الدور ده بس`)) {
+    if (!rolePurgeNames.includes(name)) rolePurgeNames.push(name);
+  }
+  if (!roleDismissedPending.includes(name)) roleDismissedPending.push(name);
+  editingRolePendingNames = editingRolePendingNames.filter(x => x !== name);
+  roleAutoAddedPending = roleAutoAddedPending.filter(x => x !== name);
+  renderRolePendingNames();
+  renderRoleMembersChips();
+  updateRoleEffectHint();
+};
+
+window.saveRole = async () => {
+  if (editingRoleType !== 'admin' && !editingRoleClasses.length) { showToast('اختار الفصل / الفصول الأول', 'error'); return; }
+  const isAdmin = editingRoleType === 'admin';
+  const isSupervisor = editingRoleType === 'classSupervisor';
+  const classesLabel = isAdmin ? '' : editingRoleClasses.map(c => classLabel(c)).join(' + ');
+  const name = isAdmin ? 'أدمن' : `${ROLE_TYPE_SHORT[editingRoleType]} — ${classesLabel}`;
+  // حماية: أي دور مسؤول/أدمن لازم تشوف بالظبط مين هياخد الصلاحية قبل الحفظ
+  const oldRole = editingRoleId ? allRoles.find(r => r.id === editingRoleId) : null;
+  if (isAdmin || isSupervisor) {
+    const prevIds = editingRoleId ? cachedServants.filter(s => servantInRole(s, editingRoleId)).map(s => s.id) : [];
+    const wasPrivileged = !!(oldRole && (oldRole.isAdmin || oldRole.isSupervisor));
+    const affected = editingRoleMemberIds.filter(id => wasPrivileged ? !prevIds.includes(id) : true);
+    if (affected.length) {
+      const names = affected.map(id => (cachedServants.find(x => x.id === id)?.name) || '؟');
+      const shown = names.slice(0, 15).join(' ، ') + (names.length > 15 ? ` … (+${names.length - 15})` : '');
+      if (!confirm(`الصلاحية دي (${ROLE_TYPE_SHORT[editingRoleType]}) هتتدي لـ ${names.length} شخص:\n\n${shown}\n\nمتأكد؟`)) return;
+    }
+  }
+  try {
+    const data = { name, type: editingRoleType, isAdmin, isSupervisor, classes: isAdmin ? [] : editingRoleClasses, pendingNames: isAdmin ? [] : uniqueNames(editingRolePendingNames) };
+    let roleId = editingRoleId;
+    if (roleId) await updateDoc(doc(db,'roles',roleId), data);
+    else { const ref = await addDoc(collection(db,'roles'), data); roleId = ref.id; }
+
+    // خدام كانوا في الدور ده وشيلتهم من قايمة الأعضاء دلوقتي: بنشيل عنهم الدور ده، ولو لسه ليهم أدوار تانية بنعيد حساب صلاحياتهم منها،
+    // ولو ملهمش أي دور تاني بنسيب صلاحياتهم الحالية زي ما هي
+    const previousMemberIds = cachedServants.filter(s => servantInRole(s, roleId)).map(s => s.id);
+    const removed = previousMemberIds.filter(id => !editingRoleMemberIds.includes(id));
+    const rolesNow = [...allRoles.filter(r => r.id !== roleId), { id: roleId, ...data }];
+    const liveIds = ids => ids.filter(i => rolesNow.some(r => r.id === i));
+    const ops = [];
+    removed.forEach(id => {
+      const sv = cachedServants.find(x => x.id === id); if (!sv) return;
+      const ids = liveIds(servantRoleIds(sv).filter(x => x !== roleId));
+      // بنسحب منه بس اللي كان واخده من الدور ده (مسؤولية/أدمن)، وبنسيب باقي صلاحياته
+      const upd = { roleIds: ids, roleId: ids[0] || '', ...permsAfterRoleChange(sv, ids, rolesNow, oldRole || { id: roleId, ...data }) };
+      ops.push(updateDoc(doc(db,'servants',id), upd));
+    });
+    // الأعضاء: الدور بيتضاف لأدوارهم (مش بيستبدلها)، فالخادم يقدر يبقى مسؤول في فصل وخادم في فصل تاني
+    editingRoleMemberIds.forEach(id => {
+      const sv = cachedServants.find(x => x.id === id); if (!sv) return;
+      const ids = liveIds(servantRoleIds(sv));
+      if (!ids.includes(roleId)) ids.push(roleId);
+      ops.push(updateDoc(doc(db,'servants',id), { roleIds: ids, roleId: ids[0], ...permsAfterRoleChange(sv, ids, rolesNow) }));
+    });
+    await Promise.all(ops);
+
+    // أسماء الأدمن قرر يمسحها نهائي: بتتشال من أي دور تاني لسه شايلها (إلا لو اتضافت تاني في الدور ده)
+    for (const n of rolePurgeNames.filter(n => !editingRolePendingNames.includes(n))) {
+      for (const r of allRoles.filter(r => r.id !== roleId && (r.pendingNames || []).includes(n))) {
+        await updateDoc(doc(db,'roles',r.id), { pendingNames: arrayRemove(n) });
+      }
+    }
+    rolePurgeNames = [];
+
+    showToast('تم حفظ الدور ✓', 'success');
+    await loadServantsOnce(true);
+    await loadRolesOnce(true);
+    showRolesListView();
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
+};
+
+window.deleteRoleConfirm = async () => {
+  if (!editingRoleId) return;
+  const r = allRoles.find(x => x.id === editingRoleId);
+  if (!confirm(`هتحذف دور "${r?.name||''}"؟ الأعضاء بتوعه مش هيتحذفوا، بس هتتسحب منهم صلاحية الدور ده (مسؤول فصل / أدمن) وهيفضلوا خدام في فصولهم`)) return;
+  try {
+    const delId = editingRoleId;
+    const rolesLeft = allRoles.filter(x => x.id !== delId);
+    await Promise.all(cachedServants.filter(s => servantInRole(s, delId)).map(sv => {
+      const ids = servantRoleIds(sv).filter(x => x !== delId && rolesLeft.some(rr => rr.id === x));
+      return updateDoc(doc(db,'servants',sv.id), { roleIds: ids, roleId: ids[0] || '', ...permsAfterRoleChange(sv, ids, rolesLeft, r || { id: delId }) });
+    }));
+    await deleteDoc(doc(db,'roles',editingRoleId));
+    showToast('تم حذف الدور', 'info');
+    await loadServantsOnce(true);
+    await loadRolesOnce(true);
+    showRolesListView();
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحذف', 'error'); }
+};
+
+
+// ===== EDIT STUDENT =====
+window.openEditModal = (id) => {
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  editGenderManuallySet = false; // فتح مودال جديد = نسمح للتخمين يشتغل تاني لو غيّرت الاسم
+  document.getElementById('edit-id').value      = s.id;
+  document.getElementById('edit-name').value    = s.name;
+  document.getElementById('edit-dob').value     = s.dob || '';
+  document.getElementById('edit-address').value = s.address || '';
+  document.getElementById('edit-gender').value  = s.gender || '';
+  document.getElementById('edit-class').innerHTML = classSelectOptionsHTML(true);
+  document.getElementById('edit-class').value   = s.classSection || '';
+  document.getElementById('edit-avatar').textContent = s.name.trim()[0] || '؟';
+  document.getElementById('edit-sub').textContent    = s.name;
+  const notes = s.visitNotes || [];
+  document.getElementById('edit-note-traveling').checked   = notes.includes('traveling');
+  document.getElementById('edit-note-friday').checked      = notes.includes('friday');
+  document.getElementById('edit-note-otherchurch').checked = notes.includes('otherChurch');
+  document.getElementById('edit-note-motherpregnant').checked = notes.includes('motherPregnant');
+
+  const wrap = document.getElementById('edit-phones-wrap');
+  const phones = (s.phones && s.phones.length) ? s.phones : [''];
+  wrap.innerHTML = phones.map((p, i) => `
+    <div class="edit-phone-row">
+      <input type="tel" class="field-input edit-phone-input" placeholder="رقم التليفون" dir="ltr" value="${p}">
+      ${i === 0
+        ? `<button class="add-phone-btn" onclick="addEditPhoneField()">+</button>`
+        : `<button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`}
+    </div>`).join('');
+
+  document.getElementById('edit-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+};
+
+window.addEditPhoneField = () => {
+  const wrap = document.getElementById('edit-phones-wrap');
+  const row  = document.createElement('div');
+  row.className = 'edit-phone-row';
+  row.innerHTML = `<input type="tel" class="field-input edit-phone-input" placeholder="رقم التليفون" dir="ltr">
+    <button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`;
+  wrap.appendChild(row);
+};
+
+window.closeEditModal = () => {
+  document.getElementById('edit-modal').style.display = 'none';
+  document.body.style.overflow = '';
+};
+
+window.closeEditOutside = (e) => { if (e.target.id === 'edit-modal') closeEditModal(); };
+
+window.saveEditStudent = async () => {
+  const id   = document.getElementById('edit-id').value;
+  const name = canonicalizeName(document.getElementById('edit-name').value);
+  if (!name) { showToast('اكتب اسم المخدوم', 'error'); return; }
+  const phones = [...document.querySelectorAll('.edit-phone-input')]
+    .map(i => i.value.trim()).filter(Boolean);
+  const visitNotes = [];
+  if (document.getElementById('edit-note-traveling').checked)   visitNotes.push('traveling');
+  if (document.getElementById('edit-note-friday').checked)      visitNotes.push('friday');
+  if (document.getElementById('edit-note-otherchurch').checked) visitNotes.push('otherChurch');
+  if (document.getElementById('edit-note-motherpregnant').checked) visitNotes.push('motherPregnant');
+  const data = {
+    name,
+    dob:     document.getElementById('edit-dob').value || '',
+    address: document.getElementById('edit-address').value.trim() || '',
+    gender:  document.getElementById('edit-gender').value || '',
+    classSection: document.getElementById('edit-class').value || '',
+    phones,
+    visitNotes
+  };
+  try {
+    await updateDoc(doc(db,'students',id), { ...data, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    const idx = allStudents.findIndex(s => s.id === id);
+    if (idx !== -1) allStudents[idx] = { ...allStudents[idx], ...data };
+    renderStudentsList();
+    renderTodayList();
+    closeEditModal();
+    showToast('تم حفظ التعديلات ✓', 'success');
+    logActivity('تعديل بيانات مخدوم', name);
+  } catch(e) {
+    showToast('حصل خطأ أثناء الحفظ', 'error');
+    console.error(e);
+  }
+};
+
+// ===== TOAST =====
+let toastTimer;
+window.showToast = (msg, type='info') => {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', 2800);
+};
+
+
