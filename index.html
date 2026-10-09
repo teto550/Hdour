@@ -94,6 +94,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .check-box.att-box.checked{background:rgba(46,204,113,0.15);border-color:var(--success);color:var(--success);}
 .check-box.verse-box{background:rgba(124,92,191,0.08);border-color:rgba(124,92,191,0.25);}
 .check-box.verse-box.checked{background:rgba(124,92,191,0.15);border-color:#a07de0;color:#a07de0;}
+.check-box.gift-box{background:rgba(241,196,15,0.08);border-color:rgba(241,196,15,0.25);}
+.check-box.gift-box.checked{background:rgba(241,196,15,0.18);border-color:#f1c40f;color:#f1c40f;}
+.stat-card.g .stat-num{color:#f1c40f;}
 
 .list-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;}
 .section-title{font-size:12px;font-weight:700;color:var(--text-dim);letter-spacing:.8px;}
@@ -517,10 +520,11 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
     <!-- ATTENDANCE TAB -->
     <div id="tab-attendance">
-      <div class="stats-row">
-        <div class="stat-card t"><div class="stat-num" id="stat-total">0</div><div class="stat-label">إجمالي</div></div>
+      <div class="stats-row" id="att-stats-row">
+        <div class="stat-card t"><div class="stat-num" id="stat-total">0</div><div class="stat-label" id="stat-total-label">إجمالي</div></div>
         <div class="stat-card p"><div class="stat-num" id="stat-present">0</div><div class="stat-label">حاضر</div></div>
         <div class="stat-card a"><div class="stat-num" id="stat-absent">0</div><div class="stat-label">غائب</div></div>
+        <div class="stat-card g" id="stat-gift-card" style="display:none"><div class="stat-num" id="stat-gift">0</div><div class="stat-label">🎁 استلموا الهدية</div></div>
       </div>
       <button id="voice-toggle-btn" class="btn-voice" onclick="startVoice()">🎤 تسجيل بالصوت</button>
       <div class="voice-zone" id="voice-zone" style="display:none">
@@ -544,6 +548,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="filter-chip active" id="today-filter-all" onclick="setTodayListFilter('all',this)">الكل</button>
         <button class="filter-chip" id="today-filter-attendance" onclick="setTodayListFilter('attendance',this)">✅ حضور بس</button>
         <button class="filter-chip" id="today-filter-verse" onclick="setTodayListFilter('verse',this)">📖 سماع بس</button>
+        <button class="filter-chip" id="today-filter-birthday" onclick="setTodayListFilter('birthday',this)">🎂 أعياد ميلاد الشهر ده</button>
       </div>
       <div class="list-header" style="margin-top:-4px">
         <button class="export-btn" id="today-sort-btn" onclick="toggleTodayListSort()">⇅ الأول ↞ الأخير</button>
@@ -1645,7 +1650,7 @@ function scoreStudentsVoice(list, normalizedQuery) {
 
 let allStudents = [], todayAttendance = {}, allAttendance = {};
 let todayAttendanceTime = {}, todayVerseTime = {}; // studentId -> millis وقت التسجيل، لترتيب "الأول للأخير"
-let todayListFilter = 'all'; // 'all' | 'attendance' | 'verse'
+let todayListFilter = 'all'; // 'all' | 'attendance' | 'verse' | 'birthday'
 let todayListSortOrder = 'first'; // 'first' (الأول اللي سجل فوق) | 'last' (الأخير اللي سجل فوق)
 function tsToMillis(ts) {
   if (!ts) return Date.now();
@@ -3791,8 +3796,9 @@ window.removeAttendance = async (studentId) => {
 // ===== فلتر وترتيب قائمة اليوم =====
 window.setTodayListFilter = (mode, btn) => {
   todayListFilter = mode;
-  document.querySelectorAll('#today-filter-all,#today-filter-attendance,#today-filter-verse').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#today-filter-all,#today-filter-attendance,#today-filter-verse,#today-filter-birthday').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  updateStats();
   renderTodayList();
 };
 
@@ -3801,6 +3807,29 @@ window.toggleTodayListSort = () => {
   const btn = document.getElementById('today-sort-btn');
   if (btn) btn.textContent = todayListSortOrder === 'first' ? '⇅ الأول ↞ الأخير' : '⇅ الأخير ↞ الأول';
   renderTodayList();
+};
+
+// ===== أعياد ميلاد الشهر =====
+const birthdayMonth = s => { const m = parseInt(String(s.dob || '').split('-')[1], 10); return m || 0; };
+const birthdayDay   = s => parseInt(String(s.dob || '').split('-')[2], 10) || 0;
+const isBirthdayThisMonth = s => !!s.dob && birthdayMonth(s) === new Date().getMonth() + 1;
+const giftGiven = s => s.giftYear === new Date().getFullYear(); // الهدية بتتسجل لسنة عيد الميلاد الحالية
+
+window.toggleGift = async (id) => {
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  const prev = s.giftYear;
+  const next = giftGiven(s) ? 0 : new Date().getFullYear();
+  s.giftYear = next; updateStats(); renderTodayList();
+  try {
+    await updateDoc(doc(db,'students',id), { giftYear: next, updatedAt: serverTimestamp() }); bumpStudentsRev();
+    showToast(next ? '🎁 تم تسجيل استلام الهدية' : 'تم إلغاء تسجيل الهدية', 'success');
+    logActivity(next ? 'تسليم هدية عيد ميلاد' : 'إلغاء هدية عيد ميلاد', s.name);
+  } catch(e) {
+    console.error(e);
+    s.giftYear = prev; updateStats(); renderTodayList();
+    showToast('مقدرتش أحفظ الهدية — مفيش صلاحية أو في مشكلة في النت', 'error');
+  }
 };
 
 // وقت الحدث اللي بنرتب بيه، حسب الفلتر الحالي
@@ -3821,16 +3850,24 @@ function renderTodayList() {
   let filtered = allStudents.filter(s => visibleClasses.includes(s.classSection)).filter(s => {
     if (todayListFilter === 'attendance') return !!todayAttendance[s.id];
     if (todayListFilter === 'verse')      return !!todayVerses[s.id];
+    if (todayListFilter === 'birthday')   return isBirthdayThisMonth(s);
     return true; // 'all'
   });
+  const bdayChip = document.getElementById('today-filter-birthday');
+  if (bdayChip) bdayChip.textContent = '🎂 أعياد ميلاد ' + new Date().toLocaleDateString('ar-EG', { month: 'long' });
 
-  const withTime = filtered.filter(s => todayListRelevantTime(s) != null);
-  const withoutTime = filtered.filter(s => todayListRelevantTime(s) == null);
+  if (todayListFilter === 'birthday') {
+    // مرتبين باليوم في الشهر (الأول ↞ الأخير = من أول الشهر لآخره)
+    filtered.sort((a, b) => (birthdayDay(a) - birthdayDay(b)) * (todayListSortOrder === 'first' ? 1 : -1) || a.name.localeCompare(b.name, 'ar'));
+    if (!filtered.length) { cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🎂</div>مفيش حد عيد ميلاده الشهر ده</div>`; return; }
+  }
+  const withTime = todayListFilter === 'birthday' ? [] : filtered.filter(s => todayListRelevantTime(s) != null);
+  const withoutTime = todayListFilter === 'birthday' ? filtered : filtered.filter(s => todayListRelevantTime(s) == null);
   withTime.sort((a,b) => {
     const diff = todayListRelevantTime(a) - todayListRelevantTime(b);
     return todayListSortOrder === 'first' ? diff : -diff;
   });
-  withoutTime.sort((a,b) => a.name.localeCompare(b.name, 'ar'));
+  if (todayListFilter !== 'birthday') withoutTime.sort((a,b) => a.name.localeCompare(b.name, 'ar'));
   const sorted = [...withTime, ...withoutTime];
 
   if (!sorted.length) { cont.innerHTML=`<div class="empty-state"><div class="empty-icon">🔍</div>مفيش حد يطابق الفلتر ده النهارده</div>`; return; }
@@ -3839,14 +3876,17 @@ function renderTodayList() {
     const present = !!todayAttendance[s.id];
     const verseEntry = todayVerses[s.id];
     const hasVerse = !!verseEntry;
+    const isBday = todayListFilter === 'birthday';
     return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}">
       ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info">
         <div class="s-name">${s.name}</div>
+        ${isBday ? `<div class="s-sub" style="color:#f1c40f">🎂 ${birthdayDay(s)}/${birthdayMonth(s)}${s.dob ? ' — ' + (new Date().getFullYear() - parseInt(String(s.dob).split('-')[0], 10)) + ' سنة' : ''}</div>` : ''}
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <div class="check-box att-box${present?' checked':''}" onclick="${present?`removeAttendance('${s.id}')`:`quickToggleAttendance('${s.id}')`}">${present?'✓':''}</div>
+        ${isBday ? `<div class="check-box gift-box${giftGiven(s)?' checked':''}" title="${giftGiven(s)?'استلم الهدية':'لسه مستلمش الهدية'}" onclick="toggleGift('${s.id}')">${giftGiven(s)?'✓':'🎁'}</div>` : ''}
         <div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseEntry.verse:'تسجيل آية'}" onclick="${hasVerse?`removeVerse('${s.id}')`:`showVerseModal('${s.id}')`}">${hasVerse?'✓':'📖'}</div>
       </div>
     </div>`;
@@ -3855,9 +3895,19 @@ function renderTodayList() {
 
 function updateStats() {
   const classesToCount = [currentClassTab];
-  const classStudents = allStudents.filter(s => classesToCount.includes(s.classSection));
+  let classStudents = allStudents.filter(s => classesToCount.includes(s.classSection));
+  // فلتر أعياد الميلاد: الأرقام بتتحسب على أعياد ميلاد الشهر بس
+  const bday = todayListFilter === 'birthday';
+  if (bday) classStudents = classStudents.filter(isBirthdayThisMonth);
   const present = classStudents.filter(s => !!todayAttendance[s.id]).length;
   const heardVerse = classStudents.filter(s => !!todayVerses[s.id]).length;
+  const gc = document.getElementById('stat-gift-card');
+  if (gc) {
+    gc.style.display = bday ? '' : 'none';
+    document.getElementById('stat-gift').textContent = classStudents.filter(giftGiven).length;
+    document.getElementById('att-stats-row').style.gridTemplateColumns = bday ? '1fr 1fr 1fr 1fr' : '';
+    document.getElementById('stat-total-label').textContent = bday ? 'أعياد الشهر' : 'إجمالي';
+  }
   document.getElementById('stat-total').textContent   = classStudents.length;
   document.getElementById('stat-present').textContent = present;
   document.getElementById('stat-absent').textContent  = classStudents.length - present;
