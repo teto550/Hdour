@@ -6822,29 +6822,55 @@ document.addEventListener('pointerdown', e => {
 </script>
 
 <script>
+// ===== تثبيت التطبيق =====
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
 let deferredPrompt;
+const IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_INAPP = /FBAN|FBAV|FB_IAB|Instagram|Messenger|WhatsApp|Line\/|Snapchat|TikTok|; wv\)/i.test(navigator.userAgent);
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+function hideInstallBanner() { document.getElementById('install-banner').style.display = 'none'; }
 function checkShowBanner() {
-  if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-    document.getElementById('install-banner').style.display = 'none';
-    return;
-  }
-  setTimeout(() => {
-    if (!window.matchMedia('(display-mode: standalone)').matches)
-      document.getElementById('install-banner').style.display = 'block';
-  }, 1000);
+  if (isStandalone()) { hideInstallBanner(); return; }
+  setTimeout(() => { if (!isStandalone()) document.getElementById('install-banner').style.display = 'block'; }, 1000);
+}
+// نافذة خطوات التثبيت (للأيفون، ولأي موبايل المتصفح مديهوش تثبيت مباشر)
+function showInstallHelp(kind) {
+  const old = document.getElementById('install-help'); if (old) old.remove();
+  const steps = {
+    ios: ['افتح البرنامج في <b>Safari</b> (مش من جوه واتساب أو فيسبوك)', 'دوس على زرار <b>المشاركة</b> <span style="font-size:20px">⬆️</span> اللي في الشريط تحت', 'اسحب لتحت واختار <b>Add to Home Screen</b> (إضافة إلى الشاشة الرئيسية)', 'دوس <b>Add</b> (إضافة)'],
+    inapp: ['إنت فاتح البرنامج من جوه تطبيق تاني (واتساب / فيسبوك…) وده مبيسمحش بالتثبيت', 'دوس على <b>⋮</b> أو <b>…</b> واختار <b>فتح في المتصفح</b> (Open in browser)', IS_IOS ? 'اتأكد إنه اتفتح في <b>Safari</b> وبعدين اتبع خطوات التثبيت' : 'بعد ما يفتح في <b>Chrome</b> دوس على زرار <b>تثبيت</b> تاني'],
+    android: ['دوس على <b>⋮</b> (النقط التلاتة) فوق في Chrome', 'اختار <b>تثبيت التطبيق</b> أو <b>Install app</b> (أو Add to Home screen)', 'دوس <b>تثبيت</b>']
+  }[kind];
+  const d = document.createElement('div');
+  d.id = 'install-help';
+  d.style.cssText = 'position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center;font-family:Cairo,sans-serif;direction:rtl';
+  d.onclick = e => { if (e.target === d) d.remove(); };
+  d.innerHTML = `<div style="background:var(--surface,#1f2536);color:var(--text,#fff);border:1px solid var(--border,#333);border-radius:18px 18px 0 0;width:100%;max-width:480px;padding:20px 20px calc(24px + env(safe-area-inset-bottom))">
+    <div style="font-size:17px;font-weight:900;margin-bottom:14px">📲 خطوات تثبيت البرنامج</div>
+    <ol style="margin:0 0 16px;padding:0 20px 0 0;line-height:2;font-size:14px">${steps.map(t => `<li>${t}</li>`).join('')}</ol>
+    ${kind === 'ios' ? '<div style="text-align:center;font-size:30px;animation:none">⬇️</div>' : ''}
+    <button onclick="document.getElementById('install-help').remove()" style="width:100%;background:var(--surface2,#2a3148);border:1px solid var(--border,#333);border-radius:10px;color:inherit;font-family:Cairo,sans-serif;font-size:15px;font-weight:700;padding:12px;cursor:pointer">تمام</button>
+  </div>`;
+  document.body.appendChild(d);
 }
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; checkShowBanner(); });
 document.getElementById('install-btn').addEventListener('click', async () => {
-  if (deferredPrompt) {
+  if (deferredPrompt) {                       // أندرويد/كروم: تثبيت مباشر بضغطة واحدة
     deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
+    const { outcome } = await deferredPrompt.userChoice;
     deferredPrompt = null;
-    document.getElementById('install-banner').style.display = 'none';
+    if (outcome === 'accepted') hideInstallBanner();
+  } else if (IS_INAPP) {
+    showInstallHelp('inapp');
+  } else if (IS_IOS) {                        // آبل مبتسمحش بتثبيت مباشر من زرار، فبنعرض الخطوات
+    showInstallHelp('ios');
   } else {
-    alert('لتثبيت التطبيق:\n1. اضغط ⋮ (النقط التلاتة)\n2. اختر "Add to Home screen"');
+    showInstallHelp('android');
   }
 });
-window.addEventListener('appinstalled', () => { document.getElementById('install-banner').style.display = 'none'; });
+window.addEventListener('appinstalled', hideInstallBanner);
 checkShowBanner();
 </script>
 </body>
