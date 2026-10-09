@@ -558,15 +558,14 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <p class="section-title" style="margin-bottom:14px">إضافة مخدوم جديد</p>
         <label class="field-label">الاسم *</label>
         <input type="text" id="new-name" class="field-input" placeholder="اسم المخدوم بالكامل" oninput="onNewNameInput()">
-        <div class="form-2col" style="margin-bottom:14px">
-          <div>
-            <label class="field-label">تاريخ الميلاد *</label>
-            <input type="date" id="new-dob" class="field-input" style="margin-bottom:0">
-          </div>
-          <div>
-            <label class="field-label">العنوان *</label>
-            <input type="text" id="new-address" class="field-input" style="margin-bottom:0" placeholder="العنوان">
-          </div>
+        <label class="field-label">تاريخ الميلاد *</label>
+        <input type="date" id="new-dob" class="field-input" style="margin-bottom:14px">
+        <label class="field-label">العنوان * <span style="font-weight:400">(المنطقة / الشارع / رقم العمارة / الدور)</span></label>
+        <textarea id="new-address" class="field-input" rows="2" placeholder="اكتب العنوان بالتفصيل" style="min-height:64px;resize:vertical;font-family:Cairo,sans-serif;line-height:1.6;margin-bottom:10px"></textarea>
+        <label class="field-label">الموقع على الخريطة <span style="font-weight:400">(اختياري)</span></label>
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <input type="url" id="new-map" class="field-input" placeholder="الصق رابط جوجل ماب" dir="ltr" style="margin-bottom:0;flex:1;min-width:0">
+          <button type="button" onclick="fillMapFromGPS('new')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:0 12px;cursor:pointer;white-space:nowrap">📍 موقعي</button>
         </div>
         <label class="field-label">النوع</label>
         <select class="field-select" id="new-gender" style="margin-bottom:14px" onchange="newGenderManuallySet=true">
@@ -1051,15 +1050,14 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <input type="hidden" id="edit-id">
       <label class="field-label">الاسم *</label>
       <input type="text" id="edit-name" class="field-input" placeholder="اسم المخدوم بالكامل" oninput="onEditNameInput()">
-      <div class="form-2col" style="margin-bottom:14px">
-        <div>
-          <label class="field-label">تاريخ الميلاد *</label>
-          <input type="date" id="edit-dob" class="field-input" style="margin-bottom:0">
-        </div>
-        <div>
-          <label class="field-label">العنوان *</label>
-          <input type="text" id="edit-address" class="field-input" style="margin-bottom:0" placeholder="العنوان">
-        </div>
+      <label class="field-label">تاريخ الميلاد *</label>
+      <input type="date" id="edit-dob" class="field-input" style="margin-bottom:14px">
+      <label class="field-label">العنوان * <span style="font-weight:400">(المنطقة / الشارع / رقم العمارة / الدور)</span></label>
+      <textarea id="edit-address" class="field-input" rows="2" placeholder="اكتب العنوان بالتفصيل" style="min-height:64px;resize:vertical;font-family:Cairo,sans-serif;line-height:1.6;margin-bottom:10px"></textarea>
+      <label class="field-label">الموقع على الخريطة <span style="font-weight:400">(اختياري)</span></label>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <input type="url" id="edit-map" class="field-input" placeholder="الصق رابط جوجل ماب" dir="ltr" style="margin-bottom:0;flex:1;min-width:0">
+        <button type="button" onclick="fillMapFromGPS('edit')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:0 12px;cursor:pointer;white-space:nowrap">📍 موقعي</button>
       </div>
       <label class="field-label">النوع</label>
       <select class="field-select" id="edit-gender" style="margin-bottom:14px" onchange="editGenderManuallySet=true">
@@ -2690,22 +2688,33 @@ function studentPhoneEntries(s) {
     (s.phones || []).forEach((p, i) => { if (p) e.push({ label: 'تليفون' + (i === 0 ? '' : ' (' + (i + 1) + ')'), val: p, idx: i }); });
     return e;
   }
-  const add = (label, val) => { if (val) e.push({ label, val, idx: e.length }); };
-  add('تليفون الأب', s.fatherPhone);
+  const add = (label, val) => { if (val) { const k = (s.phones || []).indexOf(val); e.push({ label, val, idx: k >= 0 ? k : e.length }); } };
   add('تليفون الأم', s.motherPhone);
+  add('تليفون الأب', s.fatherPhone);
   add('تليفون المخدوم', s.studentPhone);
   (s.otherPhones || []).filter(Boolean).forEach((v, i) => add('تليفون إضافي' + (i === 0 ? '' : ' (' + (i + 1) + ')'), v));
   return e;
 }
+// بيملّي خانة الموقع من GPS الجهاز (رابط جوجل ماب)
+window.fillMapFromGPS = (pfx) => {
+  if (!navigator.geolocation) { showToast('الجهاز مش بيدعم تحديد الموقع', 'error'); return; }
+  showToast('جاري تحديد موقعك…', 'info');
+  navigator.geolocation.getCurrentPosition(
+    pos => { document.getElementById(pfx + '-map').value = `https://www.google.com/maps?q=${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`; showToast('تم تحديد الموقع ✓', 'success'); },
+    () => showToast('مقدرتش أحدد الموقع — اسمح للمتصفح بالوصول للموقع أو الصق الرابط', 'error'),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+};
 function readPhoneInputs(prefix) {
   const g = k => cleanPhone(document.getElementById(prefix + '-phone-' + k).value);
   return { father: g('father'), mother: g('mother'), student: g('student') };
 }
 // بيرجّع نص الخطأ (أو '' لو كله تمام) — الحفظ بيتمنع لو فيه أي نقص
-function validateStudentData({ name, dob, address, father, mother, student, others = [] }) {
+function validateStudentData({ name, dob, address, father, mother, student, others = [], map = '' }) {
   if (!name) return 'اكتب اسم المخدوم';
   if (!dob) return 'لازم تكتب تاريخ الميلاد';
   if (!address) return 'لازم تكتب العنوان';
+  if (map && !/^https?:\/\//i.test(map)) return 'رابط الموقع لازم يبدأ بـ http أو https';
   for (const [lbl, v] of [['الأب', father], ['الأم', mother], ['المخدوم', student]]) {
     if (v && !PHONE_RE.test(v)) return 'رقم تليفون ' + lbl + ' مش صحيح';
   }
@@ -2715,7 +2724,7 @@ function validateStudentData({ name, dob, address, father, mother, student, othe
 // بيبني حقول الأرقام اللي بتتحفظ. prev = بيانات المخدوم قبل التعديل عشان رقم الواتساب المختار يفضل زي ما هو
 function buildPhoneFields(father, mother, student, others, prev) {
   others = (others || []).filter(o => o && o !== father && o !== mother && o !== student);
-  const phones = [father, mother, student, ...others].filter(Boolean);
+  const phones = [mother, father, student, ...others].filter(Boolean);
   let waPhoneIndex = null;
   if (prev) { const pw = getWaPhone(prev); const i = pw ? phones.indexOf(pw) : -1; if (i >= 0) waPhoneIndex = i; }
   return { fatherPhone: father, motherPhone: mother, studentPhone: student, otherPhones: others, phones, waPhoneIndex };
@@ -2820,8 +2829,9 @@ window.addStudent = async () => {
   const name = canonicalizeName(document.getElementById('new-name').value);
   const dob = document.getElementById('new-dob').value || '';
   const address = document.getElementById('new-address').value.trim();
+  const addressMap = document.getElementById('new-map').value.trim();
   const { father, mother, student } = readPhoneInputs('new');
-  const err = validateStudentData({ name, dob, address, father, mother, student });
+  const err = validateStudentData({ name, dob, address, father, mother, student, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
   const dup = allStudents.find(s => normalizeArabic(s.name) === normalizeArabic(name));
   if (dup && !confirm(`فيه مخدوم بنفس الاسم "${dup.name}" مسجل قبل كده. تحب تضيفه تاني كاسم مكرر؟`)) return;
@@ -2831,6 +2841,7 @@ window.addStudent = async () => {
     name,
     dob,
     address,
+    addressMap,
     gender:  document.getElementById('new-gender').value || '',
     ...buildPhoneFields(father, mother, student, [], null),
     createdAt: serverTimestamp(),
@@ -2840,7 +2851,7 @@ window.addStudent = async () => {
   // لو الخادم مقيد بفصول معينة، أي مخدوم جديد بيضيفه يتحط أوتوماتيك في الفصل الحالي اللى شافه في الواجهة عشان يبقى ضمن الفصول المسموح له
   if (currentRole !== 'admin' && allowed.length) data.classSection = targetClass;
   await addDoc(collection(db,'students'), data); bumpStudentsRev();
-  ['new-name','new-dob','new-address','new-gender','new-phone-father','new-phone-mother','new-phone-student']
+  ['new-name','new-dob','new-address','new-map','new-gender','new-phone-father','new-phone-mother','new-phone-student']
     .forEach(id => { document.getElementById(id).value = ''; });
   newGenderManuallySet = false;
   showToast('تمت الإضافة ✓', 'success');
@@ -3050,6 +3061,11 @@ function openExternalLink(url) {
 
 // الرقم اللي هيتبعت عليه على واتساب: الرقم المحدد يدويًا أولًا (waPhoneIndex)، وإلا أول رقم في الملف
 function getWaPhone(s) {
+  // مخدوم متسجل بالخانات الجديدة ومحدّدش رقم واتساب يدويًا: الأم ثم الأب ثم المخدوم
+  if (s.waPhoneIndex == null && hasRolePhones(s)) {
+    const d = s.motherPhone || s.fatherPhone || s.studentPhone || (s.otherPhones || []).find(Boolean) || '';
+    if (d) return d;
+  }
   if (s.phones?.length) {
     if (s.waPhoneIndex != null && s.phones[s.waPhoneIndex]) return s.phones[s.waPhoneIndex];
     return s.phones[0] || '';
@@ -4195,7 +4211,8 @@ window.openProfile = (id) => {
   }
   const fields = [];
   if (s.dob) fields.push({ icon:'🎂', key:'تاريخ الميلاد', val: new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) });
-  if (s.address) fields.push({ icon:'📍', key:'العنوان', val: s.address });
+  if (s.address) fields.push({ icon:'📍', key:'العنوان', val: String(s.address).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>') });
+  if (s.addressMap && /^https?:\/\//i.test(s.addressMap)) fields.push({ icon:'🗺️', key:'الموقع على الخريطة', link: s.addressMap });
   fields.push({ icon:'📝', key:'ملحوظات الافتقاد', val: (s.visitNotes?.length)
     ? s.visitNotes.map(n => NOTE_LABELS[n] ? `${NOTE_LABELS[n].emoji} ${NOTE_LABELS[n].text}` : n).join('، ')
     : `${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}` });
@@ -4229,8 +4246,9 @@ window.openProfile = (id) => {
           <div class="prof-key">${f.key}</div>
           ${f.phone
             ? `<a href="tel:${f.val}" style="font-size:14px;font-weight:600;color:var(--text);text-decoration:none">${f.val}</a>`
-            : `<div class="prof-val">${f.val}</div>`}
+            : f.link ? `<div class="prof-val" style="font-size:12px;color:var(--text-dim)">اضغط الزرار لفتح الخريطة</div>` : `<div class="prof-val">${f.val}</div>`}
         </div>
+        ${f.link ? `<a href="${String(f.link).replace(/"/g,'%22')}" target="_blank" rel="noopener" style="background:rgba(52,152,219,0.12);border:1px solid rgba(52,152,219,0.3);border-radius:9px;color:#3498db;padding:7px 12px;font-size:12px;font-weight:700;text-decoration:none">🗺️ افتح الخريطة</a>` : ''}
         ${f.phone ? `<a href="tel:${f.val}" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);border-radius:9px;color:var(--success);padding:7px 12px;font-size:12px;font-weight:700;text-decoration:none">📲 اتصل</a>
         ${s.waPhoneIndex === f.idx || (s.waPhoneIndex == null && f.idx === 0)
           ? `<span style="background:#25D366;border:1px solid #25D366;border-radius:9px;color:#fff;padding:7px 12px;font-size:12px;font-weight:700">✅ رقم الواتساب</span>`
@@ -6652,6 +6670,7 @@ window.openEditModal = (id) => {
   document.getElementById('edit-name').value    = s.name;
   document.getElementById('edit-dob').value     = s.dob || '';
   document.getElementById('edit-address').value = s.address || '';
+  document.getElementById('edit-map').value     = s.addressMap || '';
   document.getElementById('edit-gender').value  = s.gender || '';
   document.getElementById('edit-class').innerHTML = classSelectOptionsHTML(true);
   document.getElementById('edit-class').value   = s.classSection || '';
@@ -6692,9 +6711,10 @@ window.saveEditStudent = async () => {
   const name = canonicalizeName(document.getElementById('edit-name').value);
   const dob  = document.getElementById('edit-dob').value || '';
   const address = document.getElementById('edit-address').value.trim();
+  const addressMap = document.getElementById('edit-map').value.trim();
   const { father, mother, student } = readPhoneInputs('edit');
   const others = editOtherPhones.filter(o => o !== father && o !== mother && o !== student);
-  const err = validateStudentData({ name, dob, address, father, mother, student, others });
+  const err = validateStudentData({ name, dob, address, father, mother, student, others, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
   const prev = allStudents.find(s => s.id === id);
   const visitNotes = [];
@@ -6706,6 +6726,7 @@ window.saveEditStudent = async () => {
     name,
     dob,
     address,
+    addressMap,
     gender:  document.getElementById('edit-gender').value || '',
     classSection: document.getElementById('edit-class').value || '',
     ...buildPhoneFields(father, mother, student, others, prev),
