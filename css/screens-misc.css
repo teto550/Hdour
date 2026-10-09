@@ -1,0 +1,9 @@
+/* VERSE */
+.verse-badge{background:rgba(124,92,191,0.12);border:1px solid rgba(124,92,191,0.3);color:#a07de0;border-radius:7px;padding:2px 7px;font-size:10px;font-weight:700;flex-shrink:0;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.student-item.verse-only{border-color:rgba(124,92,191,0.3);}
+
+/* AUTH TABS / REGISTER */
+.auth-card .tabs{margin-bottom:18px;}
+
+/* PENDING SCREEN */
+#pending-screen{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at 50% 0%,rgba(79,142,247,0.12),transparent 65%);}
