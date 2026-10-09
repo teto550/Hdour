@@ -560,11 +560,11 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <input type="text" id="new-name" class="field-input" placeholder="اسم المخدوم بالكامل" oninput="onNewNameInput()">
         <div class="form-2col" style="margin-bottom:14px">
           <div>
-            <label class="field-label">تاريخ الميلاد</label>
+            <label class="field-label">تاريخ الميلاد *</label>
             <input type="date" id="new-dob" class="field-input" style="margin-bottom:0">
           </div>
           <div>
-            <label class="field-label">العنوان</label>
+            <label class="field-label">العنوان *</label>
             <input type="text" id="new-address" class="field-input" style="margin-bottom:0" placeholder="العنوان">
           </div>
         </div>
@@ -574,12 +574,11 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <option value="male">ولد</option>
           <option value="female">بنت</option>
         </select>
-        <label class="field-label">أرقام التليفون</label>
-        <div class="phones-wrap" id="phones-wrap">
-          <div class="phone-row">
-            <input type="tel" class="field-input phone-input" placeholder="رقم التليفون" dir="ltr">
-            <button class="add-phone-btn" onclick="addPhoneField()">+</button>
-          </div>
+        <label class="field-label">أرقام التليفون * <span style="font-weight:400">(لازم رقم واحد على الأقل)</span></label>
+        <div class="phones-wrap">
+          <input type="tel" id="new-phone-father" class="field-input" placeholder="تليفون الأب" dir="ltr" style="margin-bottom:8px">
+          <input type="tel" id="new-phone-mother" class="field-input" placeholder="تليفون الأم" dir="ltr" style="margin-bottom:8px">
+          <input type="tel" id="new-phone-student" class="field-input" placeholder="تليفون المخدوم" dir="ltr" style="margin-bottom:0">
         </div>
         <button class="btn-primary" onclick="addStudent()">➕ إضافة</button>
       </div>
@@ -1054,11 +1053,11 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <input type="text" id="edit-name" class="field-input" placeholder="اسم المخدوم بالكامل" oninput="onEditNameInput()">
       <div class="form-2col" style="margin-bottom:14px">
         <div>
-          <label class="field-label">تاريخ الميلاد</label>
+          <label class="field-label">تاريخ الميلاد *</label>
           <input type="date" id="edit-dob" class="field-input" style="margin-bottom:0">
         </div>
         <div>
-          <label class="field-label">العنوان</label>
+          <label class="field-label">العنوان *</label>
           <input type="text" id="edit-address" class="field-input" style="margin-bottom:0" placeholder="العنوان">
         </div>
       </div>
@@ -1070,8 +1069,13 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </select>
       <label class="field-label">الفصل</label>
       <select class="field-select" id="edit-class"></select>
-      <label class="field-label">أرقام التليفون</label>
-      <div class="edit-phones-wrap" id="edit-phones-wrap"></div>
+      <label class="field-label">أرقام التليفون * <span style="font-weight:400">(لازم رقم واحد على الأقل)</span></label>
+      <div class="edit-phones-wrap">
+        <input type="tel" id="edit-phone-father" class="field-input" placeholder="تليفون الأب" dir="ltr" style="margin-bottom:8px">
+        <input type="tel" id="edit-phone-mother" class="field-input" placeholder="تليفون الأم" dir="ltr" style="margin-bottom:8px">
+        <input type="tel" id="edit-phone-student" class="field-input" placeholder="تليفون المخدوم" dir="ltr" style="margin-bottom:0">
+        <div id="edit-other-phones-note" style="display:none;font-size:12px;color:var(--text-dim);background:var(--surface2);border-radius:8px;padding:9px 11px;margin-top:8px;line-height:1.7"></div>
+      </div>
       <label class="field-label">ملحوظات الافتقاد</label>
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
         <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
@@ -2672,14 +2676,50 @@ async function initApp() {
 }
 
 // ===== PHONE FIELDS =====
-window.addPhoneField = () => {
-  const wrap = document.getElementById('phones-wrap');
-  const row  = document.createElement('div');
-  row.className = 'phone-row';
-  row.innerHTML = `<input type="tel" class="field-input phone-input" placeholder="رقم التليفون" dir="ltr">
-    <button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`;
-  wrap.appendChild(row);
-};
+// الأرقام بقت 3 خانات: الأب / الأم / المخدوم. مصفوفة phones لسه بتتحدّث تلقائي (أب ← أم ← مخدوم ← أرقام قديمة)
+// عشان الواتساب والتصدير والداشبورد وأي كود قديم يفضل شغال
+const PHONE_RE = /^\+?\d{8,15}$/;
+function cleanPhone(v) {
+  return (v || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[\s\-().]/g, '');
+}
+function hasRolePhones(s) { return s.fatherPhone !== undefined || s.motherPhone !== undefined || s.studentPhone !== undefined; }
+// قائمة أرقام المخدوم بالتسميات (idx = مكان الرقم في مصفوفة phones)
+function studentPhoneEntries(s) {
+  const e = [];
+  if (!hasRolePhones(s)) {
+    (s.phones || []).forEach((p, i) => { if (p) e.push({ label: 'تليفون' + (i === 0 ? '' : ' (' + (i + 1) + ')'), val: p, idx: i }); });
+    return e;
+  }
+  const add = (label, val) => { if (val) e.push({ label, val, idx: e.length }); };
+  add('تليفون الأب', s.fatherPhone);
+  add('تليفون الأم', s.motherPhone);
+  add('تليفون المخدوم', s.studentPhone);
+  (s.otherPhones || []).filter(Boolean).forEach((v, i) => add('تليفون إضافي' + (i === 0 ? '' : ' (' + (i + 1) + ')'), v));
+  return e;
+}
+function readPhoneInputs(prefix) {
+  const g = k => cleanPhone(document.getElementById(prefix + '-phone-' + k).value);
+  return { father: g('father'), mother: g('mother'), student: g('student') };
+}
+// بيرجّع نص الخطأ (أو '' لو كله تمام) — الحفظ بيتمنع لو فيه أي نقص
+function validateStudentData({ name, dob, address, father, mother, student, others = [] }) {
+  if (!name) return 'اكتب اسم المخدوم';
+  if (!dob) return 'لازم تكتب تاريخ الميلاد';
+  if (!address) return 'لازم تكتب العنوان';
+  for (const [lbl, v] of [['الأب', father], ['الأم', mother], ['المخدوم', student]]) {
+    if (v && !PHONE_RE.test(v)) return 'رقم تليفون ' + lbl + ' مش صحيح';
+  }
+  if (!father && !mother && !student && !others.length) return 'لازم رقم تليفون واحد على الأقل (الأب أو الأم أو المخدوم)';
+  return '';
+}
+// بيبني حقول الأرقام اللي بتتحفظ. prev = بيانات المخدوم قبل التعديل عشان رقم الواتساب المختار يفضل زي ما هو
+function buildPhoneFields(father, mother, student, others, prev) {
+  others = (others || []).filter(o => o && o !== father && o !== mother && o !== student);
+  const phones = [father, mother, student, ...others].filter(Boolean);
+  let waPhoneIndex = null;
+  if (prev) { const pw = getWaPhone(prev); const i = pw ? phones.indexOf(pw) : -1; if (i >= 0) waPhoneIndex = i; }
+  return { fatherPhone: father, motherPhone: mother, studentPhone: student, otherPhones: others, phones, waPhoneIndex };
+}
 
 window.toggleAddStudentForm = () => {
   const fields = document.getElementById('add-student-fields');
@@ -2778,19 +2818,21 @@ async function migrateClassField() {
 
 window.addStudent = async () => {
   const name = canonicalizeName(document.getElementById('new-name').value);
-  if (!name) { showToast('اكتب اسم المخدوم', 'error'); return; }
+  const dob = document.getElementById('new-dob').value || '';
+  const address = document.getElementById('new-address').value.trim();
+  const { father, mother, student } = readPhoneInputs('new');
+  const err = validateStudentData({ name, dob, address, father, mother, student });
+  if (err) { showToast(err, 'error'); return; }
   const dup = allStudents.find(s => normalizeArabic(s.name) === normalizeArabic(name));
   if (dup && !confirm(`فيه مخدوم بنفس الاسم "${dup.name}" مسجل قبل كده. تحب تضيفه تاني كاسم مكرر؟`)) return;
-  const phones = [...document.querySelectorAll('.phone-input')]
-    .map(i => i.value.trim()).filter(Boolean);
   const allowed = getAllowedAssignedClasses();
   const targetClass = (currentRole !== 'admin' && allowed.length) ? (allowed.includes(currentClassTab) ? currentClassTab : allowed[0]) : '';
   const data = {
     name,
-    dob:     document.getElementById('new-dob').value || '',
-    address: document.getElementById('new-address').value.trim() || '',
+    dob,
+    address,
     gender:  document.getElementById('new-gender').value || '',
-    phones,
+    ...buildPhoneFields(father, mother, student, [], null),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     classSection: ''
@@ -2798,15 +2840,9 @@ window.addStudent = async () => {
   // لو الخادم مقيد بفصول معينة، أي مخدوم جديد بيضيفه يتحط أوتوماتيك في الفصل الحالي اللى شافه في الواجهة عشان يبقى ضمن الفصول المسموح له
   if (currentRole !== 'admin' && allowed.length) data.classSection = targetClass;
   await addDoc(collection(db,'students'), data); bumpStudentsRev();
-  document.getElementById('new-name').value = '';
-  document.getElementById('new-dob').value  = '';
-  document.getElementById('new-address').value = '';
-  document.getElementById('new-gender').value = '';
+  ['new-name','new-dob','new-address','new-gender','new-phone-father','new-phone-mother','new-phone-student']
+    .forEach(id => { document.getElementById(id).value = ''; });
   newGenderManuallySet = false;
-  document.getElementById('phones-wrap').innerHTML = `<div class="phone-row">
-    <input type="tel" class="field-input phone-input" placeholder="رقم التليفون" dir="ltr">
-    <button class="add-phone-btn" onclick="addPhoneField()">+</button>
-  </div>`;
   showToast('تمت الإضافة ✓', 'success');
   await loadStudents();
   logActivity('إضافة مخدوم', name);
@@ -4163,11 +4199,7 @@ window.openProfile = (id) => {
   fields.push({ icon:'📝', key:'ملحوظات الافتقاد', val: (s.visitNotes?.length)
     ? s.visitNotes.map(n => NOTE_LABELS[n] ? `${NOTE_LABELS[n].emoji} ${NOTE_LABELS[n].text}` : n).join('، ')
     : `${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}` });
-  if (s.phones?.length) {
-    s.phones.forEach((p,i) => {
-      if (p) fields.push({ icon:'📞', key:`تليفون ${i===0?'':'('+(i+1)+')'}`, val: p, phone: true, idx: i });
-    });
-  }
+  studentPhoneEntries(s).forEach(e => fields.push({ icon:'📞', key: e.label, val: e.val, phone: true, idx: e.idx }));
   // attendance + verse history combined
   const relevantDates = [...new Set([...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse().slice(0,5);
   const histHTML = relevantDates.length ? `
@@ -4697,7 +4729,7 @@ function buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse) {
 // بيبني شيت بيانات المخدومين (بروفايل كامل: النوع، تاريخ الميلاد، العنوان، التليفونات، ملاحظات الافتقاد)
 function buildStudentsSheet() {
   const genderLabel = g => g === 'male' ? 'ولد' : (g === 'female' ? 'بنت' : '');
-  const row1 = ['الاسم','النوع','تاريخ الميلاد','الفصل','العنوان','أرقام التليفونات','ملاحظات الافتقاد'];
+  const row1 = ['الاسم','النوع','تاريخ الميلاد','الفصل','العنوان','تليفون الأب','تليفون الأم','تليفون المخدوم','أرقام أخرى','ملاحظات الافتقاد'];
   const rows = [...exportTargetStudents()]
     .sort((a,b) => a.name.localeCompare(b.name,'ar'))
     .map(s => [
@@ -4706,11 +4738,14 @@ function buildStudentsSheet() {
       s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) : '',
       s.classSection ? classLabel(s.classSection) : '',
       s.address || '',
-      (s.phones||[]).filter(Boolean).join(' / '),
+      s.fatherPhone || '',
+      s.motherPhone || '',
+      s.studentPhone || '',
+      (hasRolePhones(s) ? (s.otherPhones||[]) : (s.phones||[])).filter(Boolean).join(' / '),
       (s.visitNotes?.length) ? s.visitNotes.map(n => NOTE_LABELS[n]?.text || n).join('، ') : ''
     ]);
   const ws = XLSX.utils.aoa_to_sheet([row1, ...rows]);
-  ws['!cols'] = [{wch:26},{wch:8},{wch:18},{wch:14},{wch:26},{wch:22},{wch:26}];
+  ws['!cols'] = [{wch:26},{wch:8},{wch:18},{wch:14},{wch:26},{wch:16},{wch:16},{wch:16},{wch:22},{wch:26}];
   ws['!views'] = [{ rightToLeft: true }];
 
   const border = { top:{style:'thin',color:{rgb:'D9D9D9'}}, bottom:{style:'thin',color:{rgb:'D9D9D9'}}, left:{style:'thin',color:{rgb:'D9D9D9'}}, right:{style:'thin',color:{rgb:'D9D9D9'}} };
@@ -6628,28 +6663,22 @@ window.openEditModal = (id) => {
   document.getElementById('edit-note-otherchurch').checked = notes.includes('otherChurch');
   document.getElementById('edit-note-motherpregnant').checked = notes.includes('motherPregnant');
 
-  const wrap = document.getElementById('edit-phones-wrap');
-  const phones = (s.phones && s.phones.length) ? s.phones : [''];
-  wrap.innerHTML = phones.map((p, i) => `
-    <div class="edit-phone-row">
-      <input type="tel" class="field-input edit-phone-input" placeholder="رقم التليفون" dir="ltr" value="${p}">
-      ${i === 0
-        ? `<button class="add-phone-btn" onclick="addEditPhoneField()">+</button>`
-        : `<button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`}
-    </div>`).join('');
+  // أرقام قديمة مش متحدد صاحبها (من قبل التعديل ده) بتفضل محفوظة، وبتتشال أول ما تتكتب في الخانة الصح
+  editOtherPhones = hasRolePhones(s) ? (s.otherPhones || []).filter(Boolean) : (s.phones || []).filter(Boolean);
+  document.getElementById('edit-phone-father').value  = s.fatherPhone  || '';
+  document.getElementById('edit-phone-mother').value  = s.motherPhone  || '';
+  document.getElementById('edit-phone-student').value = s.studentPhone || '';
+  const note = document.getElementById('edit-other-phones-note');
+  if (editOtherPhones.length) {
+    note.textContent = 'أرقام محفوظة مش متحدد صاحبها: ' + editOtherPhones.join(' — ') + ' — لو عارف صاحبها اكتبها في الخانة المناسبة فوق وهتتشال من هنا تلقائي.';
+    note.style.display = 'block';
+  } else { note.style.display = 'none'; note.textContent = ''; }
 
   document.getElementById('edit-modal').style.display = 'block';
   document.body.style.overflow = 'hidden';
 };
 
-window.addEditPhoneField = () => {
-  const wrap = document.getElementById('edit-phones-wrap');
-  const row  = document.createElement('div');
-  row.className = 'edit-phone-row';
-  row.innerHTML = `<input type="tel" class="field-input edit-phone-input" placeholder="رقم التليفون" dir="ltr">
-    <button class="rem-phone-btn" onclick="this.parentElement.remove()">−</button>`;
-  wrap.appendChild(row);
-};
+let editOtherPhones = [];
 
 window.closeEditModal = () => {
   document.getElementById('edit-modal').style.display = 'none';
@@ -6661,9 +6690,13 @@ window.closeEditOutside = (e) => { if (e.target.id === 'edit-modal') closeEditMo
 window.saveEditStudent = async () => {
   const id   = document.getElementById('edit-id').value;
   const name = canonicalizeName(document.getElementById('edit-name').value);
-  if (!name) { showToast('اكتب اسم المخدوم', 'error'); return; }
-  const phones = [...document.querySelectorAll('.edit-phone-input')]
-    .map(i => i.value.trim()).filter(Boolean);
+  const dob  = document.getElementById('edit-dob').value || '';
+  const address = document.getElementById('edit-address').value.trim();
+  const { father, mother, student } = readPhoneInputs('edit');
+  const others = editOtherPhones.filter(o => o !== father && o !== mother && o !== student);
+  const err = validateStudentData({ name, dob, address, father, mother, student, others });
+  if (err) { showToast(err, 'error'); return; }
+  const prev = allStudents.find(s => s.id === id);
   const visitNotes = [];
   if (document.getElementById('edit-note-traveling').checked)   visitNotes.push('traveling');
   if (document.getElementById('edit-note-friday').checked)      visitNotes.push('friday');
@@ -6671,11 +6704,11 @@ window.saveEditStudent = async () => {
   if (document.getElementById('edit-note-motherpregnant').checked) visitNotes.push('motherPregnant');
   const data = {
     name,
-    dob:     document.getElementById('edit-dob').value || '',
-    address: document.getElementById('edit-address').value.trim() || '',
+    dob,
+    address,
     gender:  document.getElementById('edit-gender').value || '',
     classSection: document.getElementById('edit-class').value || '',
-    phones,
+    ...buildPhoneFields(father, mother, student, others, prev),
     visitNotes
   };
   try {
