@@ -3,11 +3,82 @@
  * ملحوظة: بيانات Firestore نفسها بتتخزن في IndexedDB من الكود اللي في index.html، مش هنا.
  * لما تغيّر في الملفات وعايز كل الأجهزة تنزّلها من جديد: غيّر VERSION.
  */
-const VERSION = 'hdour-v1';
+const VERSION = 'hdour-v2';
 const SHELL = VERSION + '-shell'; // ملفات الموقع (بتتحدّث من النت كل ما يكون فيه اتصال)
 const LIBS  = VERSION + '-libs';  // مكتبات ونسخ ثابتة من CDN (cache-first)
 
-const SHELL_FILES = ['./index.html', './manifest.json', './icon-193.png'];
+// كل ملفات الموقع (بتتحمّل مسبقًا عشان يشتغل أوفلاين). لو أضفت ملف جديد ضيفه هنا (مش إجباري: بيتحفظ لوحده أول مرة تفتح فيها بنت)
+const SHELL_FILES = [
+  './index.html',
+  './manifest.json',
+  './icon-193.png',
+  './css/admin-home.css',
+  './css/attendance.css',
+  './css/auth.css',
+  './css/base.css',
+  './css/dashboard.css',
+  './css/effects.css',
+  './css/filters.css',
+  './css/forms.css',
+  './css/layout.css',
+  './css/lists.css',
+  './css/modals.css',
+  './css/monitor.css',
+  './css/screens-misc.css',
+  './css/servants.css',
+  './js/boot.js',
+  './js/core/config.js',
+  './js/core/firebase.js',
+  './js/core/idb-cache.js',
+  './js/core/reads-counter.js',
+  './js/core/state.js',
+  './js/core/toast.js',
+  './js/features/attendance.js',
+  './js/features/auth.js',
+  './js/features/biometric.js',
+  './js/features/class-servants.js',
+  './js/features/classes.js',
+  './js/features/edit-student.js',
+  './js/features/export.js',
+  './js/features/filters.js',
+  './js/features/monitor.js',
+  './js/features/navigation.js',
+  './js/features/profile.js',
+  './js/features/servant-profile.js',
+  './js/features/servants-dashboard.js',
+  './js/features/settings.js',
+  './js/features/students.js',
+  './js/features/today-list.js',
+  './js/features/users-roles.js',
+  './js/features/voice-attendance.js',
+  './js/features/whatsapp.js',
+  './js/install-banner.js',
+  './js/lib/arabic-match.js',
+  './js/lib/utils.js',
+  './js/main.js',
+  './js/ui-effects.js',
+  './views/app/navigation.html',
+  './views/app/top-bar.html',
+  './views/auth.html',
+  './views/modals/bio-offer.html',
+  './views/modals/dash-settings.html',
+  './views/modals/dash-view.html',
+  './views/modals/edit-student.html',
+  './views/modals/export-class-pick.html',
+  './views/modals/export.html',
+  './views/modals/profile.html',
+  './views/modals/role-add-members.html',
+  './views/modals/servant-profile.html',
+  './views/modals/settings.html',
+  './views/pending.html',
+  './views/tabs/attendance.html',
+  './views/tabs/class-servants.html',
+  './views/tabs/filters.html',
+  './views/tabs/messages.html',
+  './views/tabs/monitor.html',
+  './views/tabs/roles.html',
+  './views/tabs/students.html'
+];
 const FIREBASE_BASE = 'https://www.gstatic.com/firebasejs/10.12.2/';
 const FIREBASE_ENTRY = ['app', 'auth', 'firestore', 'app-check'].map(n => FIREBASE_BASE + 'firebase-' + n + '.js');
 const CDN_FILES = [
@@ -89,9 +160,10 @@ self.addEventListener('activate', event => {
 const MATCH = { ignoreVary: true };
 
 // صفحة الموقع: النت الأول (عشان التحديثات توصل)، ولو النت ضعيف/مقطوع بعد ٣.٥ ثانية نفتح النسخة المحفوظة
-async function networkFirst(event, req, key) {
+async function networkFirst(event, req, key, revalidate) {
   const cache = await caches.open(SHELL);
-  const fromNetwork = fetch(req).then(async res => {
+  // revalidate: بيسأل السيرفر هل الملف اتغير (ETag) بدل ما ياخد من كاش المتصفح — عشان ملفات التطبيق كلها تتحدّث مع بعض
+  const fromNetwork = fetch(req, revalidate ? { cache: 'no-cache' } : undefined).then(async res => {
     if (res.ok) await cache.put(key, res.clone());
     return res;
   });
@@ -138,6 +210,9 @@ self.addEventListener('fetch', event => {
     if (req.mode === 'navigate') {
       const isIndex = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
       event.respondWith(networkFirst(event, req, isIndex ? './index.html' : req));
+    } else if (/\.(?:js|css|html|json)$/.test(url.pathname)) {
+      // ملفات التطبيق (js / css / views): النت الأول عشان أي تعديل يوصل فورًا، ولو مفيش نت نفتح المحفوظ
+      event.respondWith(networkFirst(event, req, req, true));
     } else {
       event.respondWith(staleWhileRevalidate(event, req));
     }
