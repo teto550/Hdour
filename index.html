@@ -524,8 +524,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div id="tab-attendance">
       <div class="stats-row" id="att-stats-row">
         <div class="stat-card t"><div class="stat-num" id="stat-total">0</div><div class="stat-label" id="stat-total-label">إجمالي</div></div>
-        <div class="stat-card p"><div class="stat-num" id="stat-present">0</div><div class="stat-label">حاضر</div></div>
-        <div class="stat-card a"><div class="stat-num" id="stat-absent">0</div><div class="stat-label">غائب</div></div>
+        <div class="stat-card p"><div class="stat-num" id="stat-present">0</div><div class="stat-label" id="stat-present-label">حاضر</div></div>
+        <div class="stat-card a"><div class="stat-num" id="stat-absent">0</div><div class="stat-label" id="stat-absent-label">غائب</div></div>
         <div class="stat-card g" id="stat-gift-card" style="display:none"><div class="stat-num" id="stat-gift">0</div><div class="stat-label">🎁 استلموا الهدية</div></div>
       </div>
       <button id="voice-toggle-btn" class="btn-voice" onclick="startVoice()">🎤 تسجيل بالصوت</button>
@@ -3845,6 +3845,7 @@ function todayListRelevantTime(s) {
 }
 
 function renderTodayList() {
+  updateStats(); // الأرقام اللي فوق دايمًا مظبوطة على الفلتر الحالي حتى لو الحدث جه من تسجيل سماع أو بث لحظي
   const cont = document.getElementById('today-list');
   if (!allStudents.length) { cont.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div>أضف مخدومين أولاً</div>`; return; }
 
@@ -3899,22 +3900,32 @@ function renderTodayList() {
 
 function updateStats() {
   const classesToCount = [currentClassTab];
-  let classStudents = allStudents.filter(s => classesToCount.includes(s.classSection));
-  // فلتر أعياد الميلاد: الأرقام بتتحسب على أعياد ميلاد الشهر بس
-  const bday = todayListFilter === 'birthday';
-  if (bday) classStudents = classStudents.filter(isBirthdayThisMonth);
-  const present = classStudents.filter(s => !!todayAttendance[s.id]).length;
-  const heardVerse = classStudents.filter(s => !!todayVerses[s.id]).length;
+  let base = allStudents.filter(s => classesToCount.includes(s.classSection));
+  const mode = todayListFilter;
+  const bday = mode === 'birthday';
+  if (bday) base = base.filter(isBirthdayThisMonth); // فلتر الأعياد: الأرقام على أعياد ميلاد الشهر بس
+  const isAtt = s => !!todayAttendance[s.id];
+  const isVerse = s => !!todayVerses[s.id];
+  // الكروت التلاتة بتتغير حسب الفلتر: [العنوان، الرقم]
+  let c1, c2, c3;
+  if (mode === 'attendance') {        // اللي حضروا: كام منهم سمّع وكام لأ
+    const set = base.filter(isAtt), heard = set.filter(isVerse).length;
+    c1 = ['حضروا', set.length]; c2 = ['سمّعوا منهم', heard]; c3 = ['ما سمّعوش', set.length - heard];
+  } else if (mode === 'verse') {      // اللي سمّعوا: كام منهم حضر وكام سمّع من غير حضور
+    const set = base.filter(isVerse), came = set.filter(isAtt).length;
+    c1 = ['سمّعوا', set.length]; c2 = ['حضروا منهم', came]; c3 = ['من غير حضور', set.length - came];
+  } else {                            // الكل / أعياد الميلاد
+    const present = base.filter(isAtt).length;
+    c1 = [bday ? 'أعياد الشهر' : 'إجمالي', base.length]; c2 = ['حاضر', present]; c3 = ['غائب', base.length - present];
+  }
+  const set = (id, c) => { document.getElementById(id).textContent = c[1]; document.getElementById(id + '-label').textContent = c[0]; };
+  set('stat-total', c1); set('stat-present', c2); set('stat-absent', c3);
   const gc = document.getElementById('stat-gift-card');
   if (gc) {
     gc.style.display = bday ? '' : 'none';
-    document.getElementById('stat-gift').textContent = classStudents.filter(giftGiven).length;
+    document.getElementById('stat-gift').textContent = base.filter(giftGiven).length;
     document.getElementById('att-stats-row').style.gridTemplateColumns = bday ? '1fr 1fr 1fr 1fr' : '';
-    document.getElementById('stat-total-label').textContent = bday ? 'أعياد الشهر' : 'إجمالي';
   }
-  document.getElementById('stat-total').textContent   = classStudents.length;
-  document.getElementById('stat-present').textContent = present;
-  document.getElementById('stat-absent').textContent  = classStudents.length - present;
 }
 
 // ===== MANUAL SEARCH =====
@@ -6854,6 +6865,16 @@ function showInstallHelp(kind) {
     <button onclick="document.getElementById('install-help').remove()" style="width:100%;background:var(--surface2,#2a3148);border:1px solid var(--border,#333);border-radius:10px;color:inherit;font-family:Cairo,sans-serif;font-size:15px;font-weight:700;padding:12px;cursor:pointer">تمام</button>
   </div>`;
   document.body.appendChild(d);
+  // سطر تشخيص صغير: بيقول ليه التثبيت المباشر مش شغال على الجهاز ده
+  const ua = navigator.userAgent;
+  const br = /SamsungBrowser/i.test(ua) ? 'Samsung Internet' : /Firefox|FxiOS/i.test(ua) ? 'Firefox' : /EdgA|EdgiOS/i.test(ua) ? 'Edge' : /CriOS|Chrome/i.test(ua) ? 'Chrome' : /Safari/i.test(ua) ? 'Safari' : 'غير معروف';
+  const dbg = document.createElement('div');
+  dbg.style.cssText = 'font-size:11px;color:var(--text-dim,#999);margin:-6px 0 12px;line-height:1.7';
+  d.firstElementChild.insertBefore(dbg, d.firstElementChild.querySelector('button'));
+  const line = sw => dbg.textContent = 'تشخيص: المتصفح ' + br + ' — service worker: ' + sw + ' — إشارة التثبيت من المتصفح: ' + (deferredPrompt ? 'وصلت' : 'لسه مجتش') + ' — شغال كتطبيق مثبّت: ' + (isStandalone() ? 'أيوه' : 'لأ');
+  line('...');
+  (navigator.serviceWorker ? navigator.serviceWorker.getRegistration() : Promise.resolve(null))
+    .then(r => line(r ? 'شغال' : 'مش متسجّل')).catch(() => line('خطأ'));
 }
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; checkShowBanner(); });
 document.getElementById('install-btn').addEventListener('click', async () => {
