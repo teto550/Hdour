@@ -94,8 +94,10 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .check-box.att-box.checked{background:rgba(46,204,113,0.15);border-color:var(--success);color:var(--success);}
 .check-box.verse-box{background:rgba(124,92,191,0.08);border-color:rgba(124,92,191,0.25);}
 .check-box.verse-box.checked{background:rgba(124,92,191,0.15);border-color:#a07de0;color:#a07de0;}
-.check-box.gift-box{background:rgba(241,196,15,0.08);border-color:rgba(241,196,15,0.25);}
-.check-box.gift-box.checked{background:rgba(241,196,15,0.18);border-color:#f1c40f;color:#f1c40f;}
+.gift-slot{flex:1;display:flex;align-items:center;justify-content:center;min-width:38px;}
+.gift-icon{width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:30px;line-height:1;cursor:pointer;transition:transform .15s;user-select:none;}
+.gift-icon:active{transform:scale(.85);}
+.check-box.gift-box{background:rgba(241,196,15,0.18);border-color:#f1c40f;color:#f1c40f;}
 .stat-card.g .stat-num{color:#f1c40f;}
 
 .list-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;}
@@ -3879,14 +3881,16 @@ function renderTodayList() {
     const isBday = todayListFilter === 'birthday';
     return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}">
       ${studentAvatarHTML(s,'s-avatar')}
-      <div class="s-info">
+      <div class="s-info"${isBday ? ' style="flex:0 1 auto"' : ''}>
         <div class="s-name">${s.name}</div>
         ${isBday ? `<div class="s-sub" style="color:#f1c40f">🎂 ${birthdayDay(s)}/${birthdayMonth(s)}${s.dob ? ' — ' + (new Date().getFullYear() - parseInt(String(s.dob).split('-')[0], 10)) + ' سنة' : ''}</div>` : ''}
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
       </div>
+      ${isBday ? `<div class="gift-slot">${giftGiven(s)
+        ? `<div class="check-box gift-box checked" title="استلم الهدية — اضغط للإلغاء" onclick="toggleGift('${s.id}')">✓</div>`
+        : `<div class="gift-icon" title="اضغط لتسجيل استلام الهدية" onclick="toggleGift('${s.id}')">🎁</div>`}</div>` : ''}
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <div class="check-box att-box${present?' checked':''}" onclick="${present?`removeAttendance('${s.id}')`:`quickToggleAttendance('${s.id}')`}">${present?'✓':''}</div>
-        ${isBday ? `<div class="check-box gift-box${giftGiven(s)?' checked':''}" title="${giftGiven(s)?'استلم الهدية':'لسه مستلمش الهدية'}" onclick="toggleGift('${s.id}')">${giftGiven(s)?'✓':'🎁'}</div>` : ''}
         <div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseEntry.verse:'تسجيل آية'}" onclick="${hasVerse?`removeVerse('${s.id}')`:`showVerseModal('${s.id}')`}">${hasVerse?'✓':'📖'}</div>
       </div>
     </div>`;
