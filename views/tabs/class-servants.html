@@ -1,0 +1,31 @@
+    <!-- CLASS SERVANTS TAB (مسؤول الفصل بس) — حضور خدام فصله هو بس -->
+    <div id="tab-classservants" style="display:none">
+      <div class="page-title-box cs-scope-title" id="class-serv-scope-title"></div>
+      <div class="tabs" id="class-serv-subtabs" style="margin-bottom:12px">
+        <button class="tab active" id="class-serv-subtab-btn-servants" onclick="switchClassServSub('servants')">👥 الخدام</button>
+        <button class="tab" id="class-serv-subtab-btn-att" onclick="switchClassServSub('att')">✅ الحضور</button>
+      </div>
+      <div id="class-serv-sub-servants">
+        <div id="sup-pending-section" style="display:none;margin-bottom:18px">
+          <div class="list-header"><span class="section-title">📥 طلبات انضمام لفصولك (<span id="sup-pending-count">0</span>)</span></div>
+          <div id="sup-pending-list"></div>
+        </div>
+        <div class="search-box" style="margin:0 0 10px">
+          <input type="text" id="class-serv-list-search" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="renderClassServList()" autocomplete="off">
+        </div>
+        <div id="class-serv-list"></div>
+      </div>
+      <div id="class-serv-sub-att" style="display:none">
+      <div class="tabs" id="class-serv-att-activity-chips" style="margin-bottom:12px">
+        <button class="tab active" onclick="setClassServAttActivity('mass',this)">⛪ القداس</button>
+        <button class="tab" onclick="setClassServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
+        <button class="tab" onclick="setClassServAttActivity('meeting',this)">🤝 اجتماع الخدام</button>
+        <button class="tab" onclick="setClassServAttActivity('preparation',this)">📝 التحضير</button>
+      </div>
+      <input type="date" id="class-serv-att-date" class="field-input" onchange="renderClassServAttList()">
+      <div class="search-box" style="margin:10px 0">
+        <input type="text" id="class-serv-att-search-input" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="renderClassServAttList()" autocomplete="off">
+      </div>
+      <div id="class-serv-att-list"></div>
+      </div>
+    </div>

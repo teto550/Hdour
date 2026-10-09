@@ -1,0 +1,25 @@
+<!-- SERVANT PROFILE MODAL -->
+
+<div id="servant-profile-modal" class="modal-overlay" style="display:none" onclick="closeServantProfileOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-avatar" id="sprof-avatar"></div>
+      <div style="flex:1;min-width:0">
+        <div id="sprof-name" style="font-size:18px;font-weight:900"></div>
+        <div id="sprof-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
+      </div>
+      <button class="modal-close" onclick="closeServantProfile()">✕</button>
+    </div>
+    <div class="modal-stats" id="sprof-stats" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="modal-stat"><div class="modal-stat-num" id="sprof-ssc" style="color:var(--success)">0</div><div class="modal-stat-label">📖 مدارس أحد</div></div>
+      <div class="modal-stat"><div class="modal-stat-num" id="sprof-meeting" style="color:var(--accent)">0</div><div class="modal-stat-label">🤝 اجتماع خدام</div></div>
+      <div class="modal-stat"><div class="modal-stat-num" id="sprof-prep" style="color:var(--warning)">0</div><div class="modal-stat-label">📝 تحضير</div></div>
+    </div>
+    <div style="padding:16px">
+      <div class="section-title" style="margin-bottom:8px">الفصول</div>
+      <div id="sprof-class-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px"></div>
+      <div id="sprof-contact" style="font-size:13px;color:var(--text-dim);line-height:1.9;margin-bottom:16px"></div>
+      <div id="sprof-actions" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    </div>
+  </div>
+</div>

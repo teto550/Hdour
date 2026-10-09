@@ -1,0 +1,24 @@
+<!-- PROFILE MODAL -->
+<div id="profile-modal" class="modal-overlay" style="display:none" onclick="closeProfileOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-avatar" id="prof-avatar" onclick="triggerProfilePhotoPick()" style="cursor:pointer;position:relative"></div>
+      <input type="file" id="prof-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handleProfilePhotoChange(event)">
+      <div style="flex:1;min-width:0">
+        <div id="prof-name" style="font-size:18px;font-weight:900"></div>
+        <div id="prof-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
+      </div>
+      <button class="modal-close" onclick="editFromProfile()" style="color:var(--accent)">✏️</button>
+      <button class="modal-close" onclick="closeProfile()">✕</button>
+    </div>
+    <div class="modal-stats">
+      <div class="modal-stat"><div class="modal-stat-num" id="prof-count" style="color:var(--success)">0</div><div class="modal-stat-label">مرات الحضور</div></div>
+      <div class="modal-stat"><div class="modal-stat-num" id="prof-last" style="color:var(--accent);font-size:14px">—</div><div class="modal-stat-label">آخر حضور</div></div>
+    </div>
+    <div style="padding:0 16px">
+      <div class="section-title" style="margin-bottom:8px">الفصل</div>
+      <div class="filter-row" id="prof-class-chips" style="margin-bottom:2px"></div>
+    </div>
+    <div id="prof-details" style="padding:16px"></div>
+  </div>
+</div>

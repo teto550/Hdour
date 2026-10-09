@@ -1,0 +1,40 @@
+<!-- AUTH -->
+<div id="auth-screen">
+  <img src="icon-193.png" style="width:100px;height:100px;border-radius:20px;object-fit:cover;margin-bottom:14px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+  <div class="auth-title">خدمة ابتدائي البابا اثناسيوس</div>
+  <div class="auth-sub">نظام تسجيل الحضور</div>
+  <div class="auth-card">
+    <div class="tabs">
+      <button class="tab active" id="auth-tab-login" onclick="switchAuthTab('login')">دخول</button>
+      <button class="tab" id="auth-tab-register" onclick="switchAuthTab('register')">تسجيل خادم جديد</button>
+    </div>
+    <div id="auth-login-form">
+      <label class="field-label">البريد الإلكتروني</label>
+      <input type="email" id="login-email" class="field-input" placeholder="example@gmail.com" dir="ltr">
+      <label class="field-label">كلمة المرور</label>
+      <input type="password" id="login-pass" class="field-input" placeholder="••••••••" dir="ltr">
+      <button class="btn-primary" id="login-btn" onclick="doLogin()">دخول</button>
+      <button id="bio-login-btn" onclick="doBioLogin()" style="display:none;width:100%;margin-top:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;padding:12px;cursor:pointer">🖐 دخول بالبصمة</button>
+    </div>
+    <div id="auth-register-form" style="display:none">
+      <label class="field-label">الفصل</label>
+      <select class="field-select" id="reg-class" onchange="onRegClassChange()">
+        <option value="">جاري تحميل الفصول…</option>
+      </select>
+      <label class="field-label">اسمك</label>
+      <select class="field-select" id="reg-name-select">
+        <option value="">— اختار فصلك الأول —</option>
+      </select>
+      <label class="field-label">البريد الإلكتروني</label>
+      <input type="email" id="reg-email" class="field-input" placeholder="example@gmail.com" dir="ltr">
+      <label class="field-label">كلمة المرور</label>
+      <input type="password" id="reg-pass" class="field-input" placeholder="••••••••  (6 حروف على الأقل)" dir="ltr">
+      <label class="field-label">رقم التليفون</label>
+      <input type="tel" id="reg-phone" class="field-input" placeholder="رقم تليفونك" dir="ltr">
+      <label class="field-label">العنوان</label>
+      <input type="text" id="reg-address" class="field-input" placeholder="عنوانك">
+      <button class="btn-primary" id="register-btn" onclick="doRegister()">تسجيل</button>
+    </div>
+    <div id="login-error" style="color:var(--danger);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
+  </div>
+</div>

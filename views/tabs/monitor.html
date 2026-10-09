@@ -1,0 +1,60 @@
+    <!-- MONITOR TAB (ADMIN ONLY) -->
+    <div id="tab-monitor" style="display:none">
+      <div class="mon-hero" id="mon-hero">
+        <div class="mon-hero-top">
+          <div class="mon-hero-icon">👥</div>
+          <div class="mon-hero-txt">
+            <div class="mon-hero-title">الخدام</div>
+            <div class="mon-hero-sub" id="mon-hero-sub">متابعة حضور الخدام</div>
+          </div>
+          <button class="mon-dash-btn" onclick="openDashModal()">📊 الداشبورد</button>
+        </div>
+        <div class="mon-hero-stats">
+          <div class="mon-stat"><b id="mon-stat-total">0</b><span>خادم</span></div>
+          <div class="mon-stat ok att"><b id="mon-stat-present">–</b><span>حضروا</span></div>
+          <div class="mon-stat warn att"><b id="mon-stat-absent">–</b><span>لسه</span></div>
+          <div class="mon-stat warn srv"><b id="mon-stat-pending">0</b><span>طلبات انضمام</span></div>
+        </div>
+      </div>
+      <div class="tabs" id="monitor-class-chips" style="overflow-x:auto;margin-bottom:12px"></div>
+      <div class="tabs" id="monitor-subtabs" style="margin-bottom:12px">
+        <button class="tab active" id="monitor-subtab-btn-attendance" onclick="switchMonitorSubTab('attendance')">✅ الحضور</button>
+        <button class="tab" id="monitor-subtab-btn-servants" onclick="switchMonitorSubTab('servants')">👥 الخدام</button>
+      </div>
+      <div id="monitor-attendance-activities">
+        <div class="tabs" id="serv-att-activity-chips" style="margin-bottom:12px">
+          <button class="tab active" data-act="mass" onclick="setServAttActivity('mass',this)"><span class="act-ic">⛪</span>القداس</button>
+          <button class="tab" data-act="sunday_school" onclick="setServAttActivity('sunday_school',this)"><span class="act-ic">📖</span>مدارس الأحد</button>
+          <button class="tab" data-act="meeting" onclick="setServAttActivity('meeting',this)"><span class="act-ic">🤝</span>اجتماع الخدام</button>
+          <button class="tab" data-act="preparation" onclick="setServAttActivity('preparation',this)"><span class="act-ic">📝</span>التحضير</button>
+        </div>
+      </div>
+      <div class="search-box" style="margin:0 0 10px">
+        <input type="text" id="monitor-search-input" placeholder="🔍 ابحث عن خادم بالاسم…" oninput="onMonitorSearch()" autocomplete="off">
+      </div>
+
+      <!-- حضور الخدام في الأنشطة -->
+      <div id="monitor-subtab-attendance">
+        <div class="mon-date-row"><span class="mon-date-lbl">📅 التاريخ</span><input type="date" id="serv-att-date" class="field-input" onchange="renderServAttList()"></div>
+        <div id="serv-att-list"></div>
+      </div>
+
+      <!-- إدارة الخدام وطلبات الانضمام وسجل الأنشطة -->
+      <div id="monitor-subtab-servants" style="display:none">
+        <div id="pending-section" style="display:none">
+          <div class="list-header">
+            <span class="section-title">طلبات الانضمام (<span id="pending-count">0</span>)</span>
+          </div>
+          <div id="pending-list" style="margin-bottom:22px"></div>
+        </div>
+
+        <div class="list-header"><span class="section-title">👥 الخدام المعتمدين (<span id="servants-count">0</span>)</span></div>
+        <div id="servants-list" style="margin-bottom:22px"></div>
+
+        <div class="list-header">
+          <span class="section-title">سجل الأنشطة</span>
+          <span style="display:flex;gap:6px"><input type="date" id="activity-date" class="field-input" style="padding:4px 8px"><button class="export-btn" onclick="renderActivityList()">عرض</button></span>
+        </div>
+        <div id="activity-list"></div>
+      </div>
+    </div>

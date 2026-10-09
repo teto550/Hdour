@@ -1,0 +1,64 @@
+<!-- EXPORT MODAL -->
+<div id="export-modal" class="modal-overlay" style="display:none" onclick="closeExportOutside(event)">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-header">
+      <div style="flex:1">
+        <div style="font-size:16px;font-weight:900">تصدير Excel</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">اختار الشيت عايز يتصدّر بإيه</div>
+      </div>
+      <button class="modal-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div style="padding:16px">
+      <div id="export-classes-wrap" style="display:none;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="section-title">الفصول</div>
+          <button type="button" class="export-btn" onclick="openExportClassPick('students')">➕ إضافة فصل</button>
+        </div>
+        <div id="export-classes-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+      <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div class="section-title" style="margin-bottom:8px">الفترة (للحضور والتسميع وحضور الخدام)</div>
+        <select id="export-range" class="field-input">
+          <option value="30">آخر شهر</option>
+          <option value="90" selected>آخر 3 شهور</option>
+          <option value="180">آخر 6 شهور</option>
+          <option value="365">آخر سنة</option>
+          <option value="all">كل السجل</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
+        <input type="checkbox" id="export-opt-att" checked style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+        <span style="font-size:14px;font-weight:600">✓ سجل الحضور</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
+        <input type="checkbox" id="export-opt-verse" checked style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+        <span style="font-size:14px;font-weight:600">📖 سجل التسميع (الآية)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;border-top:1px solid var(--border);margin-top:4px">
+        <input type="checkbox" id="export-opt-students" style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+        <span style="font-size:14px;font-weight:600">👤 بيانات المخدومين</span>
+      </label>
+      <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.7">لو اخترت حضور و/أو تسميع، هيتحطوا مع بعض في نفس الشيت. لو اخترت بيانات المخدومين مع أي حاجة تانية، هتتصدّر في شيت منفصل جوه نفس الملف.</p>
+      <div id="export-servants-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="section-title" style="margin-bottom:8px">👥 الخدام</div>
+        <div id="export-serv-classes-wrap" style="display:none;margin-bottom:6px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:13px;font-weight:700;color:var(--text-dim)">الفصول</span>
+            <button type="button" class="export-btn" onclick="openExportClassPick('servants')">➕ إضافة فصل</button>
+          </div>
+          <div id="export-serv-classes" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
+          <input type="checkbox" id="export-opt-serv-data" style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+          <span style="font-size:14px;font-weight:600">🧑‍🏫 بيانات الخدام</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer">
+          <input type="checkbox" id="export-opt-serv-att" style="width:20px;height:20px;accent-color:var(--accent);flex-shrink:0">
+          <span style="font-size:14px;font-weight:600">🗓️ حضور الخدام (قداس / مدارس أحد / اجتماع / تحضير)</span>
+        </label>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.7">لو عايز الخدام بس، شيل علامة الحضور والتسميع وبيانات المخدومين اللي فوق. حضور الخدام بيتصدّر شيت لكل نشاط.</p>
+      </div>
+      <button class="btn-primary" onclick="runExportExcel()" style="margin-top:14px">📥 تصدير</button>
+    </div>
+  </div>
+</div>

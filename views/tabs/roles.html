@@ -1,0 +1,53 @@
+    <!-- ROLES TAB (المستخدمين والأدوار) -->
+    <div id="tab-roles" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <button class="action-btn" onclick="closeRolesModal()" style="flex:0 0 auto">→ رجوع</button>
+        <div style="flex:1;min-width:0">
+          <div id="roles-modal-title" style="font-size:18px;font-weight:900">المستخدمين والأدوار</div>
+          <div id="roles-modal-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px">أي خادم متوزع على فصل بيبقى "خادم فصل" فيه تلقائي — الدور هنا لترقيته لمسؤول فصل أو أدمن</div>
+        </div>
+      </div>
+
+      <!-- LIST VIEW -->
+      <div id="roles-list-view">
+        <button class="export-btn" onclick="openRoleEditor('')" style="width:100%;margin-bottom:14px;padding:11px;text-align:center">➕ دور جديد</button>
+        <button class="export-btn" onclick="toggleRolesClassFilter()" style="width:100%;margin-bottom:10px;padding:11px;text-align:center">🔍 تحديد فصل</button>
+        <div id="roles-class-filter-chips" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+        <div id="roles-unassigned-list"></div>
+      </div>
+
+      <!-- EDITOR VIEW -->
+      <div id="role-editor-view" style="display:none">
+        <button class="action-btn" onclick="closeRoleEditor()" style="margin-bottom:14px">→ كل الأدوار</button>
+        <label class="field-label" style="display:block;margin-bottom:8px">نوع الدور</label>
+        <div id="role-type-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
+
+        <div id="role-classes-section">
+          <label class="field-label" style="display:block;margin-bottom:8px">الفصول</label>
+          <div id="role-classes-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
+        </div>
+
+        <div id="role-pending-names-section" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span class="section-title">أسماء خدام لسه هيسجلوا</span>
+            <button class="export-btn" onclick="addRolePendingName()">➕ إضافة اسم</button>
+          </div>
+          <p style="font-size:11px;color:var(--text-dim);margin:-4px 0 8px">لما أي حد يسجل ويختار نفس الفصل، هيلاقي اسمه هنا ويختاره بدل ما يكتب اسم جديد</p>
+          <div id="role-pending-names-list" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span class="section-title">الأعضاء (<span id="role-members-count">0</span>)</span>
+          <button class="export-btn" onclick="openRoleAddMembersModal()">➕ إضافة أشخاص</button>
+        </div>
+        <div id="role-members-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px"></div>
+
+        <p id="role-effect-hint" style="font-size:12px;color:var(--text-dim);background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:16px"></p>
+
+        <div style="display:flex;gap:10px">
+          <button class="btn-primary" onclick="saveRole()" style="flex:1">💾 حفظ</button>
+          <button onclick="closeRoleEditor()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:14px;font-weight:700;padding:12px 16px;cursor:pointer">إلغاء</button>
+          <button id="role-delete-btn" onclick="deleteRoleConfirm()" style="display:none;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:var(--radius-sm);color:var(--danger);font-family:Cairo,sans-serif;font-size:14px;font-weight:700;padding:12px 16px;cursor:pointer">🗑 حذف</button>
+        </div>
+      </div>
+    </div>

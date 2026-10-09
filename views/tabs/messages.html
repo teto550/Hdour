@@ -1,0 +1,128 @@
+    <!-- MESSAGES TAB (WhatsApp bulk) -->
+    <div id="tab-messages" style="display:none">
+      <div class="filter-bar" style="margin-bottom:16px">
+        <p class="section-title" style="margin-bottom:10px">✏️ نص الرسالة</p>
+        <textarea id="wa-message" class="field-input" rows="5" style="resize:vertical;font-family:'Cairo',sans-serif;margin-bottom:10px" placeholder="اكتب رسالتك هنا…"></textarea>
+        <button type="button" onclick="insertWaNamePlaceholder()" style="background:rgba(79,142,247,0.12);border:1px solid rgba(79,142,247,0.3);border-radius:8px;color:var(--accent);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer">➕ ضع اسم المخدوم هنا</button>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:10px">هيتم استبدال <b>{اسم_المخدوم}</b> باسم كل مخدوم تلقائيًا (أول اسم بس) عند الإرسال.</div>
+      </div>
+
+      <div class="filter-bar" style="margin-bottom:16px">
+        <div class="list-header" style="margin-bottom:10px">
+          <p class="section-title">💾 الرسائل المحفوظة</p>
+          <button type="button" class="tpl-save-btn" onclick="saveCurrentWaMessage()">➕ حفظ الرسالة دي</button>
+        </div>
+        <div id="wa-templates-list"><div class="tpl-empty">مفيش رسائل محفوظة لسه</div></div>
+      </div>
+
+      <p class="section-title">📤 اختر المستلمين</p>
+
+      <div class="filter-bar" style="margin-bottom:10px">
+        <details class="filter-acc">
+          <summary class="filter-acc-header">
+            <span class="section-title">🎂 أعياد الميلاد</span>
+            <span class="filter-acc-right"><span class="filter-acc-value" id="wa-bday-value">كل الشهور</span><span class="filter-acc-chevron">⌄</span></span>
+          </summary>
+          <div class="filter-acc-body">
+            <select class="field-select" id="wa-month-select" style="margin-bottom:0" onchange="setWaBdayMonth(this.value)">
+              <option value="0">كل الشهور</option>
+              <option value="1">يناير</option>
+              <option value="2">فبراير</option>
+              <option value="3">مارس</option>
+              <option value="4">أبريل</option>
+              <option value="5">مايو</option>
+              <option value="6">يونيو</option>
+              <option value="7">يوليو</option>
+              <option value="8">أغسطس</option>
+              <option value="9">سبتمبر</option>
+              <option value="10">أكتوبر</option>
+              <option value="11">نوفمبر</option>
+              <option value="12">ديسمبر</option>
+            </select>
+          </div>
+        </details>
+      </div>
+
+      <div class="filter-bar" style="margin-bottom:10px">
+        <details class="filter-acc">
+          <summary class="filter-acc-header">
+            <span class="section-title">😔 الغياب</span>
+            <span class="filter-acc-right"><span class="filter-acc-value" id="wa-absence-value">الكل</span><span class="filter-acc-chevron">⌄</span></span>
+          </summary>
+          <div class="filter-acc-body">
+            <div class="filter-row" id="wa-absence-chips">
+              <button class="filter-chip active" onclick="setWaAbsenceFilter('all',this)">الكل</button>
+              <button class="filter-chip" onclick="setWaAbsenceFilter(1,this)">غاب آخر مرة</button>
+              <button class="filter-chip" onclick="setWaAbsenceFilter(2,this)">غاب آخر مرتين</button>
+              <button class="filter-chip" onclick="setWaAbsenceFilter(3,this)">غاب آخر 3 مرات</button>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="filter-bar" style="margin-bottom:12px">
+        <details class="filter-acc">
+          <summary class="filter-acc-header">
+            <span class="section-title">✅ الحضور المتصل</span>
+            <span class="filter-acc-right"><span class="filter-acc-value" id="wa-attendance-value">الكل</span><span class="filter-acc-chevron">⌄</span></span>
+          </summary>
+          <div class="filter-acc-body">
+            <div class="filter-row" id="wa-attendance-chips">
+              <button class="filter-chip active" onclick="setWaAttendanceFilter('all',this)">الكل</button>
+              <button class="filter-chip" onclick="setWaAttendanceFilter(1,this)">حضر آخر مرة</button>
+              <button class="filter-chip" onclick="setWaAttendanceFilter(2,this)">حضر آخر مرتين</button>
+              <button class="filter-chip" onclick="setWaAttendanceFilter(3,this)">حضر آخر 3 مرات</button>
+              <button class="filter-chip" onclick="setWaAttendanceFilter(4,this)">حضر آخر 4 مرات</button>
+              <button class="filter-chip" onclick="setWaAttendanceFilter(5,this)">حضر آخر 5 مرات</button>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="filter-row" id="wa-siblings-chips" style="margin-bottom:12px">
+        <button class="filter-chip active" onclick="setWaSiblingsFilter('all',this)">👥 الكل</button>
+        <button class="filter-chip" onclick="setWaSiblingsFilter('siblings',this)">👨‍👩‍👧‍👦 الإخوات بس</button>
+        <button class="filter-chip" onclick="setWaSiblingsFilter('nonSiblings',this)">بدون إخوات</button>
+      </div>
+
+      <div class="filter-row" id="wa-gender-chips" style="margin-bottom:12px">
+        <button class="filter-chip active" onclick="setWaGenderFilter('all',this)">⚥ الكل</button>
+        <button class="filter-chip" onclick="setWaGenderFilter('male',this)">🧑 ولاد بس</button>
+        <button class="filter-chip" onclick="setWaGenderFilter('female',this)">👧 بنات بس</button>
+      </div>
+
+      <div class="filter-row" id="wa-group-chips" style="margin-bottom:12px">
+        <button class="filter-chip active" onclick="setWaGroupFilter('all',this)">👥 الكل</button>
+        <button class="filter-chip" onclick="setWaGroupFilter('notAdded',this)">🆕 لسه مش متضاف للجروب</button>
+        <button class="filter-chip" onclick="setWaGroupFilter('added',this)">✅ متضاف بالفعل</button>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button onclick="waSelectAll(true)" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;padding:10px;cursor:pointer">✅ تحديد الكل</button>
+        <button onclick="waSelectAll(false)" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;padding:10px;cursor:pointer">❌ إلغاء التحديد</button>
+      </div>
+
+      <button onclick="exportWaContactsVcf()" style="width:100%;margin-bottom:12px;background:rgba(124,92,191,0.12);border:1px solid rgba(124,92,191,0.3);border-radius:8px;color:var(--accent2);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;padding:11px;cursor:pointer">📇 تصدير المحددين كجهات اتصال (VCF) لعمل جروب واتساب بالأسامي</button>
+
+      <div class="list-header">
+        <span class="section-title">قائمة المستلمين</span>
+        <span id="wa-recipients-count" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      <div id="wa-recipients-list"></div>
+
+      <button id="wa-start-btn" onclick="startWaQueue()" style="width:100%;margin-top:16px;background:linear-gradient(135deg,#25D366,#128C7E);border:none;border-radius:10px;color:#fff;font-family:'Cairo',sans-serif;font-size:16px;font-weight:700;padding:14px;cursor:pointer">📱 ابدأ إرسال الرسائل</button>
+
+      <div style="font-size:12px;color:var(--text-dim);margin-top:10px;line-height:1.7">
+        ملحوظة: واتساب بيمنع الإرسال الجماعي التلقائي، فهيتم فتح شات كل مخدوم برسالته جاهزة، وانت بس هتضغط "إرسال" جوه واتساب، وبعدين هتنتقل للمخدوم اللي بعده.
+      </div>
+
+      <div id="wa-queue-box" style="display:none;margin-top:18px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;text-align:center">
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px" id="wa-queue-progress"></div>
+        <div style="font-size:18px;font-weight:900;margin-bottom:4px" id="wa-queue-name"></div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px" id="wa-queue-phone"></div>
+        <div style="display:flex;gap:10px">
+          <button onclick="sendCurrentWaQueueItem()" style="flex:2;background:linear-gradient(135deg,#25D366,#128C7E);border:none;border-radius:10px;color:#fff;font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;padding:13px;cursor:pointer">📱 فتح واتساب</button>
+          <button onclick="skipCurrentWaQueueItem()" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;padding:13px;cursor:pointer">تخطي</button>
+        </div>
+      </div>
+    </div>
