@@ -707,6 +707,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
               <button class="filter-chip" onclick="setNoteFilter('friday',this)">📅 بيحضر يوم الجمعة</button>
               <button class="filter-chip" onclick="setNoteFilter('otherChurch',this)">⛪ بيحضر كنيسة تانية</button>
               <button class="filter-chip" onclick="setNoteFilter('motherPregnant',this)">🤰 الأم حامل</button>
+              <button class="filter-chip" onclick="setNoteFilter('sick',this)">🤒 مريض</button>
+              <button class="filter-chip" onclick="setNoteFilter('other',this)">✏️ أخرى</button>
               <button class="filter-chip" onclick="setNoteFilter('noReason',this)">❓ بدون سبب</button>
             </div>
           </div>
@@ -1095,6 +1097,13 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
           <input type="checkbox" id="edit-note-motherpregnant" style="width:18px;height:18px;accent-color:var(--accent)"> 🤰 الأم حامل
         </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="edit-note-sick" style="width:18px;height:18px;accent-color:var(--accent)"> 🤒 مريض
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="edit-note-other" onchange="toggleEditNoteOther(true)" style="width:18px;height:18px;accent-color:var(--accent)"> ✏️ أخرى
+        </label>
+        <input type="text" id="edit-note-other-text" class="field-input" maxlength="200" placeholder="اكتب ملحوظة الافتقاد" style="display:none;margin-bottom:0">
       </div>
       <div style="display:flex;gap:10px;margin-top:6px">
         <button class="btn-primary" onclick="saveEditStudent()" style="flex:1">💾 حفظ التعديلات</button>
@@ -2122,8 +2131,19 @@ const NOTE_LABELS = {
   friday:      { emoji:'📅', text:'بيحضر يوم الجمعة' },
   otherChurch: { emoji:'⛪', text:'بيحضر في كنيسة تانية' },
   motherPregnant: { emoji:'🤰', text:'الأم حامل' },
+  sick:        { emoji:'🤒', text:'مريض' },
+  other:       { emoji:'✏️', text:'أخرى' },
   noReason:    { emoji:'❓', text:'بدون سبب' }
 };
+
+// نص ملحوظة الافتقاد: لو "أخرى" وفيه نص مكتوب بنعرض النص نفسه بدل كلمة "أخرى"
+function noteLabelOf(s, n) {
+  const l = NOTE_LABELS[n];
+  if (!l) return null;
+  if (n === 'other' && s && s.visitNoteOther) return { emoji: l.emoji, text: String(s.visitNoteOther) };
+  return l;
+}
+function noteEsc(t) { return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // تحويل تاريخ لصيغة YYYY-MM-DD بالتوقيت المحلي (من غير تحويل لـ UTC عشان ميبوظش التاريخ قرب نص الليل)
 function toLocalDateKey(d) {
@@ -4083,6 +4103,13 @@ window.setVerseFilter = (v, btn) => {
   renderFilterList();
 };
 
+window.toggleEditNoteOther = (focus) => {
+  const on = document.getElementById('edit-note-other').checked;
+  const inp = document.getElementById('edit-note-other-text');
+  inp.style.display = on ? 'block' : 'none';
+  if (on && focus) inp.focus();
+};
+
 window.setNoteFilter = (v, btn) => {
   noteFilter = v;
   document.querySelectorAll('#note-chips .filter-chip').forEach(b => b.classList.remove('active'));
@@ -4181,7 +4208,7 @@ function renderFilterList() {
     const dob = s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long'}) : '';
     const notesHTML = (s.visitNotes?.length)
       ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">${s.visitNotes.map(n => NOTE_LABELS[n]
-          ? `<span style="font-size:10px;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);color:#a07de0;border-radius:5px;padding:2px 6px">${NOTE_LABELS[n].emoji} ${NOTE_LABELS[n].text}</span>`
+          ? `<span style="font-size:10px;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);color:#a07de0;border-radius:5px;padding:2px 6px">${noteLabelOf(s,n).emoji} ${noteEsc(noteLabelOf(s,n).text)}</span>`
           : '').join('')}</div>`
       : `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px"><span style="font-size:10px;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text-dim);border-radius:5px;padding:2px 6px">${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}</span></div>`;
     return `<div class="student-item">
@@ -4279,7 +4306,7 @@ window.openProfile = (id) => {
   if (s.address) fields.push({ icon:'📍', key:'العنوان', val: String(s.address).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>') });
   if (s.addressMap && /^https?:\/\//i.test(s.addressMap)) fields.push({ icon:'🗺️', key:'الموقع على الخريطة', link: s.addressMap });
   fields.push({ icon:'📝', key:'ملحوظات الافتقاد', val: (s.visitNotes?.length)
-    ? s.visitNotes.map(n => NOTE_LABELS[n] ? `${NOTE_LABELS[n].emoji} ${NOTE_LABELS[n].text}` : n).join('، ')
+    ? s.visitNotes.map(n => NOTE_LABELS[n] ? `${noteLabelOf(s,n).emoji} ${noteEsc(noteLabelOf(s,n).text)}` : n).join('، ')
     : `${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}` });
   studentPhoneEntries(s).forEach(e => fields.push({ icon:'📞', key: e.label, val: e.val, phone: true, idx: e.idx }));
   // attendance + verse history combined
@@ -4825,7 +4852,7 @@ function buildStudentsSheet() {
       s.motherPhone || '',
       s.studentPhone || '',
       (hasRolePhones(s) ? (s.otherPhones||[]) : (s.phones||[])).filter(Boolean).join(' / '),
-      (s.visitNotes?.length) ? s.visitNotes.map(n => NOTE_LABELS[n]?.text || n).join('، ') : ''
+      (s.visitNotes?.length) ? s.visitNotes.map(n => noteLabelOf(s,n)?.text || n).join('، ') : ''
     ]);
   const ws = XLSX.utils.aoa_to_sheet([row1, ...rows]);
   ws['!cols'] = [{wch:26},{wch:8},{wch:18},{wch:14},{wch:26},{wch:16},{wch:16},{wch:16},{wch:22},{wch:26}];
@@ -6746,6 +6773,10 @@ window.openEditModal = (id) => {
   document.getElementById('edit-note-friday').checked      = notes.includes('friday');
   document.getElementById('edit-note-otherchurch').checked = notes.includes('otherChurch');
   document.getElementById('edit-note-motherpregnant').checked = notes.includes('motherPregnant');
+  document.getElementById('edit-note-sick').checked = notes.includes('sick');
+  document.getElementById('edit-note-other').checked = notes.includes('other');
+  document.getElementById('edit-note-other-text').value = s.visitNoteOther || '';
+  toggleEditNoteOther();
 
   // أرقام قديمة مش متحدد صاحبها (من قبل التعديل ده) بتفضل محفوظة، وبتتشال أول ما تتكتب في الخانة الصح
   editOtherPhones = hasRolePhones(s) ? (s.otherPhones || []).filter(Boolean) : (s.phones || []).filter(Boolean);
@@ -6787,6 +6818,11 @@ window.saveEditStudent = async () => {
   if (document.getElementById('edit-note-friday').checked)      visitNotes.push('friday');
   if (document.getElementById('edit-note-otherchurch').checked) visitNotes.push('otherChurch');
   if (document.getElementById('edit-note-motherpregnant').checked) visitNotes.push('motherPregnant');
+  if (document.getElementById('edit-note-sick').checked) visitNotes.push('sick');
+  const otherOn = document.getElementById('edit-note-other').checked;
+  const visitNoteOther = otherOn ? document.getElementById('edit-note-other-text').value.trim() : '';
+  if (otherOn && !visitNoteOther) { showToast('اكتب ملحوظة الافتقاد في خانة "أخرى"', 'error'); return; }
+  if (otherOn) visitNotes.push('other');
   const data = {
     name,
     dob,
@@ -6795,7 +6831,8 @@ window.saveEditStudent = async () => {
     gender:  document.getElementById('edit-gender').value || '',
     classSection: document.getElementById('edit-class').value || '',
     ...buildPhoneFields(father, mother, student, others, prev),
-    visitNotes
+    visitNotes,
+    visitNoteOther
   };
   try {
     await updateDoc(doc(db,'students',id), { ...data, updatedAt: serverTimestamp() }); bumpStudentsRev();
