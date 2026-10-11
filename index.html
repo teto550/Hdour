@@ -1266,7 +1266,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <select class="field-select" id="import-class" style="margin-bottom:14px"></select>
       <label class="field-label">ملف الإكسيل (.xlsx / .xls / .csv)</label>
       <input type="file" id="import-file" class="field-input" accept=".xlsx,.xls,.csv" onchange="handleImportFile(event)">
-      <div id="import-preview" style="font-size:13px;line-height:1.9;margin:6px 0 14px"></div>
+      <div id="import-preview" style="font-size:13px;line-height:1.9;margin:6px 0 10px"></div>
+      <label id="import-upd-wrap" style="display:none;font-size:13px;line-height:1.7;margin-bottom:14px;cursor:pointer"><input type="checkbox" id="import-upd" checked style="margin-left:6px" onchange="refreshImportBtn()">حدّث المتسجلين قبل كده: انقلهم للفصل ده واملا البيانات الناقصة بس (من غير تكرار)</label>
       <button class="btn-primary" id="import-confirm-btn" onclick="confirmImport()" style="display:none">✓ استيراد</button>
     </div>
   </div>
@@ -2909,7 +2910,7 @@ window.addStudent = async () => {
 };
 
 // ===== IMPORT STUDENTS FROM EXCEL =====
-let importRows = [];
+let importRows = [], importUpd = [];
 const impNorm = v => String(v == null ? '' : v).replace(/[ـً-ٟ]/g, '').replace(/\s+/g, ' ').trim();
 // بيحوّل رقم الإكسيل (اللي بيضيّع الصفر الأول) لرقم موبايل صحيح. بيرجّع { main, extra[] } والرقم الغلط بيتتجاهل
 function importPhones(v) {
@@ -2952,7 +2953,8 @@ window.openImportModal = async () => {
   document.getElementById('import-file').value = '';
   document.getElementById('import-preview').innerHTML = '';
   document.getElementById('import-confirm-btn').style.display = 'none';
-  importRows = [];
+  importRows = []; importUpd = [];
+  document.getElementById('import-upd-wrap').style.display = 'none';
   document.getElementById('import-modal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
 };
@@ -2964,7 +2966,8 @@ window.handleImportFile = async (e) => {
   const f = e.target.files && e.target.files[0];
   const box = document.getElementById('import-preview');
   const btn = document.getElementById('import-confirm-btn');
-  btn.style.display = 'none'; importRows = [];
+  btn.style.display = 'none'; importRows = []; importUpd = [];
+  document.getElementById('import-upd-wrap').style.display = 'none';
   if (!f) return;
   try {
     await loadStudents(true); // تحميل جديد من السيرفر عشان الكاش القديم ميعتبرش مخدومين اتحذفوا لسه موجودين
@@ -2992,7 +2995,14 @@ window.handleImportFile = async (e) => {
       const name = canonicalizeName(impNorm(get(r, 'name')));
       if (!name) continue;
       const key = normalizeArabic(name);
-      if (have.has(key) || seen.has(key)) { skippedDup.push(name); continue; }
+      if (seen.has(key)) { skippedDup.push(name); continue; }
+      if (have.has(key)) {
+        seen.add(key);
+        const ex = have.get(key), esp = importPhones(get(r, 'phone'));
+        skippedDup.push(`${name} (${classLabel(ex.classSection || '')})`);
+        importUpd.push({ id: ex.id, ex, dob: importDob(get(r, 'dob')), gender: importGender(get(r, 'gender')), student: esp.main, others: esp.extra });
+        continue;
+      }
       seen.add(key);
       const sp = importPhones(get(r, 'phone'));
       if (sp.bad) badPhones++;
@@ -3004,19 +3014,25 @@ window.handleImportFile = async (e) => {
     importRows = rows;
     const cls = document.getElementById('import-class').value;
     box.innerHTML = `✅ جديد هيتضاف: <b>${rows.length}</b>` +
-      (skippedDup.length ? `<br>⏭️ متسجلين قبل كده (هيتخطوا): <b>${skippedDup.length}</b><br><span style="font-size:12px;color:var(--text-dim)">${skippedDup.slice(0,10).join(' · ')}</span>` : '') +
+      (skippedDup.length ? `<br>♻️ متسجلين قبل كده: <b>${skippedDup.length}</b><br><span style="font-size:12px;color:var(--text-dim)">${skippedDup.slice(0,12).join(' · ')}</span>` : '') +
       (badPhones ? `<br>⚠️ صفوف فيها رقم غلط اتتجاهل: <b>${badPhones}</b>` : '') +
       (noPhone ? `<br>⚠️ صفوف من غير أي رقم صالح: <b>${noPhone}</b>` : '') +
       (noDob ? `<br>⚠️ صفوف من غير تاريخ ميلاد: <b>${noDob}</b>` : '') +
       (!cls ? '<br>⚠️ مفيش فصل متحدد — هيتضافوا "لسه متقسمش"' : '');
-    if (rows.length) btn.style.display = 'block';
+    document.getElementById('import-upd-wrap').style.display = importUpd.length ? 'block' : 'none';
+    refreshImportBtn();
   } catch (err) {
     console.error(err);
     box.innerHTML = '<span style="color:var(--danger,#e74c3c)">مقدرتش أقرأ الملف — اتأكد إنه Excel سليم</span>';
   }
 };
+window.refreshImportBtn = () => {
+  const withUpd = document.getElementById('import-upd').checked && importUpd.length;
+  document.getElementById('import-confirm-btn').style.display = (importRows.length || withUpd) ? 'block' : 'none';
+};
 window.confirmImport = async () => {
-  if (currentRole !== 'admin' || !importRows.length) return;
+  const doUpd = document.getElementById('import-upd').checked ? importUpd : [];
+  if (currentRole !== 'admin' || !(importRows.length || doUpd.length)) return;
   const btn = document.getElementById('import-confirm-btn');
   const cls = document.getElementById('import-class').value || '';
   const allowed = getAllowedAssignedClasses();
@@ -3040,9 +3056,20 @@ window.confirmImport = async () => {
       });
       await batch.commit();
     }
+    for (let i = 0; i < doUpd.length; i += 400) {
+      const batch = writeBatch(db);
+      doUpd.slice(i, i + 400).forEach(u => {
+        const up = { classSection: cls, updatedAt: serverTimestamp() };
+        if (!u.ex.dob && u.dob) up.dob = u.dob;
+        if (!u.ex.gender && u.gender) up.gender = u.gender;
+        if (!(u.ex.phones || []).length && u.student) Object.assign(up, buildPhoneFields('', '', u.student, u.others, null));
+        batch.update(doc(db,'students',u.id), up);
+      });
+      await batch.commit();
+    }
     bumpStudentsRev();
-    const n = importRows.length;
-    importRows = [];
+    const n = importRows.length + doUpd.length;
+    importRows = []; importUpd = [];
     closeImportModal();
     await loadStudents();
     showToast(`تم استيراد ${n} مخدوم ✓`, 'success');
