@@ -452,6 +452,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="settings-dropdown-item" onclick="openMyProfileModal()">👤 ملفي</button>
         <button class="settings-dropdown-item" onclick="openExportModal()">📥 تصدير Excel</button>
         <button class="settings-dropdown-item" id="settings-dropdown-roles" style="display:none" onclick="openUsersRolesModal()">👥 المستخدمين والأدوار</button>
+        <button class="settings-dropdown-item" id="settings-dropdown-import" style="display:none" onclick="closeSettingsMenu();openImportStudentsModal()">📤 استيراد مخدومين من Excel</button>
         <div class="settings-dropdown-divider"></div>
         <button class="settings-dropdown-item danger" onclick="closeSettingsMenu();doLogout()">🚪 تسجيل الخروج</button>
       </div>
@@ -1251,6 +1252,33 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
   </div>
 </div>
 
+<!-- IMPORT STUDENTS MODAL -->
+<div id="import-modal" class="modal-overlay" style="display:none" onclick="if(event.target.id==='import-modal')closeImportStudentsModal()">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:900">استيراد مخدومين من Excel</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">الأعمدة: الاسم · تاريخ الميلاد · رقم الموبايل · النوع</div>
+      </div>
+      <button class="modal-close" onclick="closeImportStudentsModal()">✕</button>
+    </div>
+    <div style="padding:16px">
+      <label class="field-label">الفصل اللي هيتحط فيه المخدومين</label>
+      <select class="field-select" id="import-class" style="margin-bottom:14px"></select>
+      <label class="field-label">رقم الموبايل ده تليفون مين؟</label>
+      <select class="field-select" id="import-phone-owner" style="margin-bottom:14px">
+        <option value="mother">الأم</option>
+        <option value="father">الأب</option>
+        <option value="student">المخدوم</option>
+      </select>
+      <label class="field-label">ملف Excel</label>
+      <input type="file" id="import-file" accept=".xlsx,.xls,.csv" class="field-input" onchange="onImportFileChosen(this)">
+      <div id="import-preview" style="font-size:13px;line-height:1.9;margin-bottom:10px"></div>
+      <button class="btn-primary" id="import-go-btn" onclick="runImportStudents()" style="width:100%" disabled>📤 استيراد</button>
+    </div>
+  </div>
+</div>
+
 <!-- SERVANT PROFILE MODAL -->
 
 <!-- DASHBOARD الخدام: SETTINGS MODAL -->
@@ -2020,6 +2048,7 @@ window.toggleSettingsMenu = (e) => {
   const dd = document.getElementById('settings-dropdown');
   const opening = dd.style.display === 'none';
   document.getElementById('settings-dropdown-roles').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
+  document.getElementById('settings-dropdown-import').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
   dd.style.display = opening ? 'block' : 'none';
   if (opening) document.addEventListener('click', closeSettingsMenuOutside);
 };
@@ -4737,6 +4766,110 @@ window.openExportModal = () => {
 };
 window.closeExportModal = () => { document.getElementById('export-modal').style.display = 'none'; };
 window.closeExportOutside = (e) => { if (e.target.id === 'export-modal') closeExportModal(); };
+
+// ===== استيراد المخدومين من Excel (أدمن بس) =====
+let importRows = [];
+window.openImportStudentsModal = async () => {
+  if (currentRole !== 'admin') return;
+  importRows = [];
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-preview').innerHTML = '';
+  document.getElementById('import-go-btn').disabled = true;
+  document.getElementById('import-class').innerHTML = '<option value="">بدون فصل</option>' +
+    allClasses.map(c => `<option value="${c.id}">${c.emoji ? c.emoji + ' ' : ''}${c.name}</option>`).join('');
+  document.getElementById('import-modal').style.display = 'flex';
+  await ensureStudents();
+};
+window.closeImportStudentsModal = () => { document.getElementById('import-modal').style.display = 'none'; };
+
+function importDobKey(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'number') { const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000); return d.toISOString().slice(0, 10); }
+  const t = String(v).trim();
+  let m = t.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = t.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return '';
+}
+function importPhone(v) {
+  let p = cleanPhone(String(v ?? ''));
+  if (/^1[0125]\d{8}$/.test(p)) p = '0' + p; // الإكسل بيشيل الصفر من الأول لو الخانة رقم
+  return p;
+}
+function importGender(v) {
+  const t = normalizeArabic(v);
+  if (/^(ولد|ذكر|male|m)$/.test(t)) return 'male';
+  if (/^(بنت|انثي|انثى|female|f)$/.test(t)) return 'female';
+  return '';
+}
+
+window.onImportFileChosen = async (inp) => {
+  const f = inp.files && inp.files[0];
+  const prev = document.getElementById('import-preview');
+  const btn = document.getElementById('import-go-btn');
+  importRows = []; btn.disabled = true;
+  if (!f) { prev.innerHTML = ''; return; }
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+    const col = (head, re) => head.findIndex(h => re.test(normalizeArabic(h)));
+    const head = rows[0] || [];
+    const iName = col(head, /اسم/), iDob = col(head, /ميلاد/), iPhone = col(head, /موبايل|تليفون|رقم/), iGen = col(head, /نوع/);
+    if (iName < 0) { prev.innerHTML = '<span style="color:var(--danger,#e55)">مش لاقي عمود "الاسم" في أول صف</span>'; return; }
+    await ensureStudents();
+    const existing = new Set(allStudents.map(s => normalizeArabic(s.name)));
+    const seen = new Set(); let dupDb = 0, dupSheet = 0, badPhone = 0, noDob = 0;
+    rows.slice(1).forEach(r => {
+      const name = canonicalizeName(r[iName]);
+      if (!name) return;
+      const key = normalizeArabic(name);
+      if (existing.has(key)) { dupDb++; return; }
+      if (seen.has(key)) dupSheet++;
+      seen.add(key);
+      const phone = iPhone >= 0 ? importPhone(r[iPhone]) : '';
+      if (phone && !PHONE_RE.test(phone)) badPhone++;
+      const dob = iDob >= 0 ? importDobKey(r[iDob]) : '';
+      if (!dob) noDob++;
+      importRows.push({ name, dob, phone: PHONE_RE.test(phone) ? phone : '', gender: iGen >= 0 ? importGender(r[iGen]) : '' });
+    });
+    prev.innerHTML = `جاهز للاستيراد: <b>${importRows.length}</b> مخدوم` +
+      (dupDb ? `<br>⏭️ ${dupDb} مسجلين قبل كده (هيتخطّوا)` : '') +
+      (dupSheet ? `<br>⚠️ ${dupSheet} اسم متكرر جوه الشيت (هيتضافوا)` : '') +
+      (badPhone ? `<br>⚠️ ${badPhone} رقم مش صحيح (هيتسجل من غير رقم)` : '') +
+      (noDob ? `<br>⚠️ ${noDob} من غير تاريخ ميلاد` : '');
+    btn.disabled = !importRows.length;
+  } catch (e) { console.error(e); prev.textContent = 'مقدرتش أقرأ الملف'; }
+};
+
+window.runImportStudents = async () => {
+  if (currentRole !== 'admin' || !importRows.length) return;
+  const section = document.getElementById('import-class').value || '';
+  const owner = document.getElementById('import-phone-owner').value;
+  if (!confirm(`هتضيف ${importRows.length} مخدوم في "${classLabel(section)}"؟`)) return;
+  const btn = document.getElementById('import-go-btn'); btn.disabled = true; btn.textContent = 'جاري الاستيراد…';
+  try {
+    for (let i = 0; i < importRows.length; i += 400) {
+      const b = writeBatch(db);
+      importRows.slice(i, i + 400).forEach(r => {
+        const father = owner === 'father' ? r.phone : '', mother = owner === 'mother' ? r.phone : '', student = owner === 'student' ? r.phone : '';
+        b.set(doc(collection(db,'students')), {
+          name: r.name, dob: r.dob, address: '', addressMap: '', gender: r.gender,
+          ...buildPhoneFields(father, mother, student, [], null),
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp(), classSection: section
+        });
+      });
+      await b.commit();
+    }
+    bumpStudentsRev();
+    logActivity('استيراد مخدومين من Excel', `${importRows.length} — ${classLabel(section)}`);
+    showToast(`تم استيراد ${importRows.length} مخدوم ✓`, 'success');
+    importRows = [];
+    closeImportStudentsModal();
+    await loadStudents(true);
+  } catch (e) { console.error(e); showToast('حصل خطأ أثناء الاستيراد', 'error'); }
+  btn.textContent = '📤 استيراد';
+};
 
 // بيبني شيت الحضور/التسميع حسب اللي المستخدم اختاره بالظبط: حضور بس، آية بس، أو الاتنين مع بعض في نفس الشيت
 function buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse) {
