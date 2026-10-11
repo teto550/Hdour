@@ -2967,7 +2967,7 @@ window.handleImportFile = async (e) => {
   btn.style.display = 'none'; importRows = [];
   if (!f) return;
   try {
-    await ensureStudents();
+    await loadStudents(true); // تحميل جديد من السيرفر عشان الكاش القديم ميعتبرش مخدومين اتحذفوا لسه موجودين
     const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
@@ -3004,7 +3004,7 @@ window.handleImportFile = async (e) => {
     importRows = rows;
     const cls = document.getElementById('import-class').value;
     box.innerHTML = `✅ جديد هيتضاف: <b>${rows.length}</b>` +
-      (skippedDup.length ? `<br>⏭️ متسجلين قبل كده (هيتخطوا): <b>${skippedDup.length}</b>` : '') +
+      (skippedDup.length ? `<br>⏭️ متسجلين قبل كده (هيتخطوا): <b>${skippedDup.length}</b><br><span style="font-size:12px;color:var(--text-dim)">${skippedDup.slice(0,10).join(' · ')}</span>` : '') +
       (badPhones ? `<br>⚠️ صفوف فيها رقم غلط اتتجاهل: <b>${badPhones}</b>` : '') +
       (noPhone ? `<br>⚠️ صفوف من غير أي رقم صالح: <b>${noPhone}</b>` : '') +
       (noDob ? `<br>⚠️ صفوف من غير تاريخ ميلاد: <b>${noDob}</b>` : '') +
