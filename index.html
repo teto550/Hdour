@@ -3182,21 +3182,22 @@ function studentPhoneSet(s) {
   return set;
 }
 
-// الإخوات = نفس الاسم بالظبط بعد الاسم الأول (familyKey) — من اسم الأب لحد آخر اسم. مفيش شرط تليفون.
+// الإخوات = نفس الاسم بالظبط بعد الاسم الأول (familyKey) — من اسم الأب لحد آخر اسم — وفي نفس الفصل بس.
+// مفيش شرط تليفون، ومخدوم في فصل تاني عمره مبيتحسب أخ لمخدوم في فصل مختلف.
 // بيرجع خريطة: id المخدوم -> { count: عدد الإخوات في المجموعة، gid: مفتاح المجموعة } (المخدوم اللي مالوش إخوات مش بيظهر فيها)
 function computeSiblingInfo(list) {
   const byFam = {};
-  list.forEach(s => { const k = familyKey(s.name); if (k) (byFam[k] = byFam[k] || []).push(s); });
+  list.forEach(s => { const k = familyKey(s.name); if (k) { const key = (s.classSection || '') + '|' + k; (byFam[key] = byFam[key] || []).push(s); } });
   const info = {};
-  Object.entries(byFam).forEach(([fam, members]) => {
+  Object.entries(byFam).forEach(([key, members]) => {
     if (members.length < 2) return;
-    members.forEach(s => { info[s.id] = { count: members.length, gid: fam }; });
+    members.forEach(s => { info[s.id] = { count: members.length, gid: key }; });
   });
   return info;
 }
 function isSiblingIn(s, info) { return !!info[s.id]; }
 // مفتاح الترتيب: الإخوات الحقيقيين ورا بعض، وباقي المخدومين حسب اسم العيلة
-function siblingSortKey(s, info) { return (info[s.id] && info[s.id].gid) || familyKey(s.name) || `__${s.id}`; }
+function siblingSortKey(s, info) { return (info[s.id] && info[s.id].gid) || ((s.classSection || '') + '|' + (familyKey(s.name) || `__${s.id}`)); }
 
 window.setSiblingsFilter = (val, btn) => {
   siblingsFilter = val;
@@ -3256,15 +3257,13 @@ function renderStudentsList() {
     cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>مفيش نتايج</div>`;
     return;
   }
-  // فلتر "الإخوات بس": كل عيلة في كارت واحد وأسماء الإخوات تحت بعض — والكارت بيعرض كل الإخوات حتى لو في فصول تانية (الفصل مكتوب جنب كل اسم)
+  // فلتر "الإخوات بس": كل عيلة في كارت واحد وأسماء الإخوات تحت بعض (إخوات نفس الفصل بس)
   if (siblingsFilter === 'siblings') {
-    const visibleIds = new Set(list.map(s => s.id));
     const byGid = {};
-    allStudents.forEach(s => { const i = siblingInfo[s.id]; if (i) (byGid[i.gid] = byGid[i.gid] || []).push(s); });
+    list.forEach(s => { const g = siblingInfo[s.id].gid; (byGid[g] = byGid[g] || []).push(s); });
     const groups = Object.keys(byGid)
-      .filter(gid => byGid[gid].some(s => visibleIds.has(s.id)))
-      .sort((a, b) => a.localeCompare(b, 'ar'))
-      .map(gid => [...byGid[gid]].sort((a, b) => a.name.localeCompare(b.name, 'ar')));
+      .sort((x, y) => x.localeCompare(y, 'ar'))
+      .map(gid => [...byGid[gid]].sort((x, y) => x.name.localeCompare(y.name, 'ar')));
     stuListCount = groups.reduce((n, g) => n + g.length, 0);
     updateStuCount();
     cont.innerHTML = groups.map(g => {
