@@ -127,6 +127,10 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .s-info{flex:1;min-width:0;}
 .s-name{font-size:14px;font-weight:700;}
 .s-sub{font-size:11px;color:var(--text-dim);margin-top:2px;}
+.student-item.sib-group{flex-direction:column;align-items:stretch;gap:0;padding:0;overflow:hidden;}
+.sib-head{font-size:12px;font-weight:700;color:var(--text-dim);padding:8px 14px;border-bottom:1px solid var(--border);}
+.sib-row{display:flex;align-items:center;gap:12px;padding:10px 14px;}
+.sib-row + .sib-row{border-top:1px solid var(--border);}
 .class-badge{display:inline-block;font-size:10px;font-weight:700;border-radius:5px;padding:2px 7px;}
 .class-badge.class-a{background:rgba(79,142,247,0.12);border:1px solid rgba(79,142,247,0.3);color:var(--accent);}
 .class-badge.class-b{background:rgba(124,92,191,0.12);border:1px solid rgba(124,92,191,0.3);color:#a07de0;}
@@ -3178,8 +3182,7 @@ function studentPhoneSet(s) {
   return set;
 }
 
-// الإخوات = نفس الاسم بالظبط بعد الاسم الأول (familyKey) + رقم تليفون واحد على الأقل مشترك بينهم.
-// تطابق الاسم لوحده مش كفاية، ورقم التليفون لوحده من غير تطابق الاسم مش كفاية.
+// الإخوات = نفس الاسم بالظبط بعد الاسم الأول (familyKey) — من اسم الأب لحد آخر اسم. مفيش شرط تليفون.
 // بيرجع خريطة: id المخدوم -> { count: عدد الإخوات في المجموعة، gid: مفتاح المجموعة } (المخدوم اللي مالوش إخوات مش بيظهر فيها)
 function computeSiblingInfo(list) {
   const byFam = {};
@@ -3187,20 +3190,7 @@ function computeSiblingInfo(list) {
   const info = {};
   Object.entries(byFam).forEach(([fam, members]) => {
     if (members.length < 2) return;
-    const parent = members.map((_, i) => i);
-    const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-    const owner = {}; // رقم -> أول مخدوم (في نفس العيلة) شايله
-    members.forEach((s, i) => {
-      studentPhoneSet(s).forEach(ph => {
-        if (ph in owner) parent[find(i)] = find(owner[ph]); else owner[ph] = i;
-      });
-    });
-    const groups = {};
-    members.forEach((s, i) => { const r = find(i); (groups[r] = groups[r] || []).push(s); });
-    Object.entries(groups).forEach(([r, g]) => {
-      if (g.length < 2) return;
-      g.forEach(s => { info[s.id] = { count: g.length, gid: fam + '|' + r }; });
-    });
+    members.forEach(s => { info[s.id] = { count: members.length, gid: fam }; });
   });
   return info;
 }
@@ -3264,6 +3254,31 @@ function renderStudentsList() {
   updateStuCount();
   if (!list.length) {
     cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>مفيش نتايج</div>`;
+    return;
+  }
+  // فلتر "الإخوات بس": كل عيلة في كارت واحد وأسماء الإخوات تحت بعض
+  if (siblingsFilter === 'siblings') {
+    const groups = [], gIdx = {};
+    list.forEach(s => {
+      const g = siblingInfo[s.id].gid;
+      if (!(g in gIdx)) { gIdx[g] = groups.length; groups.push([]); }
+      groups[gIdx[g]].push(s);
+    });
+    cont.innerHTML = groups.map(g => {
+      const rows = g.map(s => {
+        const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
+        return `<div class="sib-row">
+          <div class="s-info">
+            <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}</div>
+            <div class="s-sub" style="margin-top:3px">${classBadgeHTML(s.classSection)}</div>
+          </div>
+          <button class="action-btn" onclick="openProfile('${s.id}')">👤</button>
+          <button class="action-btn" onclick="openEditModal('${s.id}')">✏️</button>
+          ${canDeleteStudent() ? `<button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>` : ''}
+        </div>`;
+      }).join('');
+      return `<div class="student-item sib-group"><div class="sib-head">👨‍👩‍👧‍👦 ${g.length} إخوات</div>${rows}</div>`;
+    }).join('');
     return;
   }
   cont.innerHTML = list.map(s => {
