@@ -3256,14 +3256,17 @@ function renderStudentsList() {
     cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>مفيش نتايج</div>`;
     return;
   }
-  // فلتر "الإخوات بس": كل عيلة في كارت واحد وأسماء الإخوات تحت بعض
+  // فلتر "الإخوات بس": كل عيلة في كارت واحد وأسماء الإخوات تحت بعض — والكارت بيعرض كل الإخوات حتى لو في فصول تانية (الفصل مكتوب جنب كل اسم)
   if (siblingsFilter === 'siblings') {
-    const groups = [], gIdx = {};
-    list.forEach(s => {
-      const g = siblingInfo[s.id].gid;
-      if (!(g in gIdx)) { gIdx[g] = groups.length; groups.push([]); }
-      groups[gIdx[g]].push(s);
-    });
+    const visibleIds = new Set(list.map(s => s.id));
+    const byGid = {};
+    allStudents.forEach(s => { const i = siblingInfo[s.id]; if (i) (byGid[i.gid] = byGid[i.gid] || []).push(s); });
+    const groups = Object.keys(byGid)
+      .filter(gid => byGid[gid].some(s => visibleIds.has(s.id)))
+      .sort((a, b) => a.localeCompare(b, 'ar'))
+      .map(gid => [...byGid[gid]].sort((a, b) => a.name.localeCompare(b.name, 'ar')));
+    stuListCount = groups.reduce((n, g) => n + g.length, 0);
+    updateStuCount();
     cont.innerHTML = groups.map(g => {
       const rows = g.map(s => {
         const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
