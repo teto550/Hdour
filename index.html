@@ -452,6 +452,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="settings-dropdown-item" onclick="openMyProfileModal()">👤 ملفي</button>
         <button class="settings-dropdown-item" onclick="openExportModal()">📥 تصدير Excel</button>
         <button class="settings-dropdown-item" id="settings-dropdown-roles" style="display:none" onclick="openUsersRolesModal()">👥 المستخدمين والأدوار</button>
+        <button class="settings-dropdown-item" id="settings-dropdown-notif" style="display:none" onclick="toggleNotifications()"><span>🔔 الإشعارات</span><span id="notif-state" style="font-size:12px;font-weight:800"></span></button>
         <div class="settings-dropdown-divider"></div>
         <button class="settings-dropdown-item danger" onclick="closeSettingsMenu();doLogout()">🚪 تسجيل الخروج</button>
       </div>
@@ -2042,6 +2043,8 @@ window.toggleSettingsMenu = (e) => {
   const dd = document.getElementById('settings-dropdown');
   const opening = dd.style.display === 'none';
   document.getElementById('settings-dropdown-roles').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
+  document.getElementById('settings-dropdown-notif').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
+  updateNotifBtn();
   dd.style.display = opening ? 'block' : 'none';
   if (opening) document.addEventListener('click', closeSettingsMenuOutside);
 };
@@ -2512,7 +2515,7 @@ function showPendingScreen(title, msg) {
 onAuthStateChanged(auth, async user => {
   stopHeartbeat();
   if (!user) {
-    stopPendingSelfWatch(); stopPendingRequestsListener();
+    stopPendingSelfWatch(); stopPendingRequestsListener(); stopOpenWatcher();
     if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
     if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
     if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
@@ -2592,6 +2595,7 @@ async function handleSignedInUser(user) {
     listenOwnServantDoc(user.uid);
     if (canHandleRequests()) startPendingRequestsListener();
     startClassesListener();
+    if (currentRole === 'admin') startOpenWatcher(); else announceOpen();
     initApp();
     setTimeout(maybeOfferBio, 1200);
   } catch(e) {
@@ -2648,6 +2652,7 @@ function listenOwnServantDoc(uid) {
       roleOrClassChanged = true;
       applyMonitorVisibility();
       if (canHandleRequests()) startPendingRequestsListener(); else stopPendingRequestsListener();
+      if (currentRole === 'admin') startOpenWatcher(); else stopOpenWatcher();
       if (currentRole === 'admin') {
         showToast('مبروك! الأدمن الأساسي خلاك أدمن 👑', 'success');
       } else if (currentRole === 'supervisor') {
@@ -2693,7 +2698,7 @@ function listenOwnServantDoc(uid) {
 }
 
 async function forceLogout() {
-  stopPendingRequestsListener();
+  stopPendingRequestsListener(); stopOpenWatcher();
   if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
   if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
   if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
@@ -5844,15 +5849,19 @@ function startPendingRequestsListener() {
     countSnapshotReads('servants (طلبات الانضمام - live)', snap);
     const initial = !pendingReqSeenServer;
     if (!snap.metadata.fromCache) pendingReqSeenServer = true;
-    let newcomers = 0;
+    let newcomers = 0; const newcomerList = [];
     snap.docChanges().forEach(ch => {
       const id = ch.doc.id, data = { id, ...ch.doc.data() };
       if (ch.type === 'removed') { resolvePendingRemoved(id, ch.doc.data()); return; }
       const i = cachedServants.findIndex(x => x.id === id);
       if (i >= 0) cachedServants[i] = { ...cachedServants[i], ...data };
-      else { cachedServants.push(data); if (ch.type === 'added' && canHandleRequest(data)) newcomers++; }
+      else { cachedServants.push(data); if (ch.type === 'added' && canHandleRequest(data)) { newcomers++; newcomerList.push(data); } }
     });
-    if (!initial && newcomers) showToast(newcomers > 1 ? `📥 وصل ${newcomers} طلبات انضمام جديدة` : '📥 وصل طلب انضمام جديد', 'info');
+    if (!initial && newcomers) {
+      if (currentRole === 'admin') {
+        newcomerList.forEach(d => pushNotif('📥 طلب دخول جديد', `${d.name || 'حد'} عايز يدخل — ${formatAssignedClasses(d.assignedClass)}`, 'join-' + d.id));
+      } else showToast(newcomers > 1 ? `📥 وصل ${newcomers} طلبات انضمام جديدة` : '📥 وصل طلب انضمام جديد', 'info');
+    }
     refreshPendingUI();
   }, err => console.error('pending requests listener error:', err));
 }
@@ -7044,6 +7053,70 @@ window.saveEditStudent = async () => {
     console.error(e);
   }
 };
+
+// ===== إشعارات الأدمن (🔔) =====
+// 1) طلب دخول جديد → "فلان عايز يدخل — فصل كذا"   2) أي خادم يفتح التطبيق → "فلان فتح التطبيق — فصل كذا"
+// بتشتغل طول ما التطبيق مفتوح (حتى لو في الخلفية). الزرار في ⚙️ بيشغّلها ويطفّيها (محفوظ على الجهاز).
+const NOTIF_KEY = 'hdour_notif_on_v1';
+const notifOn = () => localStorage.getItem(NOTIF_KEY) !== '0';
+function updateNotifBtn() {
+  const el = document.getElementById('notif-state'); if (!el) return;
+  const on = notifOn();
+  el.textContent = on ? 'شغّال ✅' : 'مطفي ⛔';
+  el.style.color = on ? 'var(--success, #3ecf8e)' : 'var(--danger)';
+}
+window.toggleNotifications = async () => {
+  const next = !notifOn();
+  localStorage.setItem(NOTIF_KEY, next ? '1' : '0');
+  if (next && 'Notification' in window && Notification.permission === 'default') {
+    try { await Notification.requestPermission(); } catch(e) {}
+  }
+  updateNotifBtn();
+  showToast(next ? '🔔 الإشعارات اتشغلت' : '🔕 الإشعارات اتطفت', 'info');
+};
+async function pushNotif(title, body, tag) {
+  if (!notifOn()) return;
+  // التطبيق قدامك → تنبيه جوه الشاشة | التطبيق في الخلفية → إشعار نظام (لو الإذن متاح)
+  if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') {
+    showToast(`${title} — ${body}`, 'info');
+    return;
+  }
+  try {
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg) { await reg.showNotification(title, { body, tag, icon: 'icon-193.png', badge: 'icon-193.png', lang: 'ar', dir: 'rtl' }); return; }
+  } catch(e) {}
+  showToast(`${title} — ${body}`, 'info');
+}
+// الخادم (مش الأدمن) بيسجّل إنه فتح التطبيق — مرة كل 30 دقيقة على الجهاز عشان نوفر الكتابة
+async function announceOpen() {
+  if (!currentUid || currentRole === 'admin') return;
+  try {
+    const last = +localStorage.getItem('hdour_open_logged_at') || 0;
+    if (Date.now() - last < 30 * 60 * 1000) return;
+    localStorage.setItem('hdour_open_logged_at', String(Date.now()));
+    await addDoc(collection(db,'activityLog'), {
+      uid: currentUid, name: currentName, action: 'فتح التطبيق',
+      detail: formatAssignedClasses(currentAssignedClass), timestamp: serverTimestamp()
+    });
+  } catch(e) {}
+}
+// الأدمن بيسمع على أي "فتح التطبيق" جديد (من لحظة ما فتح فصاعدًا بس — مفيش قراءة للقديم)
+let openWatchUnsub = null, openWatchReady = false;
+function stopOpenWatcher() { if (openWatchUnsub) { openWatchUnsub(); openWatchUnsub = null; } openWatchReady = false; }
+function startOpenWatcher() {
+  if (openWatchUnsub || currentRole !== 'admin') return;
+  openWatchReady = false;
+  openWatchUnsub = onSnapshot(query(collection(db,'activityLog'), where('timestamp','>', Timestamp.now())), snap => {
+    const first = !openWatchReady; openWatchReady = true;
+    if (first) return;
+    snap.docChanges().forEach(ch => {
+      if (ch.type !== 'added' || ch.doc.metadata.hasPendingWrites) return;
+      const d = ch.doc.data();
+      if (d.action !== 'فتح التطبيق' || d.uid === currentUid) return;
+      pushNotif('👤 خادم فتح التطبيق', `${d.name || 'خادم'} — ${d.detail || 'كل الفصول'}`, 'open-' + ch.doc.id);
+    });
+  }, err => console.error('open watcher error:', err));
+}
 
 // ===== TOAST =====
 let toastTimer;
