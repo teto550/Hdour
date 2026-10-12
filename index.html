@@ -3163,16 +3163,50 @@ function familyKey(name) {
   return words.slice(1).join(' ');
 }
 
-// بيرجع خريطة: مفتاح العيلة -> عدد المخدومين اللي شايلينه (من بين كل المخدومين مش بس المفلترين)
-function computeSiblingCounts(list) {
-  const counts = {};
-  list.forEach(s => {
-    const key = familyKey(s.name);
-    if (!key) return;
-    counts[key] = (counts[key] || 0) + 1;
-  });
-  return counts;
+// رقم التليفون بعد التوحيد: أرقام بس، وآخر ١٠ خانات عشان +20 / 0020 / 0 في الأول ميفرقوش
+function phoneMatchKey(p) {
+  const d = cleanPhone(String(p || '')).replace(/\D/g, '');
+  return d.length >= 10 ? d.slice(-10) : d;
 }
+// كل أرقام المخدوم (أب/أم/مخدوم/إضافي/قديم) كمجموعة موحّدة
+function studentPhoneSet(s) {
+  const set = new Set();
+  [s.fatherPhone, s.motherPhone, s.studentPhone, ...(s.otherPhones || []), ...(s.phones || [])].forEach(p => {
+    const k = phoneMatchKey(p);
+    if (k.length >= 8) set.add(k);
+  });
+  return set;
+}
+
+// الإخوات = نفس الاسم بالظبط بعد الاسم الأول (familyKey) + رقم تليفون واحد على الأقل مشترك بينهم.
+// تطابق الاسم لوحده مش كفاية، ورقم التليفون لوحده من غير تطابق الاسم مش كفاية.
+// بيرجع خريطة: id المخدوم -> { count: عدد الإخوات في المجموعة، gid: مفتاح المجموعة } (المخدوم اللي مالوش إخوات مش بيظهر فيها)
+function computeSiblingInfo(list) {
+  const byFam = {};
+  list.forEach(s => { const k = familyKey(s.name); if (k) (byFam[k] = byFam[k] || []).push(s); });
+  const info = {};
+  Object.entries(byFam).forEach(([fam, members]) => {
+    if (members.length < 2) return;
+    const parent = members.map((_, i) => i);
+    const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    const owner = {}; // رقم -> أول مخدوم (في نفس العيلة) شايله
+    members.forEach((s, i) => {
+      studentPhoneSet(s).forEach(ph => {
+        if (ph in owner) parent[find(i)] = find(owner[ph]); else owner[ph] = i;
+      });
+    });
+    const groups = {};
+    members.forEach((s, i) => { const r = find(i); (groups[r] = groups[r] || []).push(s); });
+    Object.entries(groups).forEach(([r, g]) => {
+      if (g.length < 2) return;
+      g.forEach(s => { info[s.id] = { count: g.length, gid: fam + '|' + r }; });
+    });
+  });
+  return info;
+}
+function isSiblingIn(s, info) { return !!info[s.id]; }
+// مفتاح الترتيب: الإخوات الحقيقيين ورا بعض، وباقي المخدومين حسب اسم العيلة
+function siblingSortKey(s, info) { return (info[s.id] && info[s.id].gid) || familyKey(s.name) || `__${s.id}`; }
 
 window.setSiblingsFilter = (val, btn) => {
   siblingsFilter = val;
@@ -3207,11 +3241,11 @@ function renderStudentsList() {
   let list = q ? searchStudents(allStudents, q) : allStudents;
 
   // فلتر الإخوات: بيتحسب على أساس كل المخدومين (مش بس اللي طلعوا من البحث) عشان يبقى دقيق
-  const siblingCounts = computeSiblingCounts(allStudents);
+  const siblingInfo = computeSiblingInfo(allStudents);
   if (siblingsFilter === 'siblings') {
-    list = list.filter(s => { const k = familyKey(s.name); return k && siblingCounts[k] > 1; });
+    list = list.filter(s => isSiblingIn(s, siblingInfo));
   } else if (siblingsFilter === 'nonSiblings') {
-    list = list.filter(s => { const k = familyKey(s.name); return !k || siblingCounts[k] <= 1; });
+    list = list.filter(s => !isSiblingIn(s, siblingInfo));
   }
 
   const cf = effectiveClassFilter();
@@ -3220,8 +3254,8 @@ function renderStudentsList() {
 
   // ترتيب اللستة عشان كل الإخوات (نفس الاسم بالظبط من اسم الأب لحد آخر اسم) يظهروا ورا بعض مجموعين — دايمًا، حتى وقت البحث
   list = [...list].sort((a, b) => {
-    const ka = familyKey(a.name) || `__${a.id}`;
-    const kb = familyKey(b.name) || `__${b.id}`;
+    const ka = siblingSortKey(a, siblingInfo);
+    const kb = siblingSortKey(b, siblingInfo);
     const c = ka.localeCompare(kb, 'ar');
     return c !== 0 ? c : a.name.localeCompare(b.name, 'ar');
   });
@@ -3234,9 +3268,8 @@ function renderStudentsList() {
   }
   cont.innerHTML = list.map(s => {
     const dob = s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) : '';
-    const k = familyKey(s.name);
-    const isSibling = k && siblingCounts[k] > 1;
-    const siblingBadge = isSibling ? `<div class="s-sub">👨‍👩‍👧‍👦 ${siblingCounts[k]} إخوات مسجلين</div>` : '';
+    const sib = siblingInfo[s.id];
+    const siblingBadge = sib ? `<div class="s-sub">👨‍👩‍👧‍👦 ${sib.count} إخوات مسجلين</div>` : '';
     const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
     const classBadge = classBadgeHTML(s.classSection);
     return `<div class="student-item">
@@ -3417,11 +3450,11 @@ function waRecipientsSource() {
     const lastDates = dates.slice(-n);
     list = list.filter(s => lastDates.length === n && lastDates.every(d => !!allAttendance[d]?.[s.id]));
   }
-  const siblingCounts = computeSiblingCounts(classScope(ownClassStudents()));
+  const siblingInfo = computeSiblingInfo(classScope(ownClassStudents()));
   if (waSiblingsFilter === 'siblings') {
-    list = list.filter(s => { const k = familyKey(s.name); return k && siblingCounts[k] > 1; });
+    list = list.filter(s => isSiblingIn(s, siblingInfo));
   } else if (waSiblingsFilter === 'nonSiblings') {
-    list = list.filter(s => { const k = familyKey(s.name); return !k || siblingCounts[k] <= 1; });
+    list = list.filter(s => !isSiblingIn(s, siblingInfo));
   }
   if (waGenderFilter === 'male') {
     list = list.filter(s => s.gender === 'male');
@@ -4372,18 +4405,18 @@ function renderFilterList() {
   } else if (noteFilter !== 'all') {
     list = list.filter(s => Array.isArray(s.visitNotes) && s.visitNotes.includes(noteFilter));
   }
+  const siblingInfo = computeSiblingInfo(allStudents);
   if (filterSiblings !== 'all') {
-    const siblingCounts = computeSiblingCounts(allStudents);
     if (filterSiblings === 'siblings') {
-      list = list.filter(s => { const k = familyKey(s.name); return k && siblingCounts[k] > 1; });
+      list = list.filter(s => isSiblingIn(s, siblingInfo));
     } else {
-      list = list.filter(s => { const k = familyKey(s.name); return !k || siblingCounts[k] <= 1; });
+      list = list.filter(s => !isSiblingIn(s, siblingInfo));
     }
   }
   // تجميع الإخوات فوق بعض في نتايج الافتقاد بردو
   list = [...list].sort((a, b) => {
-    const ka = familyKey(a.name) || `__${a.id}`;
-    const kb = familyKey(b.name) || `__${b.id}`;
+    const ka = siblingSortKey(a, siblingInfo);
+    const kb = siblingSortKey(b, siblingInfo);
     const c = ka.localeCompare(kb, 'ar');
     return c !== 0 ? c : a.name.localeCompare(b.name, 'ar');
   });
