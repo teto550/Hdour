@@ -7300,8 +7300,8 @@ const notifOn = () => localStorage.getItem(NOTIF_KEY) !== '0';
 // الخطوات في docs/PUSH-SETUP.md. لحد ما تتملّى القيمتين دول، الإشعارات بتفضل جوه التطبيق بس (زي الأول).
 // 1) VAPID: Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair (المفتاح العام)
 // 2) رابط الـ Cloudflare Worker (ملف workers/push-worker.js)
-const FCM_VAPID_KEY   = '';
-const PUSH_WORKER_URL = '';
+const FCM_VAPID_KEY   = 'BPcX3KacJhyHgjhJFGpK6grhvyvkJWuMHtwxzD9FqvIM49_xTCc1640dnUdIt4X5H9j-ikcAWr1wgXzethS4ylo';
+const PUSH_WORKER_URL = 'https://hdour-push.devidemele.workers.dev';
 const isPushConfigured = () => !!FCM_VAPID_KEY && !!PUSH_WORKER_URL;
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const pushTokenKey = uid => 'hdour_fcm_saved:' + uid;
