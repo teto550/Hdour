@@ -8,3 +8,30 @@ self.addEventListener('fetch', e => {
   if (new URL(req.url).origin !== self.location.origin) return; // Firebase والخطوط وغيرهم بيعدّوا عادي
   e.respondWith(fetch(req));
 });
+
+// ===== PUSH: إشعارات الموبايل (طلبات الانضمام / خادم فتح التطبيق) =====
+// الـ Worker بيبعت data-only payload، وإحنا اللي بنعرض الإشعار. لو التطبيق مفتوح قدامك بنسيب التنبيه الداخلي يشتغل.
+self.addEventListener('push', event => {
+  let d = {};
+  try {
+    const payload = event.data ? event.data.json() : {};
+    d = payload.data || payload.notification || payload;
+  } catch (err) { return; }
+  if (!d.title && !d.body) return;
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (wins.some(c => c.visibilityState === 'visible')) return;
+    await self.registration.showNotification(d.title || 'حضور', {
+      body: d.body || '', icon: 'icon-193.png', badge: 'icon-193.png',
+      tag: d.tag || 'hdour-push', dir: 'rtl', lang: 'ar', data: { url: d.url || './' }
+    });
+  })());
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || './', self.registration.scope).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) if (c.url.startsWith(self.registration.scope) && 'focus' in c) return c.focus();
+    return self.clients.openWindow(target);
+  }));
+});

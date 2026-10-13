@@ -2048,7 +2048,7 @@ window.toggleSettingsMenu = (e) => {
   const dd = document.getElementById('settings-dropdown');
   const opening = dd.style.display === 'none';
   document.getElementById('settings-dropdown-roles').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
-  document.getElementById('settings-dropdown-notif').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
+  document.getElementById('settings-dropdown-notif').style.display = (opening && canHandleRequests()) ? 'flex' : 'none';
   updateNotifBtn();
   dd.style.display = opening ? 'block' : 'none';
   if (opening) document.addEventListener('click', closeSettingsMenuOutside);
@@ -2473,6 +2473,7 @@ window.doRegister = async () => {
     for (const mr of matchedRoles) {
       try { await updateDoc(doc(db,'roles',mr.id), { pendingNames: arrayRemove(...nameVariantsIn(mr, name)) }); } catch(e) { console.error('تعذّر مسح الاسم من القايمة فورًا:', e); }
     }
+    if (!isAdmin) callPushWorker('/new-request');
     try { await sendEmailVerification(cred.user); } catch(_) {}
     // onAuthStateChanged هيتكفل بعرض الشاشة المناسبة (انتظار أو دخول مباشر لو أدمن)
   } catch(e) {
@@ -2496,6 +2497,7 @@ window.doLogout = async () => {
   pendingBioCreds = null;
   stopHeartbeat();
   stopPendingSelfWatch(); stopPendingRequestsListener();
+  if (auth.currentUser) { try { await removePushToken(auth.currentUser); } catch(e) {} }
   if (ownServantUnsub) { ownServantUnsub(); ownServantUnsub = null; }
   if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
   await signOut(auth);
@@ -2558,6 +2560,7 @@ async function handleSignedInUser(user) {
           status: 'pending', role: 'servant',
           createdAt: serverTimestamp(), lastActive: serverTimestamp()
         });
+        callPushWorker('/new-request');
         snap = await getDoc(ref);
       } else {
         // مجرد جلسة محمولة تلقائيًا من موقع تاني على نفس الدومين — مش طلب دخول مقصود، نتجاهله من غير ما نبعت طلب انضمام لحد
@@ -2601,6 +2604,7 @@ async function handleSignedInUser(user) {
     if (canHandleRequests()) startPendingRequestsListener();
     startClassesListener();
     if (currentRole === 'admin') startOpenWatcher(); else announceOpen();
+    setupPushOnLogin(user);
     initApp();
     setTimeout(maybeOfferBio, 1200);
   } catch(e) {
@@ -7291,17 +7295,79 @@ window.saveEditStudent = async () => {
 // بتشتغل طول ما التطبيق مفتوح (حتى لو في الخلفية). الزرار في ⚙️ بيشغّلها ويطفّيها (محفوظ على الجهاز).
 const NOTIF_KEY = 'hdour_notif_on_v1';
 const notifOn = () => localStorage.getItem(NOTIF_KEY) !== '0';
+
+// ===== إشعارات الموبايل الحقيقية (FCM Push) — بتوصل حتى لو التطبيق مقفول =====
+// الخطوات في docs/PUSH-SETUP.md. لحد ما تتملّى القيمتين دول، الإشعارات بتفضل جوه التطبيق بس (زي الأول).
+// 1) VAPID: Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair (المفتاح العام)
+// 2) رابط الـ Cloudflare Worker (ملف workers/push-worker.js)
+const FCM_VAPID_KEY   = '';
+const PUSH_WORKER_URL = '';
+const isPushConfigured = () => !!FCM_VAPID_KEY && !!PUSH_WORKER_URL;
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const pushTokenKey = uid => 'hdour_fcm_saved:' + uid;
+async function savePushToken(user, askPermission) {
+  if (!pushSupported()) throw new Error('unsupported');
+  if (Notification.permission === 'denied') throw new Error('denied');
+  if (Notification.permission !== 'granted') {
+    if (!askPermission) return null;
+    if (await Notification.requestPermission() !== 'granted') throw new Error('denied');
+  }
+  const { getMessaging, getToken, isSupported } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js');
+  if (!(await isSupported())) throw new Error('unsupported');
+  const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, rej) => setTimeout(() => rej(new Error('no-sw')), 8000))]);
+  const token = await getToken(getMessaging(app), { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+  if (!token) throw new Error('no-token');
+  try { if (localStorage.getItem(pushTokenKey(user.uid)) === token) return token; } catch (e) {}
+  await updateDoc(doc(db, 'servants', user.uid), { fcmTokens: arrayUnion(token) });
+  try { localStorage.setItem(pushTokenKey(user.uid), token); } catch (e) {}
+  return token;
+}
+async function removePushToken(user) {
+  let token = null;
+  try { token = localStorage.getItem(pushTokenKey(user.uid)); } catch (e) {}
+  if (token) { try { await updateDoc(doc(db, 'servants', user.uid), { fcmTokens: arrayRemove(token) }); } catch (e) { console.warn('remove token:', e); } }
+  try { localStorage.removeItem(pushTokenKey(user.uid)); } catch (e) {}
+}
+// بعد تسجيل الدخول: لو الإذن متاح والإشعارات شغّالة نجدّد الـ token بهدوء (من غير سؤال)
+function setupPushOnLogin(user) {
+  if (!isPushConfigured() || !pushSupported() || !notifOn() || !canHandleRequests()) return;
+  savePushToken(user, false).catch(e => console.warn('push token refresh:', e));
+}
+// بيبعت للـ Worker طلب إشعار (الـ Worker بيتحقق من هوية المرسل وبيبني نص الإشعار من فايرستور)
+async function callPushWorker(path, body) {
+  if (!isPushConfigured() || !auth.currentUser) return;
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    await fetch(PUSH_WORKER_URL.replace(/\/$/, '') + path, {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + idToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
+    });
+  } catch (e) { console.warn('push worker error:', e); }
+}
+function notifNeedsEnable() { return notifOn() && isPushConfigured() && pushSupported() && Notification.permission === 'default'; }
 function updateNotifBtn() {
   const el = document.getElementById('notif-state'); if (!el) return;
   const on = notifOn();
-  el.textContent = on ? 'شغّال ✅' : 'مطفي ⛔';
-  el.style.color = on ? 'var(--success, #3ecf8e)' : 'var(--danger)';
+  const denied = isPushConfigured() && pushSupported() && Notification.permission === 'denied';
+  el.textContent = !on ? 'مطفي ⛔' : denied ? 'ممنوع من إعدادات الجهاز ⚠️' : notifNeedsEnable() ? 'دوس للتفعيل 🔔' : 'شغّال ✅';
+  el.style.color = (on && !denied) ? 'var(--success, #3ecf8e)' : 'var(--danger)';
 }
 window.toggleNotifications = async () => {
-  const next = !notifOn();
+  const user = auth.currentUser;
+  // شغّالة في الإعدادات بس لسه الجهاز ما اداش إذن → الدوسة دي بتطلب الإذن بدل ما تقفل
+  const next = notifNeedsEnable() ? true : !notifOn();
   localStorage.setItem(NOTIF_KEY, next ? '1' : '0');
   if (next && 'Notification' in window && Notification.permission === 'default') {
     try { await Notification.requestPermission(); } catch(e) {}
+  }
+  if (isPushConfigured() && user) {
+    if (next) {
+      try { await savePushToken(user, true); }
+      catch (e) {
+        console.warn('enable push error:', e);
+        showToast(e.message === 'denied' ? 'الإشعارات متقفلة من إعدادات الجهاز' : e.message === 'unsupported' ? (IS_IOS ? 'ضيف التطبيق للشاشة الرئيسية الأول' : 'الجهاز ده مش بيدعم إشعارات الموبايل') : 'مقدرتش أشغّل إشعارات الموبايل', 'error');
+        updateNotifBtn(); return;
+      }
+    } else await removePushToken(user);
   }
   updateNotifBtn();
   showToast(next ? '🔔 الإشعارات اتشغلت' : '🔕 الإشعارات اتطفت', 'info');
@@ -7330,6 +7396,7 @@ async function announceOpen() {
       uid: currentUid, name: currentName, action: 'فتح التطبيق',
       detail: formatAssignedClasses(currentAssignedClass), timestamp: serverTimestamp()
     });
+    callPushWorker('/servant-open', { detail: formatAssignedClasses(currentAssignedClass) });
   } catch(e) {}
 }
 // الأدمن بيسمع على أي "فتح التطبيق" جديد (من لحظة ما فتح فصاعدًا بس — مفيش قراءة للقديم)
