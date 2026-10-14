@@ -3348,7 +3348,14 @@ window.guessAllGenders = async () => {
 
 // مفتاح العيلة = الاسم كامل عدا أول كلمة (يعني اسم الأب + الجد + ...) — بيستخدم لتحديد مين إخوة مين
 function familyKey(name) {
-  const words = normalizeArabic(name).split(' ').filter(Boolean);
+  // توحيد إضافي فوق normalizeArabic: حروف فارسية (ی ک)، أرقام عربية، وعلامات ترقيم بتتحط غلط جوه الأسامي
+  const norm = normalizeArabic(name)
+    .replace(/ی/g, 'ي')
+    .replace(/ک/g, 'ك')
+    .replace(/[.,،؛;:_\-'"()\/\\]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const words = norm.split(' ').filter(Boolean);
   if (words.length < 2) return null; // اسم كلمة واحدة مش كفاية نحكم عليه
   return words.slice(1).join(' ');
 }
@@ -3368,16 +3375,47 @@ function studentPhoneSet(s) {
   return set;
 }
 
-// الإخوات = نفس الاسم بالظبط بعد الاسم الأول (familyKey) — من اسم الأب لحد آخر اسم — وفي نفس الفصل بس.
-// مفيش شرط تليفون، ومخدوم في فصل تاني عمره مبيتحسب أخ لمخدوم في فصل مختلف.
+// الإخوات = أي مخدومين في نفس الفصل ينطبق عليهم واحد من الشرطين:
+//   1) نفس الاسم بالظبط بعد الاسم الأول (familyKey) — من اسم الأب لحد آخر اسم
+//   2) في رقم تليفون مشترك بينهم (أب/أم/مخدوم/إضافي/قديم) بعد توحيد الرقم
+// الربط متعدّي: لو (أ) و(ب) نفس الاسم، و(ب) و(ج) نفس التليفون → التلاتة إخوات في مجموعة واحدة.
+// مخدوم في فصل تاني عمره مبيتحسب أخ لمخدوم في فصل مختلف.
 // بيرجع خريطة: id المخدوم -> { count: عدد الإخوات في المجموعة، gid: مفتاح المجموعة } (المخدوم اللي مالوش إخوات مش بيظهر فيها)
 function computeSiblingInfo(list) {
-  const byFam = {};
-  list.forEach(s => { const k = familyKey(s.name); if (k) { const key = (s.classSection || '') + '|' + k; (byFam[key] = byFam[key] || []).push(s); } });
+  // بنقسّم المخدومين على الفصول الأول، وكل فصل بيتحسب لوحده
+  const byClass = {};
+  list.forEach(s => { (byClass[s.classSection || ''] = byClass[s.classSection || ''] || []).push(s); });
+
   const info = {};
-  Object.entries(byFam).forEach(([key, members]) => {
-    if (members.length < 2) return;
-    members.forEach(s => { info[s.id] = { count: members.length, gid: key }; });
+  Object.entries(byClass).forEach(([cls, students]) => {
+    // Union-Find على فهارس المخدومين
+    const parent = students.map((_, i) => i);
+    const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[rb] = ra; };
+
+    // الربط بالاسم (اسم الأب لحد آخر اسم)
+    const byFam = {};
+    students.forEach((s, i) => { const k = familyKey(s.name); if (k) { if (byFam[k] !== undefined) union(byFam[k], i); else byFam[k] = i; } });
+
+    // الربط بالتليفون المشترك (بنتجاهل الأرقام الوهمية زي 0000000000)
+    const byPhone = {};
+    students.forEach((s, i) => {
+      studentPhoneSet(s).forEach(p => {
+        if (new Set(p).size <= 2) return; // رقم وهمي (أرقامه متكررة زي 1000000000)
+        if (byPhone[p] !== undefined) union(byPhone[p], i); else byPhone[p] = i;
+      });
+    });
+
+    // تجميع المجموعات
+    const groups = {};
+    students.forEach((s, i) => { const r = find(i); (groups[r] = groups[r] || []).push(s); });
+    Object.values(groups).forEach(members => {
+      if (members.length < 2) return;
+      // مفتاح المجموعة: أصغر اسم عيلة فيها (ثابت وبيخلي الترتيب أبجدي)، ولو مفيش أسامي كفاية بنستخدم id أول واحد
+      const fams = members.map(m => familyKey(m.name)).filter(Boolean).sort();
+      const gid = cls + '|' + (fams[0] || `__grp_${members[0].id}`);
+      members.forEach(s => { info[s.id] = { count: members.length, gid }; });
+    });
   });
   return info;
 }
