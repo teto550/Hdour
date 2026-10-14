@@ -1124,7 +1124,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
   <div class="modal-box" style="max-width:340px;margin-top:20vh;padding:22px;text-align:center">
     <div style="font-size:44px;margin-bottom:8px">🖐</div>
     <div style="font-size:17px;font-weight:900;margin-bottom:6px">تدخل بالبصمة المرة الجاية؟</div>
-    <div style="font-size:12px;color:var(--text-dim);line-height:1.8;margin-bottom:16px">تقدر تدخل ببصمة صباعك من الموبايل ده من غير إيميل وباسورد. وتقدر تلغيها في أي وقت من «ملفي».</div>
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.8;margin-bottom:16px">تقدر تدخل ببصمة صباعك من الموبايل ده من غير إيميل وباسورد. بيانات الدخول بتتحمي بمفتاح مربوط ببصمتك أنت بس. وتقدر تلغيها في أي وقت من «ملفي».</div>
     <button class="btn-primary" id="bio-offer-yes" onclick="acceptBioOffer()">أيوه، فعّل البصمة</button>
     <button onclick="declineBioOffer()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:13px;padding:8px;cursor:pointer">مش دلوقتي</button>
   </div>
@@ -2231,48 +2231,111 @@ async function bioIdbDel(k) {
   return new Promise((res, rej) => { const t = db0.transaction(BIO_STORE, 'readwrite'); t.objectStore(BIO_STORE).delete(k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); });
 }
 async function bioSupported() {
-  try { return !!(window.PublicKeyCredential && window.isSecureContext && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); }
-  catch { return false; }
+  try {
+    if (!(window.PublicKeyCredential && window.isSecureContext && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())) return false;
+    if (PublicKeyCredential.getClientCapabilities) { const c = await PublicKeyCredential.getClientCapabilities(); if (c && c['extension:prf'] === false) return false; }
+    return true;
+  } catch { return false; }
 }
-function bioData() { try { return JSON.parse(localStorage.getItem(BIO_LS) || 'null'); } catch { return null; } }
+// ===== البصمة الآمنة (v2) =====
+// الباسورد بيتشفّر بمفتاح بيتولّد من البصمة نفسها (WebAuthn PRF) ومبيتخزّنش في أي مكان.
+// يعني مستحيل أي سكريبت أو شخص يفك التشفير من غير ما صباعك يتسجّل فعلاً على الموبايل.
+const BIO_APP = 'hdour', BIO_RP_NAME = 'خدمة ابتدائي', BIO_V = 2;
+const BIO_LS_V2 = 'bc_bio_v2_' + BIO_APP;   // مفتاح لكل تطبيق (عشان التطبيقات متبوّظش بعض على نفس الدومين)
+const bioEnc = s => new TextEncoder().encode(s);
+// النسخة القديمة (v1) كانت بتخزّن الباسورد بمفتاح ممكن أي سكريبت على الدومين يستخدمه من غير بصمة — بتتمسح
+function bioPurgeLegacy() {
+  try { if (localStorage.getItem(BIO_LS)) localStorage.removeItem(BIO_LS); } catch {}
+  bioIdbDel(BIO_KEY_ID).catch(() => {});
+}
+function bioData() {
+  bioPurgeLegacy();
+  try {
+    const d = JSON.parse(localStorage.getItem(BIO_LS_V2) || 'null');
+    return d && d.v === BIO_V && d.credId && d.salt && d.iv && d.ct && d.email ? d : null;
+  } catch { return null; }
+}
 async function bioDisable() {
+  localStorage.removeItem(BIO_LS_V2);
   localStorage.removeItem(BIO_LS);
   try { await bioIdbDel(BIO_KEY_ID); } catch {}
   refreshBioLoginButton();
 }
-// بيسجّل البصمة ويحفظ الإيميل والباسورد مشفّرين بمفتاح غير قابل للتصدير (non-extractable)
-async function bioEnroll(email, pass) {
-  await navigator.credentials.create({ publicKey: {
-    challenge: crypto.getRandomValues(new Uint8Array(32)),
-    rp: { name: 'خدمة ابتدائي', id: location.hostname },
-    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: email, displayName: email },
-    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
-    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
-    timeout: 60000, attestation: 'none'
-  }}).then(async cred => {
-    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify({ e: email, p: pass })));
-    await bioIdbSet(BIO_KEY_ID, key);
-    localStorage.setItem(BIO_LS, JSON.stringify({ credId: bioB64.enc(cred.rawId), email, iv: bioB64.enc(iv), ct: bioB64.enc(ct) }));
-  });
-  localStorage.removeItem(BIO_DECLINED);
+// ناتج الـ PRF (32 بايت) من نتيجة التسجيل أو الاستخدام
+function bioPrfOut(cred) {
+  const r = cred && cred.getClientExtensionResults && cred.getClientExtensionResults();
+  const f = r && r.prf && r.prf.results && r.prf.results.first;
+  return f ? new Uint8Array(f) : null;
 }
-// بيطلب البصمة، ولو نجحت بيفك التشفير ويرجّع الإيميل والباسورد
+// مفتاح التشفير بيتولّد من ناتج البصمة + ملح عشوائي + ربط بالإيميل والتطبيق والدومين
+async function bioKey(secret, salt, email) {
+  const ikm = await crypto.subtle.importKey('raw', secret, 'HKDF', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt, info: bioEnc('bc-bio-v2|' + BIO_APP + '|' + location.hostname + '|' + email) },
+    ikm, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+// بيطلب البصمة (لازم تتحقق فعلاً) ويرجّع ناتج الـ PRF
+async function bioPrfGet(credId, salt) {
+  const a = await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rpId: location.hostname,
+    allowCredentials: [{ type: 'public-key', id: credId, transports: ['internal'] }],
+    userVerification: 'required', timeout: 60000,
+    extensions: { prf: { eval: { first: salt } } }
+  }});
+  const out = bioPrfOut(a);
+  if (!out) throw new Error('no-prf');
+  return out;
+}
+// الخطوة 1: تسجيل البصمة واستخراج المفتاح (لازم تتنده مباشرة من ضغطة الزرار، قبل أي انتظار للشبكة)
+async function bioCreateCred(email) {
+  const uid = new Uint8Array(await crypto.subtle.digest('SHA-256', bioEnc('bc-bio|' + BIO_APP + '|' + email))).slice(0, 16);
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: BIO_RP_NAME, id: location.hostname },
+    user: { id: uid, name: email, displayName: email },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
+    timeout: 60000, attestation: 'none',
+    extensions: { prf: { eval: { first: salt } } }
+  }});
+  const prf = (cred.getClientExtensionResults && cred.getClientExtensionResults().prf) || null;
+  let secret = bioPrfOut(cred);
+  if (!prf || (!prf.enabled && !secret)) throw new Error('no-prf');   // الجهاز مش بيدعم بصمة آمنة → مش هنخزّن الباسورد
+  if (!secret) secret = await bioPrfGet(cred.rawId, salt);            // أغلب الأجهزة بتدّي المفتاح وقت الاستخدام مش التسجيل
+  return { rawId: cred.rawId, salt, secret };
+}
+// الخطوة 2: تشفير الباسورد بالمفتاح المستخرج من البصمة وحفظه (المفتاح نفسه مبيتحفظش)
+async function bioSaveCred(h, email, pass) {
+  const key = await bioKey(h.secret, h.salt, email);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: bioEnc(email) }, key, bioEnc(JSON.stringify({ p: pass })));
+  h.secret.fill(0);
+  localStorage.setItem(BIO_LS_V2, JSON.stringify({ v: BIO_V, credId: bioB64.enc(h.rawId), email, salt: bioB64.enc(h.salt), iv: bioB64.enc(iv), ct: bioB64.enc(ct) }));
+  localStorage.removeItem(BIO_DECLINED);
+  bioPurgeLegacy();
+  refreshBioLoginButton();
+}
+async function bioEnroll(email, pass) {
+  const h = await bioCreateCred(email);
+  await bioSaveCred(h, email, pass);
+}
+function bioEnrollMsg(e) {
+  if (e && e.message === 'no-prf') return 'جهازك أو المتصفح مش بيدعم البصمة الآمنة — ادخل بالإيميل والباسورد';
+  if (e && e.name === 'NotAllowedError') return 'البصمة اتلغت أو اتأخرت — جرب تاني';
+  return 'معرفناش نفعّل البصمة' + (e && e.name ? ' (' + e.name + ')' : '');
+}
+// بيطلب البصمة، ولو نجحت بيستخرج المفتاح ويفك التشفير ويرجّع الإيميل والباسورد
 async function bioUnlock() {
   const d = bioData();
   if (!d) throw new Error('no-bio');
-  await navigator.credentials.get({ publicKey: {
-    challenge: crypto.getRandomValues(new Uint8Array(32)),
-    rpId: location.hostname,
-    allowCredentials: [{ type: 'public-key', id: bioB64.dec(d.credId), transports: ['internal'] }],
-    userVerification: 'required', timeout: 60000
-  }});
-  const key = await bioIdbGet(BIO_KEY_ID);
-  if (!key) throw new Error('no-key');
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bioB64.dec(d.iv) }, key, bioB64.dec(d.ct));
-  const o = JSON.parse(new TextDecoder().decode(plain));
-  return { email: o.e, pass: o.p };
+  const salt = bioB64.dec(d.salt);
+  const secret = await bioPrfGet(bioB64.dec(d.credId), salt);
+  const key = await bioKey(secret, salt, d.email);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bioB64.dec(d.iv), additionalData: bioEnc(d.email) }, key, bioB64.dec(d.ct));
+  secret.fill(0);
+  return { email: d.email, pass: JSON.parse(new TextDecoder().decode(plain)).p };
 }
 async function refreshBioLoginButton() {
   const btn = document.getElementById('bio-login-btn');
@@ -2286,7 +2349,7 @@ window.doBioLogin = async () => {
   let creds;
   try { creds = await bioUnlock(); }
   catch (e) {
-    if (e && (e.message === 'no-key' || e.message === 'no-bio' || e.name === 'OperationError')) {
+    if (e && (e.message === 'no-key' || e.message === 'no-prf' || e.message === 'no-bio' || e.name === 'OperationError')) {
       await bioDisable();
       err.textContent = 'البصمة محتاجة تتفعّل تاني — ادخل بالإيميل والباسورد وفعّلها من «ملفي»';
     } else {
@@ -2322,7 +2385,7 @@ window.acceptBioOffer = async () => {
   document.getElementById('bio-offer-modal').style.display = 'none';
   if (!c) return;
   try { await bioEnroll(c.email, c.pass); showToast('اتفعّلت البصمة ✅', 'success'); }
-  catch (e) { console.error('bio enroll:', e); showToast('معرفناش نفعّل البصمة', 'error'); }
+  catch (e) { console.error('bio enroll:', e); showToast(bioEnrollMsg(e), 'error'); }
 };
 window.declineBioOffer = () => {
   window._bioOfferCreds = null;
@@ -2362,7 +2425,7 @@ window.toggleBioFromSettings = async () => {
     await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(currentEmail, pass));
   } catch { showToast('كلمة المرور غلط', 'error'); return; }
   try { await bioEnroll(currentEmail, pass); showToast('اتفعّلت البصمة ✅', 'success'); }
-  catch (e) { console.error('bio enroll:', e); showToast('معرفناش نفعّل البصمة', 'error'); }
+  catch (e) { console.error('bio enroll:', e); showToast(bioEnrollMsg(e), 'error'); }
   refreshBioSettings();
 };
 
