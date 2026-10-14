@@ -2416,16 +2416,33 @@ window.toggleBioFromSettings = async () => {
     document.getElementById('settings-bio-btn').textContent = '✔ تأكيد وتفعيل';
     document.getElementById('settings-bio-pass').focus();
     window._bioSettingsStep = 'confirm';
+    setTimeout(() => document.getElementById('settings-bio-btn').scrollIntoView({ block:'center', behavior:'smooth' }), 350);
     return;
   }
-  // confirm: نتأكد من الباسورد الأول، وبعدين نسجّل البصمة
+  // confirm: بنطلب البصمة فورًا (جوه ضغطة الزرار — المتصفح بيشترط كده)، وبعدها نتأكد من الباسورد ونحفظ
   const pass = document.getElementById('settings-bio-pass').value;
   if (!pass) { showToast('اكتب كلمة المرور', 'error'); return; }
+  const btn = document.getElementById('settings-bio-btn');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = '⏳ استنى… اعمل البصمة لما تظهر';
   try {
-    await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(currentEmail, pass));
-  } catch { showToast('كلمة المرور غلط', 'error'); return; }
-  try { await bioEnroll(currentEmail, pass); showToast('اتفعّلت البصمة ✅', 'success'); }
-  catch (e) { console.error('bio enroll:', e); showToast(bioEnrollMsg(e), 'error'); }
+    const cred = await bioCreateCred(currentEmail);
+    try {
+      await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(currentEmail, pass));
+    } catch (e) {
+      console.error('bio reauth:', e);
+      showToast(e && e.code === 'auth/network-request-failed' ? 'مفيش نت — حاول تاني' : 'كلمة المرور غلط', 'error');
+      btn.disabled = false; btn.textContent = label; return;
+    }
+    await bioSaveCred(cred, currentEmail, pass);
+    showToast('اتفعّلت البصمة ✅', 'success');
+  } catch (e) {
+    console.error('bio enroll:', e);
+    showToast(bioEnrollMsg(e), 'error');
+  }
+  btn.disabled = false;
   refreshBioSettings();
 };
 
