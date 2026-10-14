@@ -7381,7 +7381,7 @@ async function pushNotif(title, body, tag) {
   }
   try {
     const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
-    if (reg) { await reg.showNotification(title, { body, tag, icon: 'icon-193.png', badge: 'icon-193.png', lang: 'ar', dir: 'rtl' }); return; }
+    if (reg) { await reg.showNotification(title, { body, tag, icon: 'icon-513.png', badge: 'badge-96.png', lang: 'ar', dir: 'rtl' }); return; }
   } catch(e) {}
   showToast(`${title} — ${body}`, 'info');
 }

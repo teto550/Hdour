@@ -22,7 +22,7 @@ self.addEventListener('push', event => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (wins.some(c => c.visibilityState === 'visible')) return;
     await self.registration.showNotification(d.title || 'حضور', {
-      body: d.body || '', icon: 'icon-193.png', badge: 'icon-193.png',
+      body: d.body || '', icon: 'icon-513.png', badge: 'badge-96.png',
       tag: d.tag || 'hdour-push', dir: 'rtl', lang: 'ar', data: { url: d.url || './' }
     });
   })());
