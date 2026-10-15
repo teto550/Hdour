@@ -1930,12 +1930,14 @@ async function syncClassGroups() {
   const ids = babyKgClasses().map(c => c.id).sort();
   const key = ids.join(',');
   if (!ids.length || key === classGroupsSynced) return;
+  if (localStorage.getItem('bc_class_groups_key') === key) { classGroupsSynced = key; return; } // اتزامنت قبل كده من الجهاز ده — من غير أي قراءة
   try {
     const ref = doc(db,'config','classGroups');
     const cur = await getDoc(ref);
     const have = cur.exists() ? (cur.data().babyKg || []).slice().sort().join(',') : null;
     if (have !== key) await setDoc(ref, { babyKg: ids, updatedAt: serverTimestamp() }, { merge: true });
     classGroupsSynced = key;
+    try { localStorage.setItem('bc_class_groups_key', key); } catch (e) {}
   } catch (e) { console.warn('classGroups sync failed:', e); }
 }
 function startClassesListener() {
@@ -2802,7 +2804,7 @@ function listenOwnServantDoc(uid) {
     if (roleOrClassChanged) {
       applyClassRestrictionUI();
       if (todayAttendanceUnsub || todayVersesUnsub) restartTodayListeners();
-      loadStudents().then(() => {
+      if (studentsLoaded) loadStudents().then(() => { // لو المخدومين لسه متحمّلوش مفيش داعي نقراهم دلوقتي — هيتحمّلوا لما يفتح تبويب يحتاجهم
         updateStats(); renderTodayList();
         if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
         if (document.getElementById('tab-messages')?.style.display === 'block') renderWaTab();
@@ -4151,6 +4153,8 @@ function restartTodayListeners() {
 }
 // نقل صامت لمرة واحدة: آيات الأربع 30/09 كانت متحفظة على تاريخ الأربع، ودلوقتي بتتحسب على حضور الأسبوع اللي فات (خميس 24/09)
 async function migrateLegacyVerses() {
+  // ترحيلات بيانات لمرة واحدة بتقرا آيات كل الفصول — الأدمن بس يعملها (الخادم العادي ميقراش غير فصله، ومكنش لازم تتكرر على كل جهاز)
+  if (currentRole !== 'admin') return;
   if (!localStorage.getItem('vmig_0930')) try {
     const snap = await countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-30')), 'verses (نقل تاريخ قديم - مرة واحدة)');
     const docs = snap.docs;
@@ -4264,7 +4268,7 @@ async function _ensureRecentVerses(weeks) {
   const fromKey = toLocalDateKey(d), nowKey = verseKey();
   const liveToday = !!todayVersesUnsub; // البث اللحظي لأسبوع التسميع الحالي أحدث من أي قراءة
   // تصليح لمرة واحدة على الجهاز: آيات قديمة اتسجلت من غير فصل فكانت مش بتظهر في استعلام الفصل
-  if (!localStorage.getItem('vbf_cls1') && allStudents.length) {
+  if (currentRole === 'admin' && !localStorage.getItem('vbf_cls1') && allStudents.length) {
     try {
       const all = await countedGetDocs(query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (تصليح فصل الآيات - مرة واحدة)');
       const miss = all.docs.filter(x => !x.data().classSection && clsOf(x.data().studentId));
