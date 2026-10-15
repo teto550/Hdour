@@ -1354,7 +1354,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, EmailAuthProvider, reauthenticateWithCredential }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, getDocsFromCache, getDocFromCache, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, Timestamp, writeBatch, increment, arrayUnion, arrayRemove }
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc as _addDoc, getDocs, getDocsFromCache, getDocFromCache, deleteDoc as _deleteDoc, doc, getDoc, setDoc as _setDoc, updateDoc as _updateDoc, query, where, orderBy, limit, onSnapshot, waitForPendingWrites, serverTimestamp, Timestamp, writeBatch as _writeBatch, increment, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
@@ -1389,6 +1389,36 @@ const auth = getAuth(app);
 const db   = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() })
 });
+
+// ===== رفع الداتا المتأجلة في الخلفية أول ما النت يرجع (حتى لو التطبيق مقفول) =====
+// أي كتابة (حضور / مخدوم جديد / تعديل) بتحصل والنت واقع بتسيب علامة وبتسجّل Background Sync؛ وهو اللي بيصحّي sw.js أول ما النت يرجع.
+// لو التطبيق مفتوح لما النت يرجع، فايرستور بيرفع لوحده والعلامة بتتمسح أول ما كل الكتابات تتأكد.
+const SYNC_TAG = 'flush-pending-writes', SYNC_FLAG_CACHE = 'hdour-sync-flag';
+async function setSyncFlag(on) {
+  try { const c = await caches.open(SYNC_FLAG_CACHE); if (on) await c.put('./__pending', new Response('1')); else await c.delete('./__pending'); } catch (e) {}
+}
+async function hasSyncFlag() { try { return !!(await (await caches.open(SYNC_FLAG_CACHE)).match('./__pending')); } catch (e) { return false; } }
+async function armBackgroundSync() {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    await setSyncFlag(true);
+    const reg = await navigator.serviceWorker.ready;
+    if (reg.sync) await reg.sync.register(SYNC_TAG);
+  } catch (e) {}
+}
+async function confirmSynced() {
+  try { if (!navigator.onLine) return; await waitForPendingWrites(db); await setSyncFlag(false); } catch (e) {}
+}
+const noteOfflineWrite = () => { if (!navigator.onLine) armBackgroundSync(); };
+const addDoc    = (...a) => { noteOfflineWrite(); return _addDoc(...a); };
+const setDoc    = (...a) => { noteOfflineWrite(); return _setDoc(...a); };
+const updateDoc = (...a) => { noteOfflineWrite(); return _updateDoc(...a); };
+const deleteDoc = (...a) => { noteOfflineWrite(); return _deleteDoc(...a); };
+const writeBatch = (...a) => { const b = _writeBatch(...a); const c = b.commit.bind(b); b.commit = () => { noteOfflineWrite(); return c(); }; return b; };
+window.addEventListener('online', () => { setTimeout(confirmSynced, 3000); });
+document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'hidden' && await hasSyncFlag()) armBackgroundSync(); });
+if (navigator.onLine) confirmSynced();
+
 
 // ===== عدّاد القراءات (reads) — لقياس تكلفة فايرستور فعليًا =====
 // كل مستند بييجي من السيرفر بيتحسب read واحد؛ اللي بييجي من الكاش المحلي (persistentLocalCache) مجاني ومش بيتحسب.

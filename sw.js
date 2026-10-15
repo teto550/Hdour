@@ -96,3 +96,72 @@ self.addEventListener('notificationclick', event => {
     return self.clients.openWindow(target);
   }));
 });
+
+// ===== رفع الداتا المتأجلة (حضور / مخدومين جدد اتسجلوا أوفلاين) أول ما النت يرجع — حتى لو التطبيق مقفول =====
+// الصفحة بتسيب علامة "فيه كتابة أوفلاين" وبتسجّل Background Sync. لما النت يرجع المتصفح بيصحّي الـ SW هنا،
+// وهو بيفتح نفس قاعدة فايرستور المحلية (نفس اسم التطبيق) ويستنى لحد ما كل الكتابات المتأجلة تترفع.
+// أمان: لو مش قادر يرفع (مثلاً App Check شغال والـ SW مفيهوش reCAPTCHA) بيطلّع إشعار "افتح البرنامج" بدل ما يحاول ويضيّع كتابات.
+// ملحوظة: Background Sync شغال على كروم/إيدج (أندرويد + كمبيوتر) بس — مش على iOS ولا فايرفوكس.
+try {
+  importScripts(
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js'
+  );
+} catch (err) { /* مفيش مكتبات فايربيز في الـ SW ده: الرفع في الخلفية بيتحوّل لإشعار بس، والتطبيق نفسه شغال عادي */ }
+const SYNC_TAG = 'flush-pending-writes';
+const SYNC_FLAG_CACHE = APP + '-sync-flag';
+const FB_APP_NAME = 'babyclass-app';
+const FB_CFG = { apiKey: "AIzaSyBWK4y1GjEBXMrzgKu3Hm3sSG5sd2ympEI", authDomain: "hdour-d66d8.firebaseapp.com", projectId: "hdour-d66d8", appId: "1:877333539513:web:5e36ff0a09a2924ae64968" };
+const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
+async function hasSyncFlag() { try { return !!(await (await caches.open(SYNC_FLAG_CACHE)).match('./__pending')); } catch (e) { return false; } }
+async function clearSyncFlag() { try { await (await caches.open(SYNC_FLAG_CACHE)).delete('./__pending'); } catch (e) {} }
+async function notifyPendingWrites() {
+  try {
+    await self.registration.showNotification('حضور', {
+      body: 'فيه بيانات لسه ماترفعتش. افتح البرنامج والنت شغال عشان تترفع.',
+      icon: 'icon-513.png', badge: 'badge-96.png', tag: APP + '-pending-sync', dir: 'rtl', lang: 'ar', data: { url: './' }
+    });
+  } catch (e) {}
+}
+// بيرجّع { done:true } لو كل حاجة اترفعت، أو { reason } لو مينفعش يرفع من هنا (مفيش إعادة محاولة)، أو بيرمي error لو المحاولة فشلت مؤقتًا
+async function runFlush() {
+  if (typeof firebase === 'undefined' || !firebase.firestore || !firebase.auth) return { reason: 'unsupported' };
+  const app = firebase.apps.find(a => a.name === FB_APP_NAME) || firebase.initializeApp(FB_CFG, FB_APP_NAME);
+  try {
+    const unsub = { fn: null };
+    const user = await withTimeout(new Promise(res => { unsub.fn = app.auth().onAuthStateChanged(u => res(u)); }), 10000, 'auth-timeout');
+    if (unsub.fn) unsub.fn();
+    if (!user) return { reason: 'noauth' };
+    // فحص قراءة بس (من غير أي كتابة): لو السيرفر رفضها من غير App Check token يبقى الرفع من الـ SW هيتحذف بسبب الرفض، فنبطّل
+    const token = await user.getIdToken();
+    const probe = await withTimeout(fetch('https://firestore.googleapis.com/v1/projects/' + FB_CFG.projectId + '/databases/(default)/documents/config/meta', { headers: { Authorization: 'Bearer ' + token } }), 15000, 'probe-timeout');
+    if (probe.status === 401 || probe.status === 403) return { reason: 'blocked' };
+    if (probe.status >= 500) throw new Error('probe-' + probe.status);
+    const db = app.firestore();
+    try { await db.enablePersistence({ synchronizeTabs: false }); }
+    catch (err) { return { reason: 'persistence' }; }  // مش قادر يفتح القاعدة المحلية (التطبيق ممكن يكون فاتحها): منكتبش حاجة
+    try {
+      await withTimeout(db.waitForPendingWrites(), 40000, 'flush-timeout');
+      return { done: true };
+    } finally {
+      try { await db.terminate(); } catch (e) {}
+    }
+  } finally {
+    try { await app.delete(); } catch (e) {}
+  }
+}
+async function flushPending(lastChance) {
+  if (!(await hasSyncFlag())) return;
+  const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  if (wins.some(c => c.url.startsWith(self.registration.scope))) return; // التطبيق مفتوح: هو بيرفع بنفسه
+  let res = null;
+  try { res = await runFlush(); } catch (err) { console.warn('background flush failed:', err); }
+  if (res && res.done) { await clearSyncFlag(); return; }
+  if (res && res.reason) { await notifyPendingWrites(); return; } // مينفعش من الـ SW: نبلّغ المستخدم ونوقف
+  if (lastChance) { await notifyPendingWrites(); return; }
+  throw new Error('flush-failed'); // المتصفح هيعيد المحاولة بعد شوية
+}
+self.addEventListener('sync', event => {
+  if (event.tag === SYNC_TAG) event.waitUntil(flushPending(event.lastChance));
+});
