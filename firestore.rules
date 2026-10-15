@@ -2,53 +2,153 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSignedIn() {
-      return request.auth != null;
+    // ===== Helpers =====
+    function isSignedIn() { return request.auth != null; }
+    function hasServantDoc() { return isSignedIn() && exists(/databases/$(database)/documents/servants/$(request.auth.uid)); }
+    function myDoc() { return get(/databases/$(database)/documents/servants/$(request.auth.uid)).data; }
+    function isApproved() { return hasServantDoc() && myDoc().status == 'approved'; }
+    function isAdmin() { return isApproved() && myDoc().role == 'admin'; }
+    function isSupervisor() { return isApproved() && myDoc().role == 'supervisor'; }
+    // الأدمن الأساسي (نفس ADMIN_EMAILS في index.html) — لازم تتغير هنا لو اتغيرت هناك (والعكس).
+    function isPrimaryAdminEmail() {
+      return isSignedIn() && request.auth.token.email in ['devidemele@gmail.com'];
     }
 
-    function servantData() {
-      return get(/databases/$(database)/documents/servants/$(request.auth.uid)).data;
+    // ===== عزل الفصول =====
+    // فصول الخادم = assignedClass (ids مفصولة بفاصلة). الأدمن بيشوف الكل.
+    // الخادم من غير فصل مش بيشوف أي مخدومين.
+    // استثناء: بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1 (ids بتتسجل تلقائيًا من الأدمن في config/classGroups.babyKg):
+    // أي خادم في واحد منهم بيشوف التلات فصول + المخدومين اللي لسه متقسموش (classSection فاضي).
+    function myClasses() { return myDoc().get('assignedClass', '').split(','); }
+    function groupIds() {
+      return exists(/databases/$(database)/documents/config/classGroups)
+        ? get(/databases/$(database)/documents/config/classGroups).data.get('babyKg', [])
+        : [];
+    }
+    function classOk(c) {
+      return isAdmin() || (isApproved() && c is string && (
+        (c != '' && c in myClasses())
+        || (myClasses().hasAny(groupIds()) && (c == '' || c in groupIds()))
+      ));
     }
 
-    function isApproved() {
-      return isSignedIn() && servantData().status == 'approved';
-    }
-
-    function isAdmin() {
-      return isSignedIn() && servantData().role == 'admin';
-    }
-
-    // ---- servants (accounts / registration) ----
+    // ===== servants (الحسابات) =====
     match /servants/{uid} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == uid;
+      // كل واحد يقرا حسابه، والخدام المعتمدين يقروا قايمة الخدام (مسؤول الفصل بيشوف طلبات الانضمام)
+      allow get: if isSignedIn() && (request.auth.uid == uid || isApproved());
+      allow list: if isApproved();
+
+      // التسجيل: حسابه هو بس، وإجباري pending (ممنوع يسجل نفسه أدمن أو معتمد).
+      // الاستثناء: الأدمن الأساسي (بإيميله) يقدر ينشئ حسابه كأدمن معتمد.
+      allow create: if isSignedIn() && request.auth.uid == uid && (
+        (request.resource.data.status == 'pending'
+          && request.resource.data.role in ['servant', 'supervisor']
+          && request.resource.data.email.lower() == request.auth.token.email.lower()
+          && !('sscCount' in request.resource.data)
+          && !('meetingCount' in request.resource.data)
+          && !('prepCount' in request.resource.data))
+        || (isPrimaryAdminEmail()
+          && request.resource.data.status == 'approved'
+          && request.resource.data.role == 'admin')
+      );
+
+      // التعديل: الأدمن أي حاجة.
+      // صاحب الحساب: بياناته الشخصية + fcmTokens بس (مش الدور/الحالة/الفصول/الأدوار/العدّادات — عشان محدش يغيّر فصله بنفسه).
+      // مسؤول الفصل: يقبل طلب انضمام pending، ويزوّد عدّادات حضور الخدام.
+      // الأدمن الأساسي يقدر يرجّع نفسه أدمن معتمد.
       allow update: if isAdmin()
         || (isSignedIn() && request.auth.uid == uid
-            && request.resource.data.role   == resource.data.role
-            && request.resource.data.status == resource.data.status);
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['name', 'phone', 'address', 'lastActive', 'fcmTokens']))
+        || (isSupervisor()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['sscCount', 'meetingCount', 'prepCount']))
+        || (isSupervisor()
+            && resource.data.status == 'pending'
+            && resource.data.get('role', 'servant') != 'admin'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && request.resource.data.status == 'approved')
+        || (isPrimaryAdminEmail() && request.auth.uid == uid
+            && request.resource.data.role == 'admin'
+            && request.resource.data.status == 'approved');
+
       allow delete: if isAdmin();
     }
 
-    // ---- everything else: only approved servants ----
+    // ===== classes (الفصول) — بتتقرا في فورم التسجيل قبل تسجيل الدخول، والأدمن بس يعدّل =====
+    match /classes/{classId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ===== roles (الأدوار + قايمة الأسماء الجاهزة) =====
+    match /roles/{roleId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pendingNames'])
+            && request.resource.data.pendingNames.toSet().difference(resource.data.pendingNames.toSet()).size() == 0);
+    }
+
+    // ===== students (المخدومين) — الخادم يقرا ويعدّل مخدومين فصوله بس (classSection) =====
+    // ممنوع ينقل مخدوم لفصل مش بتاعه. الاستعلام لازم يحتوي where('classSection','in',[فصوله]).
     match /students/{id} {
-      allow read, write: if isApproved();
+      allow read: if classOk(resource.data.get('classSection', ''));
+      allow create: if classOk(request.resource.data.get('classSection', ''));
+      allow update: if classOk(resource.data.get('classSection', ''))
+                    && classOk(request.resource.data.get('classSection', ''));
+      allow delete: if isAdmin();
     }
 
+    // ===== attendance (حضور المخدومين) — بنفس تقييد الفصل (classSection بيتكتب مع كل تسجيل) =====
     match /attendance/{id} {
-      allow read, write: if isApproved();
+      allow read: if classOk(resource.data.get('classSection', ''));
+      allow create: if classOk(request.resource.data.get('classSection', ''));
+      allow update: if classOk(resource.data.get('classSection', ''))
+                    && classOk(request.resource.data.get('classSection', ''));
+      allow delete: if classOk(resource.data.get('classSection', ''));
     }
 
+    // ===== verses (سماع الآيات) — بنفس تقييد الفصل =====
     match /verses/{id} {
-      allow read, write: if isApproved();
+      allow read: if classOk(resource.data.get('classSection', ''));
+      allow create: if classOk(request.resource.data.get('classSection', ''));
+      allow update: if classOk(resource.data.get('classSection', ''))
+                    && classOk(request.resource.data.get('classSection', ''));
+      allow delete: if classOk(resource.data.get('classSection', ''));
     }
 
+    // ===== servantAttendance (حضور الخدام) — الأدمن ومسؤول الفصل يسجّلوا =====
+    match /servantAttendance/{id} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSupervisor();
+    }
+
+    // ===== messageTemplates =====
     match /messageTemplates/{id} {
       allow read, write: if isApproved();
     }
 
+    // ===== activityLog =====
     match /activityLog/{id} {
-      allow read, create: if isApproved();
+      allow read: if isApproved();
+      allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAdmin();
+    }
+
+    // ===== config (عدّادات التحديث + مجموعة فصول بيبي/كي جي) =====
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin()
+        || (isApproved() && docId == 'meta'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['studentsRev', 'studentsDelRev', 'classFieldMig']));
+    }
+
+    // أي حاجة تانية: ممنوعة
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
