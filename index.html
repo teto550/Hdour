@@ -1738,15 +1738,18 @@ function readScopeClasses() {
     const grp = babyKgClasses().map(c => c.id);
     return grp.includes(currentClassTab) ? [...grp, ''] : [currentClassTab];
   }
-  const al = getAllowedAssignedClasses();
+  let al = getAllowedAssignedClasses();
   if (!al.length) return [];
+  // الخادم اللي عنده أكتر من فصل: بيقرا الفصل اللي فاتحه دلوقتي بس (مش كل فصوله مرة واحدة)
+  if (al.length > 1 && currentClassTab && al.includes(currentClassTab)) al = [currentClassTab];
   const grp = babyKgClasses().map(c => c.id);
   return [...new Set(al.some(id => grp.includes(id)) ? [...al, ...grp, ''] : al)].slice(0, 30);
 }
 async function waitClassesReady() { for (let i = 0; i < 40 && !allClasses.length; i++) await new Promise(r => setTimeout(r, 100)); }
 let lastReadScopeKey = '';
 function onAdminScopeChanged() {
-  if (currentRole !== 'admin') return;
+  // الأدمن، وكمان الخادم اللي عنده أكتر من فصل (نطاقه بيتغير مع الفصل المفتوح)
+  if (currentRole !== 'admin' && getAllowedAssignedClasses().length < 2) return;
   const sk = readScopeClasses().join(',');
   if (sk === lastReadScopeKey) return;
   lastReadScopeKey = sk;
