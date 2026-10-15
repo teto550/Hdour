@@ -1266,7 +1266,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <label class="field-label">ملف الإكسيل (.xlsx / .xls / .csv)</label>
       <input type="file" id="import-file" class="field-input" accept=".xlsx,.xls,.csv" multiple onchange="handleImportFile(event)">
       <div id="import-preview" style="font-size:13px;line-height:1.9;margin:6px 0 10px"></div>
-      <label id="import-upd-wrap" style="display:none;font-size:13px;line-height:1.7;margin-bottom:14px;cursor:pointer"><input type="checkbox" id="import-upd" checked style="margin-left:6px" onchange="refreshImportBtn()">حدّث المتسجلين قبل كده: انقلهم للفصل ده واملا البيانات الناقصة بس (من غير تكرار)</label>
+      <label id="import-upd-wrap" style="display:none;font-size:13px;line-height:1.7;margin-bottom:14px;cursor:pointer"><input type="checkbox" id="import-upd" checked style="margin-left:6px" onchange="refreshImportBtn()">حدّث المتسجلين قبل كده: عدّل بياناتهم (الميلاد، الموبايل، النوع، العنوان) باللي في الشيت وانقلهم للفصل ده، من غير ما يتكرروا</label>
       <label id="import-addnew-wrap" style="display:none;font-size:13px;line-height:1.7;margin-bottom:14px;cursor:pointer"><input type="checkbox" id="import-addnew" checked style="margin-left:6px" onchange="refreshImportBtn()">ضيف الأسماء اللي في شيت الحضور ومش موجودة كمخدومين جداد (في الفصل ده)</label>
       <button class="btn-primary" id="import-confirm-btn" onclick="confirmImport()" style="display:none">✓ استيراد</button>
     </div>
@@ -3306,6 +3306,28 @@ function impAnalyzeSheet(aoa) {
 }
 const impFmtKey = k => { const p = k.split('-'); return `${p[2]}/${p[1]}/${p[0]}`; };
 
+// التعديلات اللي هتتكتب على مخدوم موجود عشان بياناته تبقى زي الشيت: القيمة اللي في الشيت بتحل محل القديمة،
+// والخلية الفاضية في الشيت مبتمسحش حاجة، واللي متطابق مبيتكتبش. بيرجّع {} لو مفيش أي تغيير
+function impUpdatePatch(u, defCls) {
+  const ex = u.ex, up = {};
+  const cls = u.cls || defCls;
+  if (cls && cls !== (ex.classSection || '')) up.classSection = cls;
+  if (u.dob && u.dob !== (ex.dob || '')) up.dob = u.dob;
+  if (u.gender && u.gender !== (ex.gender || '')) up.gender = u.gender;
+  if (u.address && u.address !== (ex.address || '')) up.address = u.address;
+  if (u.student || u.father || u.mother || (u.others || []).length) {
+    const father = u.father || ex.fatherPhone || '', mother = u.mother || ex.motherPhone || '', student = u.student || ex.studentPhone || '';
+    const old = hasRolePhones(ex) ? (ex.otherPhones || []) : (ex.phones || []);
+    const others = [...new Set([...old, ...(u.others || [])])].filter(x => x && x !== father && x !== mother && x !== student);
+    const nf = buildPhoneFields(father, mother, student, others, ex);
+    const same = (nf.fatherPhone || '') === (ex.fatherPhone || '') && (nf.motherPhone || '') === (ex.motherPhone || '') && (nf.studentPhone || '') === (ex.studentPhone || '')
+      && JSON.stringify(nf.phones) === JSON.stringify(ex.phones || []);
+    if (!same) Object.assign(up, nf);
+  }
+  return up;
+}
+const impUpdCount = (list, cls) => list.filter(u => Object.keys(impUpdatePatch(u, cls)).length).length;
+
 window.handleImportFile = async (e) => {
   const files = [...((e.target.files) || [])];
   const box = document.getElementById('import-preview');
@@ -3425,6 +3447,7 @@ window.handleImportFile = async (e) => {
     const cntAtt = importAtt.filter(a => !attOnlyIds.has(a.sid)).length;
     box.innerHTML = out.join('<br>') + '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">'
       + `✅ مخدومين جدد هيتضافوا: <b>${nStud}</b>`
+      + (importUpd.length ? `<br>✏️ متسجلين قبل كده وبياناتهم هتتعدّل بالشيت (من غير تكرار): <b>${impUpdCount(importUpd, cls)}</b> من ${importUpd.length}` : '')
       + (skippedDup.length ? `<br>♻️ متسجلين قبل كده: <b>${skippedDup.length}</b><br><span style="font-size:12px;color:var(--text-dim)">${skippedDup.slice(0, 12).map(impEsc).join(' · ')}</span>` : '')
       + (importAtt.length || dupAtt ? `<br>📅 حضور هيتسجل: <b>${importAtt.length}</b>${dupAtt ? ` · ♻️ متسجل قبل كده: <b>${dupAtt}</b>` : ''}` : '')
       + (attOnlyNames.length ? `<br>🆕 أسماء في شيت الحضور مش موجودة عندنا: <b>${attOnlyNames.length}</b><br><span style="font-size:12px;color:var(--text-dim)">${attOnlyNames.slice(0, 12).map(impEsc).join(' · ')}</span>` : '')
@@ -3446,9 +3469,10 @@ let importAttOnly = new Set();
 // اللي هيتكتب فعلاً حسب الاختيارات (الأسماء الجديدة من شيت الحضور بس بتتضاف لو الخيار متعلّم)
 function importPlan() {
   const addNew = document.getElementById('import-addnew').checked;
+  const dcls = document.getElementById('import-class').value || '';
   return {
     rows: importRows.filter(r => !r.attOnly || addNew),
-    upd: document.getElementById('import-upd').checked ? importUpd : [],
+    upd: document.getElementById('import-upd').checked ? importUpd.filter(u => Object.keys(impUpdatePatch(u, dcls)).length) : [],
     att: importAtt.filter(a => addNew || !importAttOnly.has(a.sid))
   };
 }
@@ -3467,7 +3491,7 @@ window.confirmImport = async () => {
   try {
     const clsOfId = new Map();
     rows.forEach(r => clsOfId.set(r.ref.id, r.cls || cls));
-    upd.forEach(u => clsOfId.set(u.id, u.cls || cls));
+    upd.forEach(u => clsOfId.set(u.id, impUpdatePatch(u, cls).classSection || u.ex.classSection || ''));
     const writes = []; // كل كتابة = دالة بتاخد batch
     rows.forEach(r => writes.push(b => b.set(r.ref, {
       name: r.name,
@@ -3480,14 +3504,7 @@ window.confirmImport = async () => {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     })));
-    upd.forEach(u => writes.push(b => {
-      const up = { classSection: u.cls || cls, updatedAt: serverTimestamp() };
-      if (!u.ex.dob && u.dob) up.dob = u.dob;
-      if (!u.ex.gender && u.gender) up.gender = u.gender;
-      if (!u.ex.address && u.address) up.address = u.address;
-      if (!(u.ex.phones || []).length && (u.student || u.father || u.mother)) Object.assign(up, buildPhoneFields(u.father, u.mother, u.student, u.others, null));
-      b.update(doc(db, 'students', u.id), up);
-    }));
+    upd.forEach(u => writes.push(b => b.update(doc(db, 'students', u.id), { ...impUpdatePatch(u, cls), updatedAt: serverTimestamp() })));
     const exClass = new Map(allStudents.map(s => [s.id, s.classSection || '']));
     att.forEach(a => writes.push(b => b.set(doc(collection(db, 'attendance')), {
       studentId: a.sid,
