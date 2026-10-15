@@ -10,8 +10,11 @@ service cloud.firestore {
     function isAdmin() { return isApproved() && myDoc().role == 'admin'; }
     function isSupervisor() { return isApproved() && myDoc().role == 'supervisor'; }
     // الأدمن الأساسي (نفس ADMIN_EMAILS في index.html) — لازم تتغير هنا لو اتغيرت هناك (والعكس).
+    // لازم الإيميل يكون متفعّل (email_verified) عشان محدش يسجّل بإيميل الأدمن من غير ما يملكه ويبقى أدمن.
     function isPrimaryAdminEmail() {
-      return isSignedIn() && request.auth.token.email in ['devidemele@gmail.com'];
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in ['devidemele@gmail.com'];
     }
 
     // ===== عزل الفصول =====
@@ -34,9 +37,9 @@ service cloud.firestore {
 
     // ===== servants (الحسابات) =====
     match /servants/{uid} {
-      // كل واحد يقرا حسابه، والخدام المعتمدين يقروا قايمة الخدام (مسؤول الفصل بيشوف طلبات الانضمام)
-      allow get: if isSignedIn() && (request.auth.uid == uid || isApproved());
-      allow list: if isApproved();
+      // كل واحد يقرا حسابه. قايمة الخدام (وقراءة حساب حد تاني) للأدمن ومسؤول الفصل بس (مسؤول الفصل بيشوف طلبات الانضمام)
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin() || isSupervisor());
+      allow list: if isAdmin() || isSupervisor();
 
       // التسجيل: حسابه هو بس، وإجباري pending (ممنوع يسجل نفسه أدمن أو معتمد).
       // الاستثناء: الأدمن الأساسي (بإيميله) يقدر ينشئ حسابه كأدمن معتمد.
@@ -82,13 +85,17 @@ service cloud.firestore {
     }
 
     // ===== roles (الأدوار + قايمة الأسماء الجاهزة) =====
+    // القراءة مفتوحة عشان فورم التسجيل يعرض "اختار اسمك". الأدمن بس يكتب،
+    // وأي حساب سجّل فعلاً (عنده مستند خادم) يقدر بس يشيل اسمه من pendingNames: من غير إضافة، وبحد أقصى 5 أسماء في الطلب
+    // (الاسم الواحد ممكن يتكرر بصيغ كتابة مختلفة) — عشان حساب pending مايمسحش قايمة الأسماء كلها.
     match /roles/{roleId} {
       allow read: if true;
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
-        || (isSignedIn()
+        || (hasServantDoc()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pendingNames'])
-            && request.resource.data.pendingNames.toSet().difference(resource.data.pendingNames.toSet()).size() == 0);
+            && request.resource.data.pendingNames.toSet().difference(resource.data.pendingNames.toSet()).size() == 0
+            && resource.data.pendingNames.toSet().difference(request.resource.data.pendingNames.toSet()).size() <= 5);
     }
 
     // ===== students (المخدومين) — الخادم يقرا ويعدّل مخدومين فصوله بس (classSection) =====

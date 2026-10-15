@@ -847,15 +847,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         ملحوظة: واتساب بيمنع الإرسال الجماعي التلقائي، فهيتم فتح شات كل مخدوم برسالته جاهزة، وانت بس هتضغط "إرسال" جوه واتساب، وبعدين هتنتقل للمخدوم اللي بعده.
       </div>
 
-      <div id="wa-queue-box" style="display:none;margin-top:18px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;text-align:center">
-        <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px" id="wa-queue-progress"></div>
-        <div style="font-size:18px;font-weight:900;margin-bottom:4px" id="wa-queue-name"></div>
-        <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px" id="wa-queue-phone"></div>
-        <div style="display:flex;gap:10px">
-          <button onclick="sendCurrentWaQueueItem()" style="flex:2;background:linear-gradient(135deg,#25D366,#128C7E);border:none;border-radius:10px;color:#fff;font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;padding:13px;cursor:pointer">📱 فتح واتساب</button>
-          <button onclick="skipCurrentWaQueueItem()" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;padding:13px;cursor:pointer">تخطي</button>
-        </div>
-      </div>
+      <div id="wa-queue-box" style="display:none;margin-top:18px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;text-align:center"></div>
     </div>
 
     <!-- MONITOR TAB (ADMIN ONLY) -->
@@ -1467,7 +1459,7 @@ function countDocSnapshotReads(label, snap) {
 const _idbP = (() => {
   try {
     return new Promise((res, rej) => {
-      const r = indexedDB.open('stmina-cache', 1);
+      const r = indexedDB.open('hdour-cache', 1);
       r.onupgradeneeded = () => r.result.createObjectStore('kv');
       r.onsuccess = () => res(r.result);
       r.onerror = () => rej(r.error);
@@ -1827,7 +1819,7 @@ let explicitAuthAction = false; // بيتحط true بس لما الخادم يد
 let bdayMonth = 0, absenceFilter = 'all', attendanceFilter = 'all', verseFilter = 'all', noteFilter = 'all';
 let siblingsFilter = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب المخدومين)
 let classFilter = 'all'; // 'all' | <classId> | 'none' (فلتر الفصل — تبويب المخدومين)
-let currentClassTab = localStorage.getItem('attendanceClassTab') || ''; // <classId> — التاب المختار فوق في شاشة الحضور، بيتحدد أول فصل موجود لما الفصول توصل
+let currentClassTab = localStorage.getItem('hdour_attendanceClassTab') || ''; // <classId> — التاب المختار فوق في شاشة الحضور، بيتحدد أول فصل موجود لما الفصول توصل
 
 // ===== الفصول (ديناميكي) =====
 // الفصول بقت متخزنة في مجموعة 'classes' على فايرستور بدل ما تكون ثابتة (a/b/kg) في الكود،
@@ -1964,14 +1956,14 @@ async function syncClassGroups() {
   const ids = babyKgClasses().map(c => c.id).sort();
   const key = ids.join(',');
   if (!ids.length || key === classGroupsSynced) return;
-  if (localStorage.getItem('bc_class_groups_key') === key) { classGroupsSynced = key; return; } // اتزامنت قبل كده من الجهاز ده — من غير أي قراءة
+  if (localStorage.getItem('hdour_class_groups_key') === key) { classGroupsSynced = key; return; } // اتزامنت قبل كده من الجهاز ده — من غير أي قراءة
   try {
     const ref = doc(db,'config','classGroups');
     const cur = await getDoc(ref);
     const have = cur.exists() ? (cur.data().babyKg || []).slice().sort().join(',') : null;
     if (have !== key) await setDoc(ref, { babyKg: ids, updatedAt: serverTimestamp() }, { merge: true });
     classGroupsSynced = key;
-    try { localStorage.setItem('bc_class_groups_key', key); } catch (e) {}
+    try { localStorage.setItem('hdour_class_groups_key', key); } catch (e) {}
   } catch (e) { console.warn('classGroups sync failed:', e); }
 }
 function startClassesListener() {
@@ -1983,7 +1975,7 @@ function startClassesListener() {
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
     if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
     syncClassGroups();
-    if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('attendanceClassTab')) ? localStorage.getItem('attendanceClassTab') : allClasses[0].id;
+    if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('hdour_attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('hdour_attendanceClassTab')) ? localStorage.getItem('hdour_attendanceClassTab') : allClasses[0].id;
     const sk = readScopeClasses().join(',');
     if (sk !== lastReadScopeKey) {
       lastReadScopeKey = sk;
@@ -2598,6 +2590,16 @@ window.doRegister = async () => {
   try {
     const cred    = await createUserWithEmailAndPassword(auth, email, pass);
     const isAdmin = ADMIN_EMAILS.map(e=>e.toLowerCase()).includes(email.toLowerCase());
+    if (isAdmin && !cred.user.emailVerified) {
+      // القواعد بتمنع إنشاء حساب الأدمن الأساسي قبل تفعيل الإيميل: نبعت الرابط ونطلب منه يدخل بعد ما يفعّله
+      await sendVerifyOnce(cred.user);
+      explicitAuthAction = false;
+      try { await signOut(auth); } catch (_) {}
+      err.textContent = 'اتبعتلك رابط تفعيل على إيميل الأدمن. افتح الرابط وبعدين سجّل دخول بنفس الإيميل والباسورد.';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'تسجيل';
+      return;
+    }
     await setDoc(doc(db,'servants',cred.user.uid), {
       name, email, phone, address,
       assignedClass: isAdmin ? '' : matchedPerms.assignedClass,
@@ -2671,7 +2673,7 @@ onAuthStateChanged(auth, async user => {
     if (servantsUnsub) { servantsUnsub(); servantsUnsub = null; }
     stopClassesListener();
     classPicked = false;
-    localStorage.removeItem('stu_cache_v1'); localStorage.removeItem('stu_cache_v2'); studentsLoaded = false;
+    localStorage.removeItem('hdour_stu_cache_v1'); localStorage.removeItem('hdour_stu_cache_v2'); studentsLoaded = false;
     showAuthScreen();
     const btn = document.getElementById('login-btn');
     btn.disabled = false; btn.textContent = 'دخول';
@@ -2681,6 +2683,20 @@ onAuthStateChanged(auth, async user => {
 });
 
 // بيتنادى من onAuthStateChanged، وكمان أول ما طلب الانضمام يتقبل (من غير reload)
+// القواعد بتشترط email_verified لحساب الأدمن الأساسي (عشان محدش يسجّل بإيميله من غير ما يملكه): بنبعت رابط التفعيل ونطلّع المستخدم لحد ما يفعّله
+let lastVerifyMailAt = 0;
+async function sendVerifyOnce(user) {
+  if (Date.now() - lastVerifyMailAt < 60000) return;
+  lastVerifyMailAt = Date.now();
+  try { await sendEmailVerification(user); } catch (e) {}
+}
+async function adminNeedsVerification(user) {
+  await sendVerifyOnce(user);
+  explicitAuthAction = false;
+  showAuthScreen();
+  try { await signOut(auth); } catch (e) {}
+  showToast('فعّل إيميل الأدمن من الرابط اللي اتبعتلك، وبعدين ادخل تاني', 'error');
+}
 async function handleSignedInUser(user) {
   stopPendingSelfWatch();
   try {
@@ -2689,6 +2705,7 @@ async function handleSignedInUser(user) {
     if (!snap.exists()) {
       // حساب موجود في Firebase Auth بس مش مسجل كخادم في الموقع ده
       if (ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((user.email||'').toLowerCase())) {
+        if (!user.emailVerified) { await adminNeedsVerification(user); return; }
         await setDoc(ref, {
           name: user.email.split('@')[0], email: user.email,
           status: 'approved', role: 'admin',
@@ -2716,7 +2733,7 @@ async function handleSignedInUser(user) {
     // حتى لو كان عنده مستند خادم قديم من قبل التغيير (مثلاً كان لسه معتمد كخادم عادي أو حتى pending)
     if (ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((user.email||'').toLowerCase())) {
       const d = snap.data();
-      if (d.role !== 'admin' || d.status !== 'approved') {
+      if ((d.role !== 'admin' || d.status !== 'approved') && user.emailVerified) {
         await updateDoc(ref, { role: 'admin', status: 'approved' });
         snap = await getDoc(ref);
       }
@@ -2947,7 +2964,7 @@ window.toggleAddStudentForm = () => {
 
 // ===== STUDENTS =====
 let studentsLoaded = false;
-const STU_KEY0 = 'stu_cache_v2'; let STU_KEY = STU_KEY0; // v2: كاش بيتحدّث بالتغييرات بس (updatedAt) بدل إعادة تحميل الكل
+const STU_KEY0 = 'hdour_stu_cache_v2'; let STU_KEY = STU_KEY0; // v2: كاش بيتحدّث بالتغييرات بس (updatedAt) بدل إعادة تحميل الكل
 async function ensureStudents() { if (!studentsLoaded) await loadStudents(); }
 // أي كتابة على students بتزوّد الرقم ده عشان كل الأجهزة تعرف إن فيه تغيير (والحذف له عدّاد لوحده لأنه مش بيظهر في تحديث التغييرات)
 let bumpTimer = null, bumpDel = false;
@@ -4191,7 +4208,7 @@ function restartTodayListeners() {
 async function migrateLegacyVerses() {
   // ترحيلات بيانات لمرة واحدة بتقرا آيات كل الفصول — الأدمن بس يعملها (الخادم العادي ميقراش غير فصله، ومكنش لازم تتكرر على كل جهاز)
   if (currentRole !== 'admin') return;
-  if (!localStorage.getItem('vmig_0930')) try {
+  if (!localStorage.getItem('hdour_vmig_0930')) try {
     const snap = await countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-30')), 'verses (نقل تاريخ قديم - مرة واحدة)');
     const docs = snap.docs;
     for (let i = 0; i < docs.length; i += 400) {
@@ -4199,10 +4216,10 @@ async function migrateLegacyVerses() {
       docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-24', classSection: d.data().classSection ?? clsOf(d.data().studentId) }));
       await b.commit();
     }
-    localStorage.setItem('vmig_0930', '1');
+    localStorage.setItem('hdour_vmig_0930', '1');
   } catch(e) { console.error(e); }
   // آيات الأربع 23/09 → خميس 17/09 (حضور أسبوعها). اللي ليه آية متسجلة أصلًا على 17/09 بنسيب آيته زي ما هي عشان ميتكررش
-  if (localStorage.getItem('vmig_0923b')) return;
+  if (localStorage.getItem('hdour_vmig_0923b')) return;
   try {
     const [s23, s17] = await Promise.all([
       countedGetDocs(query(collection(db,'verses'), where('date','==','2026-09-23')), 'verses (نقل تاريخ قديم 23/09 - مرة واحدة)'),
@@ -4215,7 +4232,7 @@ async function migrateLegacyVerses() {
       docs.slice(i, i + 400).forEach(d => b.update(d.ref, { date: '2026-09-17', classSection: d.data().classSection ?? clsOf(d.data().studentId) }));
       await b.commit();
     }
-    localStorage.setItem('vmig_0923b', '1');
+    localStorage.setItem('hdour_vmig_0923b', '1');
   } catch(e) { console.error(e); }
 }
 function startTodayListeners() {
@@ -4304,7 +4321,7 @@ async function _ensureRecentVerses(weeks) {
   const fromKey = toLocalDateKey(d), nowKey = verseKey();
   const liveToday = !!todayVersesUnsub; // البث اللحظي لأسبوع التسميع الحالي أحدث من أي قراءة
   // تصليح لمرة واحدة على الجهاز: آيات قديمة اتسجلت من غير فصل فكانت مش بتظهر في استعلام الفصل
-  if (currentRole === 'admin' && !localStorage.getItem('vbf_cls1') && allStudents.length) {
+  if (currentRole === 'admin' && !localStorage.getItem('hdour_vbf_cls1') && allStudents.length) {
     try {
       const all = await countedGetDocs(query(collection(db,'verses'), where('date','>=', fromKey)), 'verses (تصليح فصل الآيات - مرة واحدة)');
       const miss = all.docs.filter(x => !x.data().classSection && clsOf(x.data().studentId));
@@ -4313,7 +4330,7 @@ async function _ensureRecentVerses(weeks) {
         miss.slice(i, i + 400).forEach(x => bt.update(x.ref, { classSection: clsOf(x.data().studentId) }));
         await bt.commit();
       }
-      localStorage.setItem('vbf_cls1', '1');
+      localStorage.setItem('hdour_vbf_cls1', '1');
     } catch(e) { console.warn('verse classSection backfill failed', e); }
   }
   let c = null; try { c = JSON.parse((await idbGet(VERSE_CACHE_KEY + '@' + scopeKey)) || 'null'); } catch(e) {}
@@ -5749,7 +5766,7 @@ window.showAdminClasses = () => {
 };
 window.openClassFromAdmin = (id) => {
   currentClassTab = id;
-  localStorage.setItem('attendanceClassTab', id);
+  localStorage.setItem('hdour_attendanceClassTab', id);
   classFilter = id;
   adminClassChanged();
   renderClassChips();
@@ -5799,7 +5816,7 @@ window.showClassPicker = () => {
 window.pickClass = (id) => {
   classPicked = true;
   currentClassTab = id;
-  localStorage.setItem('attendanceClassTab', id);
+  localStorage.setItem('hdour_attendanceClassTab', id);
   classFilter = id;
   adminClassChanged();
   renderClassChips();
@@ -5906,7 +5923,7 @@ window.switchClassTab = (cls, btn) => {
   const allowed = getAllowedAssignedClasses();
   if (currentRole !== 'admin' && allowed.length && !allowed.includes(cls)) return;
   currentClassTab = cls;
-  localStorage.setItem('attendanceClassTab', cls);
+  localStorage.setItem('hdour_attendanceClassTab', cls);
   classFilter = cls;
   adminClassChanged();
   renderClassChips();
@@ -5931,7 +5948,7 @@ function applyClassRestrictionUI() {
   if (restricted) {
     if (!allowed.includes(currentClassTab)) currentClassTab = allowed[0];
   } else if (!currentClassTab && allClasses.length) {
-    const saved = localStorage.getItem('attendanceClassTab');
+    const saved = localStorage.getItem('hdour_attendanceClassTab');
     currentClassTab = (saved && allClasses.some(c => c.id === saved)) ? saved : allClasses[0].id;
   }
   const bar = document.getElementById('global-class-tabs');
@@ -6731,12 +6748,12 @@ const DASH_DEFAULT = ['kpi','ssc','meeting','prep','classes','noAtt'];
 
 function getDashPrefs() {
   try {
-    const saved = JSON.parse(localStorage.getItem('dashSections') || 'null');
+    const saved = JSON.parse(localStorage.getItem('hdour_dashSections') || 'null');
     if (Array.isArray(saved) && saved.length) return saved;
   } catch (e) {}
   return DASH_DEFAULT.slice();
 }
-function saveDashPrefs(ids) { try { localStorage.setItem('dashSections', JSON.stringify(ids)); } catch (e) {} }
+function saveDashPrefs(ids) { try { localStorage.setItem('hdour_dashSections', JSON.stringify(ids)); } catch (e) {} }
 
 window.openDashModal = () => {
   const active = getDashPrefs();
