@@ -1,6 +1,8 @@
 // push-worker.js — Cloudflare Worker (مجاني) لإشعارات موبايل Hdour
 // بيبعت Push (FCM) لموبايلات الأدمن/المشرفين لما:
 //   POST /new-request  → خادم جديد سجّل وطلبه pending
+//   POST /servant-decision → الأدمن/المشرف قبل أو رفض طلب انضمام (إشعار للخادم نفسه)
+//   POST /offline-pending  → بيانات اتسجلت أوفلاين ومترفعتش في الخلفية (إشعار للأدمن/المشرف باسم الفصل)
 //   POST /servant-open → خادم معتمد فتح التطبيق (مرة كل 30 دقيقة للخادم الواحد)
 //
 // الإعدادات (Workers → Settings → Variables and Secrets):
@@ -126,6 +128,17 @@ async function sendPush(pid, jsonH, tokens, data) {
 }
 const tokensOf = (users) => users.flatMap((u) => (Array.isArray(u.fcmTokens) ? u.fcmTokens : []));
 
+// أسماء الفصول (من فايرستور) + المستلمين: الأدمن + المشرفين على فصول الخادم
+async function classNamesOf(pid, authH, ids) {
+  const names = [];
+  for (const c of ids.slice(0, 5)) {
+    const cr = await fetch(`${fsBase(pid)}/classes/${encodeURIComponent(c)}`, { headers: authH });
+    names.push(cr.ok ? (fvFields((await cr.json()).fields).name || c) : c);
+  }
+  return names;
+}
+const supervisedIds = (u) => splitIds(u.supervisorClass !== undefined && u.supervisorClass !== null ? u.supervisorClass : u.assignedClass);
+
 export default {
   async fetch(request, env) {
     const allowed = env.ALLOWED_ORIGIN || '';
@@ -138,7 +151,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
     const url = new URL(request.url);
-    if (request.method !== 'POST' || (url.pathname !== '/new-request' && url.pathname !== '/servant-open')) {
+    if (request.method !== 'POST' || (url.pathname !== '/new-request' && url.pathname !== '/servant-open' && url.pathname !== '/servant-decision' && url.pathname !== '/offline-pending')) {
       return json({ error: 'not found' }, 404, cors);
     }
     if (allowed && request.headers.get('Origin') !== allowed) return json({ error: 'forbidden' }, 403, cors);
@@ -183,6 +196,52 @@ export default {
           title: '📥 طلب دخول جديد',
           body: `${me.name || 'خادم جديد'} عايز يدخل${names.length ? ' — ' + names.join(' + ') : ''}`,
           url: env.APP_URL || '', tag: `join-${uid}`,
+        });
+        return json({ ok: true, ...out }, 200, cors);
+      }
+
+      // ===== قرار على طلب انضمام (قبول / رفض) → إشعار للخادم نفسه =====
+      // بيتبعت من الأدمن/المشرف. النص بيتبني هنا، والحالة في فايرستور لازم تطابق القرار (القبول: approved | الرفض: لسه pending قبل ما يتمسح الحساب).
+      if (url.pathname === '/servant-decision') {
+        if (me.status !== 'approved' || (me.role !== 'admin' && me.role !== 'supervisor')) return json({ error: 'not allowed' }, 403, cors);
+        let body = {}; try { body = await request.json(); } catch (e) {}
+        const targetUid = String(body.targetUid || '');
+        const decision = body.decision === 'rejected' ? 'rejected' : 'approved';
+        if (!/^[A-Za-z0-9]{10,64}$/.test(targetUid) || targetUid === uid) return json({ error: 'bad target' }, 400, cors);
+        const tr = await fetch(`${fsBase(pid)}/servants/${targetUid}`, { headers: authH });
+        if (!tr.ok) return json({ skipped: 'no target' }, 200, cors);
+        const target = fvFields((await tr.json()).fields);
+        if (decision === 'approved' && target.status !== 'approved') return json({ skipped: 'not approved' }, 200, cors);
+        if (decision === 'rejected' && target.status !== 'pending') return json({ skipped: 'not pending' }, 200, cors);
+        if (me.role === 'supervisor') {
+          const mine = supervisedIds(me);
+          if (!splitIds(target.assignedClass).some((c) => mine.includes(c))) return json({ error: 'not your class' }, 403, cors);
+        }
+        const out = await sendPush(pid, jsonH, tokensOf([target]), decision === 'approved'
+          ? { title: '✅ تم قبولك', body: 'طلب دخولك اتقبل — افتح البرنامج وسجّل دخول', url: env.APP_URL || '', tag: `decision-${targetUid}` }
+          : { title: '⛔ تم رفض طلبك', body: 'طلب دخولك اترفض — كلّم المسؤول لو ده حصل غلط', url: env.APP_URL || '', tag: `decision-${targetUid}` });
+        return json({ ok: true, ...out }, 200, cors);
+      }
+
+      // ===== خادم سجّل بيانات أوفلاين ومقدرش يرفعها في الخلفية → الأدمن + المشرفين على فصله =====
+      // بيتبعت من الـ Service Worker لما الرفع التلقائي يتعذّر. مرة كل 30 دقيقة للخادم الواحد.
+      if (url.pathname === '/offline-pending') {
+        if (me.status !== 'approved') return json({ error: 'not approved' }, 403, cors);
+        if (me.role === 'admin') return json({ skipped: 'admin' }, 200, cors);
+        const lastOff = me.lastOfflinePushAt ? Date.parse(me.lastOfflinePushAt) : 0;
+        if (Date.now() - lastOff < 30 * 60 * 1000) return json({ skipped: 'rate limited' }, 200, cors);
+        await patch({ lastOfflinePushAt: { timestampValue: new Date().toISOString() } });
+        const myClasses = splitIds(me.assignedClass);
+        const [admins, sups] = await Promise.all([
+          queryServants(pid, jsonH, [['status', 'approved'], ['role', 'admin']]),
+          queryServants(pid, jsonH, [['status', 'approved'], ['role', 'supervisor']]),
+        ]);
+        const mySups = sups.filter((u) => supervisedIds(u).some((c) => myClasses.includes(c)));
+        const names = await classNamesOf(pid, authH, myClasses);
+        const out = await sendPush(pid, jsonH, tokensOf([...admins, ...mySups]), {
+          title: '📴 بيانات أوفلاين لسه ماترفعتش',
+          body: `${me.name || 'خادم'}${names.length ? ' — ' + names.join(' + ') : ''}: محتاج يفتح البرنامج والنت شغال عشان البيانات تترفع`,
+          url: env.APP_URL || '', tag: `offline-${uid}`,
         });
         return json({ ok: true, ...out }, 200, cors);
       }

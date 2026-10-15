@@ -111,11 +111,21 @@ try {
 } catch (err) { /* مفيش مكتبات فايربيز في الـ SW ده: الرفع في الخلفية بيتحوّل لإشعار بس، والتطبيق نفسه شغال عادي */ }
 const SYNC_TAG = 'flush-pending-writes';
 const SYNC_FLAG_CACHE = APP + '-sync-flag';
+const PUSH_WORKER_URL = 'https://hdour-push.devidemele.workers.dev';
 const FB_APP_NAME = 'babyclass-app';
 const FB_CFG = { apiKey: "AIzaSyBWK4y1GjEBXMrzgKu3Hm3sSG5sd2ympEI", authDomain: "hdour-d66d8.firebaseapp.com", projectId: "hdour-d66d8", appId: "1:877333539513:web:5e36ff0a09a2924ae64968" };
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
 async function hasSyncFlag() { try { return !!(await (await caches.open(SYNC_FLAG_CACHE)).match('./__pending')); } catch (e) { return false; } }
 async function clearSyncFlag() { try { await (await caches.open(SYNC_FLAG_CACHE)).delete('./__pending'); } catch (e) {} }
+// بيبلّغ الـ Worker (من غير App Check، بتوثيق الـ ID token بس) عشان يبعت للأدمن/المشرف باسم الفصل إن فيه بيانات أوفلاين لسه ماترفعتش
+async function tellWorkerPending(token) {
+  if (!token) return;
+  try {
+    await withTimeout(fetch(PUSH_WORKER_URL + '/offline-pending', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: '{}'
+    }), 10000, 'worker-timeout');
+  } catch (e) {}
+}
 async function notifyPendingWrites() {
   try {
     await self.registration.showNotification('حضور', {
@@ -136,11 +146,11 @@ async function runFlush() {
     // فحص قراءة بس (من غير أي كتابة): لو السيرفر رفضها من غير App Check token يبقى الرفع من الـ SW هيتحذف بسبب الرفض، فنبطّل
     const token = await user.getIdToken();
     const probe = await withTimeout(fetch('https://firestore.googleapis.com/v1/projects/' + FB_CFG.projectId + '/databases/(default)/documents/config/meta', { headers: { Authorization: 'Bearer ' + token } }), 15000, 'probe-timeout');
-    if (probe.status === 401 || probe.status === 403) return { reason: 'blocked' };
+    if (probe.status === 401 || probe.status === 403) return { reason: 'blocked', token };
     if (probe.status >= 500) throw new Error('probe-' + probe.status);
     const db = app.firestore();
     try { await db.enablePersistence({ synchronizeTabs: false }); }
-    catch (err) { return { reason: 'persistence' }; }  // مش قادر يفتح القاعدة المحلية (التطبيق ممكن يكون فاتحها): منكتبش حاجة
+    catch (err) { return { reason: 'persistence', token }; }  // مش قادر يفتح القاعدة المحلية (التطبيق ممكن يكون فاتحها): منكتبش حاجة
     try {
       await withTimeout(db.waitForPendingWrites(), 40000, 'flush-timeout');
       return { done: true };
@@ -158,7 +168,7 @@ async function flushPending(lastChance) {
   let res = null;
   try { res = await runFlush(); } catch (err) { console.warn('background flush failed:', err); }
   if (res && res.done) { await clearSyncFlag(); return; }
-  if (res && res.reason) { await notifyPendingWrites(); return; } // مينفعش من الـ SW: نبلّغ المستخدم ونوقف
+  if (res && res.reason) { await Promise.all([notifyPendingWrites(), tellWorkerPending(res.token)]); return; } // مينفعش من الـ SW: نبلّغ المستخدم ونوقف
   if (lastChance) { await notifyPendingWrites(); return; }
   throw new Error('flush-failed'); // المتصفح هيعيد المحاولة بعد شوية
 }

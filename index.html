@@ -435,6 +435,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
   <div style="font-size:50px;margin-bottom:14px">⏳</div>
   <div class="auth-title" id="pending-title">في انتظار الموافقة</div>
   <div class="auth-sub" id="pending-msg" style="max-width:320px;text-align:center;margin-bottom:24px;line-height:1.7"></div>
+  <button class="btn-primary" id="pending-notif-btn" style="max-width:200px;margin-bottom:10px;display:none" onclick="enablePendingNotifications()">🔔 فعّل الإشعارات</button>
   <button class="btn-primary" style="max-width:200px" onclick="doLogout()">تسجيل خروج</button>
 </div>
 
@@ -2108,7 +2109,7 @@ window.toggleSettingsMenu = (e) => {
   const dd = document.getElementById('settings-dropdown');
   const opening = dd.style.display === 'none';
   document.getElementById('settings-dropdown-roles').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
-  document.getElementById('settings-dropdown-notif').style.display = (opening && canHandleRequests()) ? 'flex' : 'none';
+  document.getElementById('settings-dropdown-notif').style.display = opening ? 'flex' : 'none';
   updateNotifBtn();
   dd.style.display = opening ? 'block' : 'none';
   if (opening) document.addEventListener('click', closeSettingsMenuOutside);
@@ -2657,6 +2658,7 @@ function showPendingScreen(title, msg) {
   document.getElementById('pending-screen').style.display  = 'flex';
   document.getElementById('pending-title').textContent = title;
   document.getElementById('pending-msg').textContent   = msg;
+  { const nb = document.getElementById('pending-notif-btn'); if (nb) nb.style.display = 'none'; }
 }
 
 onAuthStateChanged(auth, async user => {
@@ -2724,6 +2726,7 @@ async function handleSignedInUser(user) {
     if (data.status === 'pending') {
       showPendingScreen('في انتظار الموافقة', 'طلبك اتبعت للأدمن ومسؤول فصلك وقيد المراجعة، هيتفعل حسابك بمجرد الموافقة ✋');
       watchOwnPendingStatus(user);
+      setupPushForPending(user);
       return;
     }
     if (data.status !== 'approved') {
@@ -6939,6 +6942,7 @@ window.approveServant = async (id, name, roleIds) => {
   try { await updateDoc(doc(db,'servants',id), { status:'approved' }); }
   catch(e) { console.error(e); showToast('مش مسموحلك تقبل الطلب ده — راجع صلاحيات Firestore', 'error'); return; }
   patchServantLocal(id, { status:'approved' });
+  callPushWorker('/servant-decision', { targetUid: id, decision: 'approved' });
   // لو اسمه كان مختار من قايمة أسماء الدور الجاهزة، بيتمسح من القايمة دلوقتي (بعد القبول) عشان محدش تاني يختاره
   if (name && roleIds) {
     try { for (const rid of String(roleIds).split(',').filter(Boolean)) { const v = nameVariantsIn(allRoles.find(x => x.id === rid), name); await updateDoc(doc(db,'roles',rid), { pendingNames: arrayRemove(...(v.length ? v : [name])) }); } loadRolesOnce(true); } catch(e) { console.error(e); }
@@ -6949,6 +6953,8 @@ window.rejectServant = async (id, name, roleIds) => {
   if (!canHandleRequest(cachedServants.find(x => x.id === id))) { showToast('الطلب ده مش من فصولك', 'error'); return; }
   if (!confirm(`هترفض طلب "${name}"؟`)) return;
   if (!rolesLoadedFlag) { try { await loadRolesOnce(); } catch(e) {} }
+  // الحساب هيتمسح، فلازم الإشعار يتبعت قبل المسح (الـ Worker بيقرا الـ token من الحساب). الأدمن بس هو اللي بيقدر يمسح.
+  if (currentRole === 'admin') await Promise.race([callPushWorker('/servant-decision', { targetUid: id, decision: 'rejected' }), new Promise(r => setTimeout(r, 4000))]);
   try { await deleteDoc(doc(db,'servants',id)); }
   catch(e) { console.error(e); showToast('مش مسموحلك ترفض الطلب ده — راجع صلاحيات Firestore', 'error'); return; }
   patchServantLocal(id, null);
@@ -7544,14 +7550,31 @@ function askNotifPermissionOnce() {
     if (localStorage.getItem(NOTIF_ASKED_KEY)) return;
     const ask = () => {
       try { localStorage.setItem(NOTIF_ASKED_KEY, '1'); } catch (e) {}
-      try { Notification.requestPermission().then(() => { try { updateNotifBtn(); } catch (e) {} }).catch(() => {}); } catch (e) {}
+      try { Notification.requestPermission().then(p => { try { if (p === 'granted' && auth.currentUser && isPushConfigured() && notifOn()) savePushToken(auth.currentUser, false).catch(() => {}); } catch (e) {} try { updateNotifBtn(); } catch (e) {} }).catch(() => {}); } catch (e) {}
     };
     document.addEventListener('pointerup', ask, { once: true });
   } catch (e) {}
 }
+// شاشة الانتظار: الخادم المعلّق محتاج يفعّل الإشعارات عشان يوصله إشعار القبول/الرفض حتى لو التطبيق مقفول
+window.enablePendingNotifications = async () => {
+  const user = auth.currentUser; if (!user) return;
+  try { localStorage.setItem(NOTIF_KEY, '1'); } catch (e) {}
+  try { await savePushToken(user, true); showToast('🔔 هنبلّغك أول ما طلبك يتراجع', 'success'); }
+  catch (e) {
+    showToast(e.message === 'denied' ? 'الإشعارات متقفلة من إعدادات الجهاز' : e.message === 'unsupported' ? (IS_IOS ? 'ضيف التطبيق للشاشة الرئيسية الأول' : 'الجهاز ده مش بيدعم الإشعارات') : 'مقدرتش أشغّل الإشعارات', 'error');
+  }
+};
+function setupPushForPending(user) {
+  try {
+    const b = document.getElementById('pending-notif-btn');
+    if (b) b.style.display = (isPushConfigured() && pushSupported()) ? 'inline-block' : 'none';
+    askNotifPermissionOnce();
+    if (isPushConfigured() && pushSupported() && notifOn() && Notification.permission === 'granted') savePushToken(user, false).catch(e => console.warn('pending push token:', e));
+  } catch (e) {}
+}
 function setupPushOnLogin(user) {
   askNotifPermissionOnce();
-  if (!isPushConfigured() || !pushSupported() || !notifOn() || !canHandleRequests()) return;
+  if (!isPushConfigured() || !pushSupported() || !notifOn()) return;
   savePushToken(user, false).catch(e => console.warn('push token refresh:', e));
 }
 // بيبعت للـ Worker طلب إشعار (الـ Worker بيتحقق من هوية المرسل وبيبني نص الإشعار من فايرستور)
