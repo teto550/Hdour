@@ -1354,7 +1354,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, EmailAuthProvider, reauthenticateWithCredential }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, Timestamp, writeBatch, increment, arrayUnion, arrayRemove }
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc, getDocs, getDocsFromCache, getDocFromCache, deleteDoc, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp, Timestamp, writeBatch, increment, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
@@ -1406,9 +1406,17 @@ function countReads(label, n) {
 }
 // بديل getDocs بيحسب القراءة الفعلية بس لو جايه من السيرفر (مش من الكاش المحلي)
 async function countedGetDocs(q, label) {
-  const snap = await getDocs(q);
+  let snap = null;
+  // أوفلاين: بنقرا من الكاش المحلي على طول بدل ما نستنى مهلة السيرفر
+  if (!navigator.onLine) { try { snap = await getDocsFromCache(q); } catch (e) {} }
+  if (!snap) snap = await getDocs(q);
   if (!(snap.metadata && snap.metadata.fromCache)) countReads(label, snap.docs.length);
   return snap;
+}
+// قراءة مستند واحد: أوفلاين من الكاش على طول (من غير ما نستنى مهلة السيرفر)
+async function getDocFast(ref) {
+  if (!navigator.onLine) { try { const s = await getDocFromCache(ref); if (s.exists()) return s; } catch (e) {} }
+  return getDoc(ref);
 }
 // بتتنادى جوه أي onSnapshot عشان تحسب أول نتيجة + أي تغيير جديد يوصل بعد كده (مش كل المستندات تاني كل مرة)
 function countSnapshotReads(label, snap) {
@@ -1914,6 +1922,22 @@ async function seedDefaultClassesIfEmpty() {
   } catch(e) { console.error('تعذّر تجهيز الفصول الافتراضية:', e); }
 }
 let classesSeedChecked = false;
+// قواعد فايرستور مبتعرفش أسماء الفصول، فالأدمن بيكتب ids فصول (بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1) في config/classGroups
+// عشان القواعد تخلّي الخدام اللي في التلات فصول دول يشوفوا بعض، وأي فصل تاني يشوف فصله بس
+let classGroupsSynced = '';
+async function syncClassGroups() {
+  if (currentRole !== 'admin' || !navigator.onLine) return;
+  const ids = babyKgClasses().map(c => c.id).sort();
+  const key = ids.join(',');
+  if (!ids.length || key === classGroupsSynced) return;
+  try {
+    const ref = doc(db,'config','classGroups');
+    const cur = await getDoc(ref);
+    const have = cur.exists() ? (cur.data().babyKg || []).slice().sort().join(',') : null;
+    if (have !== key) await setDoc(ref, { babyKg: ids, updatedAt: serverTimestamp() }, { merge: true });
+    classGroupsSynced = key;
+  } catch (e) { console.warn('classGroups sync failed:', e); }
+}
 function startClassesListener() {
   if (classesUnsub) return;
   classesUnsub = onSnapshot(collection(db,'classes'), snap => {
@@ -1922,6 +1946,7 @@ function startClassesListener() {
       .map(d => unifyKgEmoji({ id:d.id, ...d.data() }))
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
     if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
+    syncClassGroups();
     if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('attendanceClassTab')) ? localStorage.getItem('attendanceClassTab') : allClasses[0].id;
     const sk = readScopeClasses().join(',');
     if (sk !== lastReadScopeKey) {
@@ -1932,7 +1957,7 @@ function startClassesListener() {
     onClassesUpdated();
   }, err => console.error('classes listener error:', err));
 }
-function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; lastReadScopeKey = ''; classesSeedChecked = false; }
+function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; lastReadScopeKey = ''; classesSeedChecked = false; classGroupsSynced = ''; }
 // بيتنادى كل مرة قايمة الفصول تتغير (إضافة/تعديل/حذف فصل) — بيعيد بناء كل حتة في الواجهة معتمدة على الفصول
 function onClassesUpdated() {
   renderGlobalClassTabs();
@@ -2148,7 +2173,7 @@ function renderSettingsPeopleList() {
     return `<div class="servant-item" style="flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--border)">
       <div class="s-info">
         <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':s.role==='supervisor'?' 🗝️':''}</div>
-        <div class="s-sub">${assigned.length ? formatAssignedClasses(s.assignedClass) : 'كل الفصول'}</div>
+        <div class="s-sub">${assigned.length ? formatAssignedClasses(s.assignedClass) : (s.role === 'admin' ? 'كل الفصول' : 'من غير فصل ⚠️ (مش هيشوف مخدومين)')}</div>
       </div>
       ${adminBtn}
       ${servantRoleIds(s).map((rid, i, arr) => `<button class="action-btn" onclick="openServantRoleFromSettings('${rid}')">🗂 ${arr.length > 1 ? (allRoles.find(r => r.id === rid)?.name || 'دور ' + (i+1)) : 'دوره'}</button>`).join('')}
@@ -2623,7 +2648,7 @@ async function handleSignedInUser(user) {
   stopPendingSelfWatch();
   try {
     const ref = doc(db,'servants',user.uid);
-    let snap = await getDoc(ref);
+    let snap = await getDocFast(ref);
     if (!snap.exists()) {
       // حساب موجود في Firebase Auth بس مش مسجل كخادم في الموقع ده
       if (ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((user.email||'').toLowerCase())) {
@@ -2915,8 +2940,12 @@ function saveStudentsCache(rev, delRev, scope = '', maxUpdSeen = 0) {
 window.forceRefreshStudents = async () => { await loadStudents(true); showToast('تم تحديث المخدومين ✓','success'); };
 async function loadStudents(force = false) {
   await waitClassesReady();
+  // الخادم اللي لسه متوزعش على فصل مش بيشوف أي مخدومين (قواعد فايرستور بتمنع كمان)
+  if (currentRole !== 'admin' && !normalizeAssignedClasses(currentAssignedClass).length) {
+    allStudents = []; studentsLoaded = true; updateStuCount(); renderStudentsList(); return;
+  }
   let rev = null, delRev = 0, classFieldMig = false;
-  try { const m = await getDoc(doc(db,'config','meta')); const d = m.exists() ? m.data() : {}; rev = d.studentsRev || 0; delRev = d.studentsDelRev || 0; classFieldMig = !!d.classFieldMig; } catch(e) {}
+  try { const m = await getDocFast(doc(db,'config','meta')); const d = m.exists() ? m.data() : {}; rev = d.studentsRev || 0; delRev = d.studentsDelRev || 0; classFieldMig = !!d.classFieldMig; } catch(e) {}
   // الخادم بيقرا مخدومين نطاقه بس. المخدومين اللي لسه من غير فصل مش بيتجابوا بالاستعلام قبل ما الأدمن يعمل ترحيل واحد (classSection:'')، فلحد وقتها بنقرا الكل زي الأول
   let scope = readScopeClasses();
   if (!classFieldMig) scope = [];
@@ -2937,7 +2966,7 @@ async function loadStudents(force = false) {
   } else if (usable) {
     try {
       const since = Timestamp.fromMillis(Math.max(0, (cached.maxUpd || 0) - 60000)); // هامش دقيقة للأمان
-      const snap = await countedGetDocs(query(collection(db,'students'), where('updatedAt','>=', since)), 'students (تحديث بالتغييرات بس)');
+      const snap = await countedGetDocs(scope.length ? query(collection(db,'students'), where('updatedAt','>=', since), where('classSection','in', scope)) : query(collection(db,'students'), where('updatedAt','>=', since)), 'students (تحديث بالتغييرات بس)');
       const map = new Map(cached.list.map(x => [x.id, x]));
       let seen = cached.maxUpd || 0;
       snap.docs.forEach(d => { const x = { id:d.id, ...d.data() }; seen = Math.max(seen, tsMs(x.updatedAt)); if (inScope(x)) map.set(d.id, x); else map.delete(d.id); });
@@ -4066,7 +4095,7 @@ async function _ensureRecentAttendance(weeks) {
     // الـ index المركب (classSection + date) لسه مش متعمل: بنرجع للقراءة القديمة ولينك إنشاء الـ index بيظهر في الـ console
     if (!scope.length) throw e;
     console.warn('أنشئ index مركب لـ attendance (classSection + date):', e && e.message);
-    snap = await countedGetDocs(query(collection(db,'attendance'), where('date','>=', qFrom)), 'attendance (نطاق زمني - بدون index)'); usedKey = '';
+    snap = await countedGetDocs(query(collection(db,'attendance'), where('classSection','in', scope)), 'attendance (نطاق زمني - بدون index)'); usedKey = '';
   }
   for (const k of Object.keys(data)) if (k >= qFrom) delete data[k]; // الأيام اللي هنقراها تاني بتتستبدل بالكامل (لو حد اتشال حضوره)
   snap.docs.forEach(x => { const v = x.data(); if (!data[v.date]) data[v.date] = {}; data[v.date][v.studentId] = x.id; });
@@ -4081,9 +4110,10 @@ async function _ensureRecentAttendance(weeks) {
 }
 const studentHist = {};
 async function loadStudentHist(id) {
+  const hs = currentRole !== 'admin' ? readScopeClasses() : [];
   const [a, v] = await Promise.all([
-    countedGetDocs(query(collection(db,'attendance'), where('studentId','==',id)), 'attendance (بروفايل مخدوم)'),
-    countedGetDocs(query(collection(db,'verses'), where('studentId','==',id)), 'verses (بروفايل مخدوم)')]);
+    countedGetDocs(hs.length ? query(collection(db,'attendance'), where('studentId','==',id), where('classSection','in', hs)) : query(collection(db,'attendance'), where('studentId','==',id)), 'attendance (بروفايل مخدوم)'),
+    countedGetDocs(hs.length ? query(collection(db,'verses'), where('studentId','==',id), where('classSection','in', hs)) : query(collection(db,'verses'), where('studentId','==',id)), 'verses (بروفايل مخدوم)')]);
   const H = { att:{}, ver:{}, ts: Date.now() };
   a.docs.forEach(x => { H.att[x.data().date] = x.id; });
   v.docs.forEach(x => { const y = x.data(); H.ver[y.date] = { id:x.id, verse:y.verse||'' }; });
@@ -4260,7 +4290,7 @@ async function _ensureRecentVerses(weeks) {
     } catch(e) {
       if (!scope.length) throw e;
       console.warn('أنشئ index مركب لـ verses (classSection + date):', e && e.message);
-      snap = await countedGetDocs(query(collection(db,'verses'), ...cons), 'verses (نطاق زمني - بدون index)'); usedKey = '';
+      snap = await countedGetDocs(query(collection(db,'verses'), where('classSection','in', scope)), 'verses (نطاق زمني - بدون index)'); usedKey = '';
     }
   }
   if (snap) {
@@ -4268,6 +4298,7 @@ async function _ensureRecentVerses(weeks) {
     snap.docs.forEach(x => {
       const v = x.data();
       if (usedKey === '' && scope.length && !scope.includes(v.classSection || clsOf(v.studentId))) return;
+      if (usedKey === '' && (v.date < qFrom || (liveToday && v.date >= nowKey))) return; // القراءة البديلة من غير فلتر تاريخ
       if (!data[v.date]) data[v.date] = {};
       data[v.date][v.studentId] = { id: x.id, verse: v.verse || '' };
     });
@@ -4311,7 +4342,18 @@ async function loadAllVerses() {
 
 async function markPresent(studentId) {
   if (todayAttendance[studentId]) return false;
-  const ref = await addDoc(collection(db,'attendance'), { studentId, date:todayKey(), classSection: clsOf(studentId), timestamp:serverTimestamp() });
+  const ref = doc(collection(db,'attendance'));
+  const day = todayKey();
+  // الكتابة بتتسجّل محليًا فورًا وبتتبعت لما النت يرجع — مش بنستنى رد السيرفر عشان التسجيل يشتغل أوفلاين
+  setDoc(ref, { studentId, date:day, classSection: clsOf(studentId), timestamp:serverTimestamp() }).catch(e => {
+    console.error('attendance write failed:', e);
+    if (todayAttendance[studentId] === ref.id) {
+      delete todayAttendance[studentId]; delete todayAttendanceTime[studentId];
+      if (allAttendance[day]) delete allAttendance[day][studentId];
+      updateStats(); renderTodayList();
+    }
+    showToast('الحضور ماتسجلش على السيرفر — مفيش صلاحية', 'error');
+  });
   todayAttendance[studentId] = ref.id;
   todayAttendanceTime[studentId] = Date.now();
   if (!allAttendance[todayKey()]) allAttendance[todayKey()] = {};
@@ -4326,7 +4368,8 @@ window.showVerseModal = async function(studentId) {
   const today = verseKey();
   if (todayVerses[studentId]) return; // already marked
   try {
-    const ref = await addDoc(collection(db,'verses'), { studentId, date: today, verse: '', classSection: clsOf(studentId), timestamp: serverTimestamp() });
+    const ref = doc(collection(db,'verses'));
+    setDoc(ref, { studentId, date: today, verse: '', classSection: clsOf(studentId), timestamp: serverTimestamp() }).catch(e => verseWriteFailed(studentId, ref.id, today, e)); // من غير await عشان يشتغل أوفلاين
     todayVerses[studentId] = { id: ref.id, verse: '' };
     todayVerseTime[studentId] = Date.now();
     if (!allVerses[today]) allVerses[today] = {};
@@ -4342,11 +4385,18 @@ window.showVerseModal = async function(studentId) {
   }
 };
 
+function verseWriteFailed(studentId, id, day, e) {
+  console.error('verse write failed:', e);
+  if (todayVerses[studentId] && todayVerses[studentId].id === id) { delete todayVerses[studentId]; delete todayVerseTime[studentId]; }
+  if (allVerses[day]) delete allVerses[day][studentId];
+  renderTodayList();
+  showToast('السماع ماتسجلش على السيرفر — مفيش صلاحية', 'error');
+}
 window.removeVerse = async (studentId) => {
   const entry = todayVerses[studentId];
   if (!entry) return;
   if (!confirm('هتشيل السماع؟')) return;
-  await deleteDoc(doc(db,'verses',entry.id));
+  deleteDoc(doc(db,'verses',entry.id)).catch(e => console.error('verse delete failed:', e)); // من غير await عشان يشتغل أوفلاين
   delete todayVerses[studentId];
   delete todayVerseTime[studentId];
   const today = verseKey();
@@ -4361,7 +4411,7 @@ window.removeAttendance = async (studentId) => {
   const s = allStudents.find(x => x.id === studentId);
   if (!confirm(`هتشيل حضور "${s?.name}" من النهارده؟`)) return;
   const docId = todayAttendance[studentId];
-  if (docId) await deleteDoc(doc(db,'attendance',docId));
+  if (docId) deleteDoc(doc(db,'attendance',docId)).catch(e => console.error('attendance delete failed:', e)); // من غير await عشان يشتغل أوفلاين
   delete todayAttendance[studentId];
   delete todayAttendanceTime[studentId];
   if (allAttendance[todayKey()]) delete allAttendance[todayKey()][studentId];
@@ -5169,7 +5219,8 @@ async function registerVerseVoice(studentId) {
   const today = verseKey();
   if (todayVerses[studentId]) return;
   try {
-    const ref = await addDoc(collection(db,'verses'), { studentId, date: today, verse: '', classSection: clsOf(studentId), timestamp: serverTimestamp() });
+    const ref = doc(collection(db,'verses'));
+    setDoc(ref, { studentId, date: today, verse: '', classSection: clsOf(studentId), timestamp: serverTimestamp() }).catch(e => verseWriteFailed(studentId, ref.id, today, e)); // من غير await عشان يشتغل أوفلاين
     todayVerses[studentId] = { id: ref.id, verse: '' };
     todayVerseTime[studentId] = Date.now();
     if (!allVerses[today]) allVerses[today] = {};
@@ -7558,7 +7609,18 @@ document.addEventListener('pointerdown', e => {
 <script>
 // ===== تثبيت التطبيق =====
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).then(reg => {
+      // أول مرة: نخلّي الـ Service Worker يحفظ كل اللي الصفحة حمّلته (سكربتات فايربيز والخطوط…) عشان التطبيق يفتح أوفلاين من أول جلسة
+      setTimeout(() => {
+        try {
+          const urls = [...new Set([location.href.split('#')[0], ...performance.getEntriesByType('resource').map(r => r.name)])].filter(u => /^https?:/.test(u));
+          const sw = navigator.serviceWorker.controller || reg.active;
+          if (sw) sw.postMessage({ type: 'CACHE_URLS', urls });
+        } catch (e) {}
+      }, 4000);
+    }).catch(() => {});
+  });
 }
 let deferredPrompt;
 const IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -7616,6 +7678,17 @@ document.getElementById('install-btn').addEventListener('click', async () => {
 });
 window.addEventListener('appinstalled', hideInstallBanner);
 checkShowBanner();
+</script>
+<div id="offline-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:2147483000;background:#b9770e;color:#fff;text-align:center;font:700 12px Cairo,sans-serif;padding:6px 10px;padding-top:calc(6px + env(safe-area-inset-top,0px));direction:rtl"></div>
+<script>
+(function () {
+  var bar = document.getElementById('offline-bar'), t = null;
+  function show(msg, bg, ms) { bar.textContent = msg; bar.style.background = bg; bar.style.display = 'block'; clearTimeout(t); if (ms) t = setTimeout(function () { bar.style.display = 'none'; }, ms); }
+  function off() { show('📴 مفيش نت — اللي تسجّله بيتحفظ على الموبايل ويتبعت لوحده لما النت يرجع', '#b9770e', 0); }
+  window.addEventListener('offline', off);
+  window.addEventListener('online', function () { show('✅ رجع النت — بنبعت اللي اتسجّل', '#1e8449', 3500); });
+  if (!navigator.onLine) off();
+})();
 </script>
 </body>
 </html>
