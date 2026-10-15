@@ -3095,6 +3095,14 @@ window.removeDuplicateStudents = async () => {
           }
         }
       }
+      // الخانات الفاضية في السجل اللي هيفضل بتتملى من المكررين قبل ما يتمسحوا
+      const isEmpty = x => Array.isArray(x) ? !x.length : !x;
+      const fill = {};
+      for (const dr of p.drop) for (const [k, v] of Object.entries(dr)) {
+        if (['id', 'name', 'createdAt', 'updatedAt'].includes(k)) continue;
+        if (isEmpty(p.keep[k]) && !isEmpty(v) && !(k in fill)) fill[k] = v;
+      }
+      if (Object.keys(fill).length) await updateDoc(doc(db, 'students', p.keep.id), { ...fill, updatedAt: serverTimestamp() });
       for (const dr of p.drop) { await deleteDoc(doc(db, 'students', dr.id)); removed++; }
     }
   } catch(e) {
