@@ -116,10 +116,10 @@ const FB_CFG = { apiKey: "AIzaSyBWK4y1GjEBXMrzgKu3Hm3sSG5sd2ympEI", authDomain: 
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
 async function hasSyncFlag() { try { return !!(await (await caches.open(SYNC_FLAG_CACHE)).match('./__pending')); } catch (e) { return false; } }
 async function clearSyncFlag() { try { await (await caches.open(SYNC_FLAG_CACHE)).delete('./__pending'); } catch (e) {} }
-async function notifyPendingWrites() {
+async function notifyPendingWrites(why) {
   try {
     await self.registration.showNotification('حضور', {
-      body: 'فيه بيانات لسه ماترفعتش. افتح البرنامج والنت شغال عشان تترفع.',
+      body: 'فيه بيانات لسه ماترفعتش. افتح البرنامج والنت شغال عشان تترفع.' + (why ? ' (' + why + ')' : ''),
       icon: 'icon-513.png', badge: 'badge-96.png', tag: APP + '-pending-sync', dir: 'rtl', lang: 'ar', data: { url: './' }
     });
   } catch (e) {}
@@ -158,8 +158,8 @@ async function flushPending(lastChance) {
   let res = null;
   try { res = await runFlush(); } catch (err) { console.warn('background flush failed:', err); }
   if (res && res.done) { await clearSyncFlag(); return; }
-  if (res && res.reason) { await notifyPendingWrites(); return; } // مينفعش من الـ SW: نبلّغ المستخدم ونوقف
-  if (lastChance) { await notifyPendingWrites(); return; }
+  if (res && res.reason) { await notifyPendingWrites(res.reason); return; } // مينفعش من الـ SW: نبلّغ المستخدم ونوقف
+  if (lastChance) { await notifyPendingWrites('retry'); return; }
   throw new Error('flush-failed'); // المتصفح هيعيد المحاولة بعد شوية
 }
 self.addEventListener('sync', event => {
