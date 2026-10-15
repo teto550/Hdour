@@ -568,6 +568,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div id="tab-students" style="display:none">
       <button id="add-student-toggle-btn" class="btn-primary" onclick="toggleAddStudentForm()" style="margin-bottom:14px">➕ إضافة مخدوم</button>
       <button class="btn-primary" id="import-open-btn" onclick="openImportModal()" style="display:none;margin-bottom:14px;background:var(--surface2);color:var(--text);border:1px solid var(--border)">📥 رفع شيت مخدومين (Excel)</button>
+      <button class="btn-primary" id="dedupe-open-btn" onclick="removeDuplicateStudents()" style="display:none;margin-bottom:14px;background:var(--surface2);color:var(--text);border:1px solid var(--border)">🧹 حذف الأسماء المكررة</button>
       <div class="add-form" id="add-student-fields" style="display:none">
         <p class="section-title" style="margin-bottom:14px">إضافة مخدوم جديد</p>
         <label class="field-label">الاسم *</label>
@@ -3052,6 +3053,62 @@ async function migrateClassField() {
   } catch(e) { console.error('class field migration failed:', e); }
 }
 
+// فحص تكرار الاسم على السيرفر (بيغطي كل الفصول حتى لو الخادم مقيّد بفصله)
+async function findNameOnServer(name, exceptId) {
+  try {
+    const snap = await countedGetDocs(query(collection(db,'students'), where('name','==',name)), 'students (فحص تكرار الاسم)');
+    const hit = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(x => x.id !== exceptId);
+    return hit || null;
+  } catch(e) { console.error('dup check failed:', e); return null; }
+}
+const dupMsg = d => `الاسم "${d.name}" مسجل قبل كده${d.classSection ? ' (' + classLabel(d.classSection) + ')' : ''} — مينفعش تكرار الاسم`;
+
+// حذف الأسماء المكررة القديمة (أدمن بس): بيفضل أكمل سجل، وحضور/آيات المحذوفين بيتنقلوا ليه
+window.removeDuplicateStudents = async () => {
+  if (currentRole !== 'admin') { showToast('للأدمن بس', 'error'); return; }
+  await ensureAllClassesForAdmin();
+  const groups = new Map();
+  allStudents.forEach(s => { const k = normalizeArabic(s.name); if (!k) return; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); });
+  const rich = s => Object.entries(s).filter(([k, v]) => !['id','name','createdAt','updatedAt'].includes(k) && (Array.isArray(v) ? v.length : !!v)).length;
+  const plan = [];
+  groups.forEach(list => {
+    if (list.length < 2) return;
+    const sorted = [...list].sort((a, b) => (rich(b) - rich(a)) || (tsMs(a.createdAt) - tsMs(b.createdAt)));
+    plan.push({ keep: sorted[0], drop: sorted.slice(1) });
+  });
+  if (!plan.length) { showToast('مفيش أسماء مكررة ✓', 'success'); return; }
+  const dropCount = plan.reduce((n, p) => n + p.drop.length, 0);
+  const sample = plan.slice(0, 8).map(p => '• ' + p.keep.name + ' (' + (p.drop.length + 1) + ' مرات)').join('\n');
+  if (!confirm(`لقيت ${plan.length} اسم مكرر — هيتحذف ${dropCount} سجل زيادة ويفضل سجل واحد لكل اسم (الأكمل بيانات).\nحضور وآيات السجلات المحذوفة بتتنقل للسجل اللي هيفضل.\n\n${sample}${plan.length > 8 ? '\n…' : ''}\n\nتكمّل؟`)) return;
+  showToast('جاري الحذف… متقفلش الصفحة', 'info');
+  let removed = 0, moved = 0, merged = 0;
+  try {
+    for (const p of plan) {
+      for (const col of ['attendance', 'verses']) {
+        const have = new Set((await countedGetDocs(query(collection(db, col), where('studentId', '==', p.keep.id)), col + ' (دمج مكررين)')).docs.map(d => d.data().date));
+        for (const dr of p.drop) {
+          const snap = await countedGetDocs(query(collection(db, col), where('studentId', '==', dr.id)), col + ' (دمج مكررين)');
+          for (const d of snap.docs) {
+            const dt = d.data().date;
+            if (have.has(dt)) { await deleteDoc(d.ref); merged++; }
+            else { await updateDoc(d.ref, { studentId: p.keep.id }); have.add(dt); moved++; }
+          }
+        }
+      }
+      for (const dr of p.drop) { await deleteDoc(doc(db, 'students', dr.id)); removed++; }
+    }
+  } catch(e) {
+    console.error(e);
+    showToast(`وقف في النص بعد حذف ${removed} — شغّل الزرار تاني يكمّل`, 'error');
+    bumpStudentsRev(true);
+    return;
+  }
+  bumpStudentsRev(true);
+  logActivity('حذف أسماء مكررة', `${removed} سجل`);
+  showToast(`تم حذف ${removed} اسم مكرر ✓ (نُقل ${moved} حضور/آية)`, 'success');
+  setTimeout(() => location.reload(), 1500);
+};
+
 window.addStudent = async () => {
   const name = canonicalizeName(document.getElementById('new-name').value);
   const dob = document.getElementById('new-dob').value || '';
@@ -3061,7 +3118,9 @@ window.addStudent = async () => {
   const err = validateStudentData({ name, dob, address, father, mother, student, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
   const dup = allStudents.find(s => normalizeArabic(s.name) === normalizeArabic(name));
-  if (dup) { showToast(`الاسم "${dup.name}" مسجل قبل كده${dup.classSection ? ' (' + classLabel(dup.classSection) + ')' : ''} — مينفعش تكرار الاسم`, 'error'); return; }
+  if (dup) { showToast(dupMsg(dup), 'error'); return; }
+  const dupSrv = await findNameOnServer(name, null);
+  if (dupSrv) { showToast(dupMsg(dupSrv), 'error'); return; }
   const allowed = getAllowedAssignedClasses();
   const targetClass = (currentRole !== 'admin' && allowed.length) ? (allowed.includes(currentClassTab) ? currentClassTab : allowed[0]) : '';
   const data = {
@@ -3609,6 +3668,7 @@ function updateStuCount() {
 function renderStudentsList() {
   const cont = document.getElementById('students-list');
   const impBtn = document.getElementById('import-open-btn'); if (impBtn) impBtn.style.display = currentRole === 'admin' ? '' : 'none';
+  const dedBtn = document.getElementById('dedupe-open-btn'); if (dedBtn) dedBtn.style.display = currentRole === 'admin' ? '' : 'none';
   stuListCount = null;
   updateStuCount();
   if (!allStudents.length) {
@@ -7484,7 +7544,11 @@ window.saveEditStudent = async () => {
   if (err) { showToast(err, 'error'); return; }
   const prev = allStudents.find(s => s.id === id);
   const dupEdit = allStudents.find(s => s.id !== id && normalizeArabic(s.name) === normalizeArabic(name));
-  if (dupEdit) { showToast(`الاسم "${dupEdit.name}" مسجل قبل كده${dupEdit.classSection ? ' (' + classLabel(dupEdit.classSection) + ')' : ''} — مينفعش تكرار الاسم`, 'error'); return; }
+  if (dupEdit) { showToast(dupMsg(dupEdit), 'error'); return; }
+  if (!prev || normalizeArabic(prev.name) !== normalizeArabic(name)) {
+    const dupEditSrv = await findNameOnServer(name, id);
+    if (dupEditSrv) { showToast(dupMsg(dupEditSrv), 'error'); return; }
+  }
   const visitNotes = [];
   if (document.getElementById('edit-note-traveling').checked)   visitNotes.push('traveling');
   if (document.getElementById('edit-note-friday').checked)      visitNotes.push('friday');
