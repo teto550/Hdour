@@ -3061,7 +3061,7 @@ window.addStudent = async () => {
   const err = validateStudentData({ name, dob, address, father, mother, student, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
   const dup = allStudents.find(s => normalizeArabic(s.name) === normalizeArabic(name));
-  if (dup && !confirm(`فيه مخدوم بنفس الاسم "${dup.name}" مسجل قبل كده. تحب تضيفه تاني كاسم مكرر؟`)) return;
+  if (dup) { showToast(`الاسم "${dup.name}" مسجل قبل كده${dup.classSection ? ' (' + classLabel(dup.classSection) + ')' : ''} — مينفعش تكرار الاسم`, 'error'); return; }
   const allowed = getAllowedAssignedClasses();
   const targetClass = (currentRole !== 'admin' && allowed.length) ? (allowed.includes(currentClassTab) ? currentClassTab : allowed[0]) : '';
   const data = {
@@ -7483,6 +7483,8 @@ window.saveEditStudent = async () => {
   const err = validateStudentData({ name, dob, address, father, mother, student, others, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
   const prev = allStudents.find(s => s.id === id);
+  const dupEdit = allStudents.find(s => s.id !== id && normalizeArabic(s.name) === normalizeArabic(name));
+  if (dupEdit) { showToast(`الاسم "${dupEdit.name}" مسجل قبل كده${dupEdit.classSection ? ' (' + classLabel(dupEdit.classSection) + ')' : ''} — مينفعش تكرار الاسم`, 'error'); return; }
   const visitNotes = [];
   if (document.getElementById('edit-note-traveling').checked)   visitNotes.push('traveling');
   if (document.getElementById('edit-note-friday').checked)      visitNotes.push('friday');
