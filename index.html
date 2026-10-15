@@ -7535,7 +7535,22 @@ async function removePushToken(user) {
   try { localStorage.removeItem(pushTokenKey(user.uid)); } catch (e) {}
 }
 // بعد تسجيل الدخول: لو الإذن متاح والإشعارات شغّالة نجدّد الـ token بهدوء (من غير سؤال)
+// الإشعار اللي بيطلع لما فيه بيانات لسه ماترفعتش بيحتاج إذن إشعارات على جهاز كل خادم (مش الأدمن بس).
+// بنطلب الإذن مرة واحدة بس على كل جهاز، أول لمسة بعد الدخول (المتصفح بيرفض الطلب من غير لمسة).
+const NOTIF_ASKED_KEY = 'hdour_notif_asked_v1';
+function askNotifPermissionOnce() {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'default') return;
+    if (localStorage.getItem(NOTIF_ASKED_KEY)) return;
+    const ask = () => {
+      try { localStorage.setItem(NOTIF_ASKED_KEY, '1'); } catch (e) {}
+      try { Notification.requestPermission().then(() => { try { updateNotifBtn(); } catch (e) {} }).catch(() => {}); } catch (e) {}
+    };
+    document.addEventListener('pointerup', ask, { once: true });
+  } catch (e) {}
+}
 function setupPushOnLogin(user) {
+  askNotifPermissionOnce();
   if (!isPushConfigured() || !pushSupported() || !notifOn() || !canHandleRequests()) return;
   savePushToken(user, false).catch(e => console.warn('push token refresh:', e));
 }
