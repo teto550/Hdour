@@ -2973,12 +2973,15 @@ function bumpStudentsRev(deleted = false) {
   if (deleted) bumpDel = true;
   clearTimeout(bumpTimer);
   // بنجمّع أي كتابات ورا بعض (زي إضافة مجموعة للجروب) في كتابة واحدة على config/meta
-  bumpTimer = setTimeout(async () => {
-    const upd = { studentsRev: increment(1) };
-    if (bumpDel) upd.studentsDelRev = increment(1);
-    bumpDel = false;
-    try { await setDoc(doc(db,'config','meta'), upd, { merge:true }); } catch(e) {}
-  }, 2000);
+  bumpTimer = setTimeout(flushStudentsRev, 2000);
+}
+// كتابة العدّاد فورًا (من غير انتظار الـ debounce) — لازم قبل أي reload عشان الكاش القديم ميرجّعش المحذوفين
+async function flushStudentsRev() {
+  clearTimeout(bumpTimer); bumpTimer = null;
+  const upd = { studentsRev: increment(1) };
+  if (bumpDel) upd.studentsDelRev = increment(1);
+  bumpDel = false;
+  try { await setDoc(doc(db,'config','meta'), upd, { merge:true }); } catch(e) { console.error('rev bump failed:', e); }
 }
 function tsMs(t) {
   if (!t) return 0;
@@ -3082,6 +3085,15 @@ window.removeDuplicateStudents = async () => {
   if (!confirm(`لقيت ${plan.length} اسم مكرر — هيتحذف ${dropCount} سجل زيادة ويفضل سجل واحد لكل اسم (الأكمل بيانات).\nحضور وآيات السجلات المحذوفة بتتنقل للسجل اللي هيفضل.\n\n${sample}${plan.length > 8 ? '\n…' : ''}\n\nتكمّل؟`)) return;
   showToast('جاري الحذف… متقفلش الصفحة', 'info');
   let removed = 0, moved = 0, merged = 0;
+  const droppedIds = new Set();
+  // بعد أي حذف (كامل أو واقف في النص): نشيل المحذوفين من الذاكرة والكاش ونكتب العدّاد فورًا قبل أي reload
+  const syncAfterDelete = async () => {
+    if (!droppedIds.size) return;
+    allStudents = allStudents.filter(s => !droppedIds.has(s.id));
+    try { await idbSet(STU_KEY, ''); localStorage.removeItem(STU_KEY); } catch(e) {}
+    bumpDel = true;
+    await flushStudentsRev();
+  };
   try {
     for (const p of plan) {
       for (const col of ['attendance', 'verses']) {
@@ -3103,15 +3115,16 @@ window.removeDuplicateStudents = async () => {
         if (isEmpty(p.keep[k]) && !isEmpty(v) && !(k in fill)) fill[k] = v;
       }
       if (Object.keys(fill).length) await updateDoc(doc(db, 'students', p.keep.id), { ...fill, updatedAt: serverTimestamp() });
-      for (const dr of p.drop) { await deleteDoc(doc(db, 'students', dr.id)); removed++; }
+      for (const dr of p.drop) { await deleteDoc(doc(db, 'students', dr.id)); droppedIds.add(dr.id); removed++; }
     }
   } catch(e) {
     console.error(e);
+    await syncAfterDelete();
+    updateStuCount(); renderStudentsList();
     showToast(`وقف في النص بعد حذف ${removed} — شغّل الزرار تاني يكمّل`, 'error');
-    bumpStudentsRev(true);
     return;
   }
-  bumpStudentsRev(true);
+  await syncAfterDelete();
   logActivity('حذف أسماء مكررة', `${removed} سجل`);
   showToast(`تم حذف ${removed} اسم مكرر ✓ (نُقل ${moved} حضور/آية)`, 'success');
   setTimeout(() => location.reload(), 1500);
