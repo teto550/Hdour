@@ -1035,10 +1035,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <div class="modal-stat"><div class="modal-stat-num" id="prof-count" style="color:var(--success)">0</div><div class="modal-stat-label">مرات الحضور</div></div>
       <div class="modal-stat"><div class="modal-stat-num" id="prof-last" style="color:var(--accent);font-size:14px">—</div><div class="modal-stat-label">آخر حضور</div></div>
     </div>
-    <div style="padding:0 16px">
-      <div class="section-title" style="margin-bottom:8px">الفصل</div>
-      <div class="filter-row" id="prof-class-chips" style="margin-bottom:2px"></div>
-    </div>
     <div id="prof-details" style="padding:16px"></div>
   </div>
 </div>
@@ -1076,6 +1072,13 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </select>
       <label class="field-label">الفصل</label>
       <select class="field-select" id="edit-class"></select>
+      <div id="edit-add-class-wrap" style="margin:-4px 0 14px">
+        <div id="edit-linked-note" style="display:none;font-size:12px;color:var(--text-dim);margin-bottom:6px;line-height:1.7"></div>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <select class="field-select" id="edit-add-class" style="margin-bottom:0;flex:1;min-width:0"></select>
+          <button type="button" id="edit-add-class-btn" onclick="addStudentSecondClass()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:0 12px;cursor:pointer;white-space:nowrap">➕ زوّده فصل تاني</button>
+        </div>
+      </div>
       <label class="field-label">أرقام التليفون * <span style="font-weight:400">(لازم رقم واحد على الأقل)</span></label>
       <div class="edit-phones-wrap">
         <input type="tel" id="edit-phone-father" class="field-input" placeholder="تليفون الأب" dir="ltr" style="margin-bottom:8px">
@@ -1902,6 +1905,8 @@ function unifyKgEmoji(c) {
   return isKg ? { ...c, emoji: KG_CLASS_EMOJI } : c;
 }
 function classById(id) { return allClasses.find(c => c.id === id); }
+// يوم حضور الفصل: 5 = الجمعة، وأي حاجة تانية (أو فصل قديم من غير الحقل) = الخميس
+function classServiceDay(id) { return Number((classById(id) || {}).serviceDay) === 5 ? 5 : 4; }
 function classLabel(sec) { if (!sec) return 'بدون فصل'; const c = classById(sec); return c ? c.name : sec; }
 function classEmoji(sec) { if (!sec) return '؟'; const c = classById(sec); return c ? (c.emoji || '📘') : '❔'; }
 function classPalette(sec) {
@@ -1976,6 +1981,7 @@ function startClassesListener() {
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
     if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
     syncClassGroups();
+    if (todayVersesUnsub && verseListenKey && liveVerseKeys().join(',') !== verseListenKey) restartTodayListeners();
     if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('hdour_attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('hdour_attendanceClassTab')) ? localStorage.getItem('hdour_attendanceClassTab') : allClasses[0].id;
     const sk = readScopeClasses().join(',');
     if (sk !== lastReadScopeKey) {
@@ -2064,7 +2070,7 @@ function renderClassesAdminList() {
   if (!allClasses.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لا يوجد فصول بعد</div>`; return; }
   cont.innerHTML = allClasses.map(c => `
     <div class="tpl-chip">
-      <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name}</span>
+      <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name} <small style="opacity:.6">(${classServiceDay(c.id) === 5 ? 'جمعة' : 'خميس'})</small></span>
       <button class="tpl-chip-del" onclick="editClassPrompt('${c.id}')" title="تعديل" style="margin-left:4px">✏️</button>
       <button class="tpl-chip-del" onclick="deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">✕</button>
     </div>`).join('');
@@ -2073,8 +2079,10 @@ window.addClassPrompt = async () => {
   const name = (prompt('اسم الفصل الجديد؟ (مثلاً: فصل ج)') || '').trim();
   if (!name) return;
   const emoji = (prompt('إيموجي للفصل؟ (اختياري، سيب فاضي لو مش عايز)') || '').trim();
+  const dayIn = (prompt('يوم حضور الفصل؟ اكتب 4 للخميس أو 5 للجمعة', '4') || '4').trim();
+  const serviceDay = (dayIn === '5' || dayIn === '٥') ? 5 : 4;
   try {
-    await addDoc(collection(db,'classes'), { name, emoji, order: allClasses.length, createdAt: serverTimestamp() });
+    await addDoc(collection(db,'classes'), { name, emoji, serviceDay, order: allClasses.length, createdAt: serverTimestamp() });
     showToast(`تم إضافة "${name}" ✓`, 'success');
   } catch(e) { console.error(e); showToast('حصل خطأ أثناء الإضافة', 'error'); }
 };
@@ -2083,8 +2091,10 @@ window.editClassPrompt = async (id) => {
   const name = (prompt('اسم الفصل:', c.name) || '').trim();
   if (!name) return;
   const emoji = (prompt('إيموجي الفصل:', c.emoji||'') || '').trim();
+  const dayIn = (prompt('يوم حضور الفصل؟ اكتب 4 للخميس أو 5 للجمعة', String(classServiceDay(id))) || String(classServiceDay(id))).trim();
+  const serviceDay = (dayIn === '5' || dayIn === '٥') ? 5 : 4;
   try {
-    await updateDoc(doc(db,'classes',id), { name, emoji });
+    await updateDoc(doc(db,'classes',id), { name, emoji, serviceDay });
     showToast('تم تعديل الفصل ✓', 'success');
   } catch(e) { console.error(e); showToast('حصل خطأ أثناء التعديل', 'error'); }
 };
@@ -2243,11 +2253,15 @@ const todayKey = () => toLocalDateKey(new Date());
 // الآيات: أسبوعها من السبت الصبح لحد الجمعة بالليل، والقايمة بترجع فاضية كل يوم سبت.
 // وبتتسجل على حضور الأسبوع اللي قبله = تاريخ الخميس اللي قبل السبت بتاع الأسبوع ده (سبت 03/10 → جمعة 09/10 = خميس 01/10).
 // التسجيل مفتوح طول الأسبوع.
-const verseKey = () => {
+// كل فصل ليه يوم حضور (serviceDay: 4 = خميس، 5 = جمعة). التسميع بيتسجل على يوم حضور الفصل بتاع الأسبوع اللي قبله:
+// خميس → الخميس اللي قبل السبت، جمعة → الجمعة اللي قبل السبت.
+const verseKeyFor = (sd) => {
   const d = new Date();
-  d.setDate(d.getDate() - ((d.getDay() + 1) % 7) - 2); // رجوع لأقرب سبت، وبعدين يومين لورا = خميس
+  d.setDate(d.getDate() - ((d.getDay() + 1) % 7) - (6 - (sd === 5 ? 5 : 4))); // رجوع لأقرب سبت، وبعدين لورا لحد يوم حضور الفصل
   return toLocalDateKey(d);
 };
+const verseKey = (classId) => verseKeyFor(classServiceDay(classId));
+const verseNowKey = () => verseKeyFor(4); // أبكر مفتاح من الاتنين (الخميس) — أي مفتاح >= ده تابع للأسبوع الجاري
 const verseOpen = () => true;
 const VERSE_CLOSED_MSG = 'تسجيل الآية مقفول';
 
@@ -3053,10 +3067,10 @@ async function migrateClassField() {
 }
 
 // فحص تكرار الاسم على السيرفر (بيغطي كل الفصول حتى لو الخادم مقيّد بفصله)
-async function findNameOnServer(name, exceptId) {
+async function findNameOnServer(name, exceptId, linkId) {
   try {
     const snap = await countedGetDocs(query(collection(db,'students'), where('name','==',name)), 'students (فحص تكرار الاسم)');
-    const hit = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(x => x.id !== exceptId);
+    const hit = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(x => x.id !== exceptId && !(linkId && x.linkId === linkId));
     return hit || null;
   } catch(e) { console.error('dup check failed:', e); return null; }
 }
@@ -3067,7 +3081,7 @@ window.removeDuplicateStudents = async () => {
   if (currentRole !== 'admin') { showToast('للأدمن بس', 'error'); return; }
   await ensureAllClassesForAdmin();
   const groups = new Map();
-  allStudents.forEach(s => { const k = normalizeArabic(s.name); if (!k) return; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); });
+  allStudents.forEach(s => { const k0 = normalizeArabic(s.name); if (!k0) return; const k = s.linkId ? k0 + '|' + (s.classSection || '') : k0; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); });
   const rich = s => Object.entries(s).filter(([k, v]) => !['id','name','createdAt','updatedAt'].includes(k) && (Array.isArray(v) ? v.length : !!v)).length;
   const plan = [];
   groups.forEach(list => {
@@ -4364,24 +4378,38 @@ function listenTodayAttendance() {
 // حضور... يعني سماع الآية النهارده، بث لحظي بنفس فكرة الحضور بالظبط: أي خادم يسجل سماع لمخدوم،
 // كل الخدام التانيين الفاتحين نفس الفصل في نفس اللحظة يشوفوا التحديث فورًا من غير ما يعملوا reload
 let verseListenKey = null;
+// مفاتيح التسميع الحالية لفصول النطاق (فصل بيحضر الخميس ليه مفتاح، وفصل بيحضر الجمعة ليه مفتاح)
+function liveVerseKeys() {
+  const sc = readScopeClasses();
+  const ids = sc.length ? sc : allClasses.map(c => c.id);
+  const days = new Set(ids.map(classServiceDay));
+  if (!days.size) days.add(4);
+  return [...days].sort().map(verseKeyFor);
+}
 function listenTodayVerses() {
   if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
-  const today = verseKey();
-  verseListenKey = today;
+  const keys = liveVerseKeys();
+  verseListenKey = keys.join(',');
+  const al = readScopeClasses();
+  const cons = [keys.length > 1 ? where('date','in', keys) : where('date','==', keys[0])];
+  if (al.length) cons.push(where('classSection','in', al));
   todayVersesUnsub = onSnapshot(
-    todayQuery('verses', today),
+    query(collection(db,'verses'), ...cons),
     snap => {
       countSnapshotReads('verses (اليوم - live)', snap);
       const prevV = todayVerses, prevVT = todayVerseTime;
       todayVerses = {}; todayVerseTime = {};
+      keys.forEach(k => { allVerses[k] = {}; });
       snap.docs.forEach(d => {
         const data = d.data();
         todayVerses[data.studentId] = { id: d.id, verse: data.verse || '' };
         todayVerseTime[data.studentId] = tsToMillis(data.timestamp);
+        (allVerses[data.date] ||= {})[data.studentId] = todayVerses[data.studentId];
       });
-      for (const id in prevV) if (outsideAllowed(id) && !todayVerses[id]) { todayVerses[id] = prevV[id]; todayVerseTime[id] = prevVT[id]; }
-      if (!allVerses[today]) allVerses[today] = {};
-      allVerses[today] = { ...todayVerses };
+      for (const id in prevV) if (outsideAllowed(id) && !todayVerses[id]) {
+        todayVerses[id] = prevV[id]; todayVerseTime[id] = prevVT[id];
+        (allVerses[verseKey(clsOf(id))] ||= {})[id] = prevV[id];
+      }
       renderTodayList();
       if (typeof onManualSearch === 'function') onManualSearch();
     },
@@ -4395,9 +4423,14 @@ const verseFilterWeeks = () => (parseInt(verseFilter) || 0) + 2;
 const verseIsStale = () => !todayVersesUnsub && (Date.now() - recentVerseSyncAt) > ATT_TTL;
 // التاريخ بيتحسب "مرة" لو فيه سماع فعلي مسجّل فيه بس
 // جلسات التسميع الحقيقية بس: تاريخها لازم يكون يوم خميس (verseKey دايمًا خميس). أي تاريخ تاني (زي 23/09 من النقل القديم) بقايا مش جلسة
-const isThursdayKey = k => { const [y,m,d] = k.split('-').map(Number); return new Date(y, m-1, d).getDay() === 4; };
+const keyWeekday = k => { const [y,m,d] = k.split('-').map(Number); return new Date(y, m-1, d).getDay(); };
 // الأسبوع الجاري (verseKey) لسه ناقص لحد الجمعة بالليل، فمبنحسبوش جلسة في الفلتر عشان ميبقاش شرط "سمع كل المرات" مستحيل
-function verseSessionDates() { const cur = verseKey(); return Object.keys(allVerses).filter(d => d !== cur && isThursdayKey(d) && allVerses[d] && Object.keys(allVerses[d]).length).sort(); }
+// sd = يوم حضور الفصل (4 خميس / 5 جمعة)، ولو مفيش بيرجّع جلسات اليومين
+function verseSessionDates(sd) {
+  const days = sd == null ? [4, 5] : [sd];
+  const cur = days.map(verseKeyFor);
+  return Object.keys(allVerses).filter(d => !cur.includes(d) && days.includes(keyWeekday(d)) && allVerses[d] && Object.keys(allVerses[d]).length).sort();
+}
 function ensureRecentVerses(weeks) {
   const run = verseLoadP.catch(() => {}).then(() => _ensureRecentVerses(weeks));
   verseLoadP = run;
@@ -4413,7 +4446,7 @@ async function _ensureRecentVerses(weeks) {
   recentVerseScope = scopeKey;
   if (recentVerseWeeks >= weeks && !verseIsStale()) return;
   const d = new Date(); d.setDate(d.getDate() - weeks * 7);
-  const fromKey = toLocalDateKey(d), nowKey = verseKey();
+  const fromKey = toLocalDateKey(d), nowKey = verseNowKey();
   const liveToday = !!todayVersesUnsub; // البث اللحظي لأسبوع التسميع الحالي أحدث من أي قراءة
   // تصليح لمرة واحدة على الجهاز: آيات قديمة اتسجلت من غير فصل فكانت مش بتظهر في استعلام الفصل
   if (currentRole === 'admin' && !localStorage.getItem('hdour_vbf_cls1') && allStudents.length) {
@@ -4457,10 +4490,10 @@ async function _ensureRecentVerses(weeks) {
   }
   for (const k in data) {
     if (k < fromKey) continue;
-    if (liveToday && k === nowKey) continue;
+    if (liveToday && k >= nowKey) continue;
     allVerses[k] = { ...data[k] };
   }
-  for (const k of Object.keys(allVerses)) if (k >= fromKey && !(liveToday && k === nowKey) && !data[k]) delete allVerses[k];
+  for (const k of Object.keys(allVerses)) if (k >= fromKey && !(liveToday && k >= nowKey) && !data[k]) delete allVerses[k];
   recentVerseSyncAt = Date.now();
   recentVerseWeeks = weeks;
   idbSet(VERSE_CACHE_KEY + '@' + scopeKey, JSON.stringify({ from: fresh ? c.from : fromKey, through: nowKey, fullTs: fresh ? c.fullTs : Date.now(), scope: usedKey, data }));
@@ -4473,7 +4506,7 @@ setInterval(() => {
     listenTodayAttendance();
     updateStats(); renderTodayList();
   }
-  if (todayVersesUnsub && verseListenKey && verseKey() !== verseListenKey) {
+  if (todayVersesUnsub && verseListenKey && liveVerseKeys().join(',') !== verseListenKey) {
     todayVerses = {}; todayVerseTime = {};
     listenTodayVerses();
     renderTodayList();
@@ -4517,7 +4550,7 @@ async function markPresent(studentId) {
 // ===== VERSE (independent from attendance) =====
 window.showVerseModal = async function(studentId) {
   if (!verseOpen()) { showToast(VERSE_CLOSED_MSG, 'error'); return; }
-  const today = verseKey();
+  const today = verseKey(clsOf(studentId));
   if (todayVerses[studentId]) return; // already marked
   try {
     const ref = doc(collection(db,'verses'));
@@ -4551,7 +4584,7 @@ window.removeVerse = async (studentId) => {
   deleteDoc(doc(db,'verses',entry.id)).catch(e => console.error('verse delete failed:', e)); // من غير await عشان يشتغل أوفلاين
   delete todayVerses[studentId];
   delete todayVerseTime[studentId];
-  const today = verseKey();
+  const today = verseKey(clsOf(studentId));
   if (allVerses[today]) delete allVerses[today][studentId];
   renderTodayList();
   onManualSearch();
@@ -4919,9 +4952,9 @@ function renderFilterList() {
   if (verseFilter !== 'all') {
     const vDates = verseSessionDates();
     const n = parseInt(verseFilter);
-    const lastV = vDates.slice(-n);
+    const lastByDay = {}; const lastFor = sd => (lastByDay[sd] ||= verseSessionDates(sd).slice(-n));
     window._verseMatchDbg = vDates.map(d => d + ' → ' + list.filter(s => allVerses[d]?.[s.id]).length + ' مطابق').join(' · ');
-    list = list.filter(s => lastV.length === n && lastV.every(d => !!allVerses[d]?.[s.id]));
+    list = list.filter(s => { const lastV = lastFor(classServiceDay(s.classSection)); return lastV.length === n && lastV.every(d => !!allVerses[d]?.[s.id]); });
   }
   if (noteFilter === 'noReason') {
     list = list.filter(s => !Array.isArray(s.visitNotes) || s.visitNotes.length === 0);
@@ -5368,7 +5401,7 @@ async function processVoiceName(altTexts) {
 // بيسجل "سماع آية" بالصوت (زي showVerseModal بالظبط) لكن من غير ما يعتمد على إن العنصر النشط في شاشة البحث اليدوي
 async function registerVerseVoice(studentId) {
   if (!verseOpen()) { showToast(VERSE_CLOSED_MSG, 'error'); return; }
-  const today = verseKey();
+  const today = verseKey(clsOf(studentId));
   if (todayVerses[studentId]) return;
   try {
     const ref = doc(collection(db,'verses'));
@@ -7531,6 +7564,7 @@ window.openEditModal = (id) => {
   document.getElementById('edit-gender').value  = s.gender || '';
   document.getElementById('edit-class').innerHTML = classSelectOptionsHTML(true);
   document.getElementById('edit-class').value   = s.classSection || '';
+  renderEditAddClass(s);
   document.getElementById('edit-avatar').textContent = s.name.trim()[0] || '؟';
   document.getElementById('edit-sub').textContent    = s.name;
   const notes = s.visitNotes || [];
@@ -7560,6 +7594,73 @@ window.openEditModal = (id) => {
 
 let editOtherPhones = [];
 
+// ===== فصل تاني للمخدوم: نسخة مربوطة (linkId) في الفصل التاني، لكل نسخة حضورها وتسميعها بتاع فصلها =====
+const LINK_COPY_SKIP = ['id','waGroupAdded'];
+function linkedClassIdsOf(s) {
+  const ids = new Set(s.linkedClasses || []);
+  if (s.linkId) allStudents.forEach(x => { if (x.linkId === s.linkId && x.id !== s.id && x.classSection) ids.add(x.classSection); });
+  ids.delete(s.classSection || '');
+  return [...ids];
+}
+function renderEditAddClass(s) {
+  const sel = document.getElementById('edit-add-class'), note = document.getElementById('edit-linked-note');
+  if (!sel || !note) return;
+  const linked = linkedClassIdsOf(s);
+  note.style.display = linked.length ? '' : 'none';
+  note.textContent = linked.length ? 'موجود كمان في: ' + linked.map(classLabel).join('، ') : '';
+  const opts = allClasses.filter(c => c.id !== s.classSection && !linked.includes(c.id));
+  sel.innerHTML = `<option value="">— فصل تاني يتضاف —</option>` + opts.map(c => `<option value="${c.id}">${c.emoji||'📘'} ${c.name}</option>`).join('');
+}
+window.addStudentSecondClass = async () => {
+  const id = document.getElementById('edit-id').value;
+  const target = document.getElementById('edit-add-class').value;
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  if (!target) { showToast('اختار الفصل التاني الأول', 'error'); return; }
+  if (!s.classSection) { showToast('حدد فصل المخدوم الأول', 'error'); return; }
+  if (target === s.classSection || linkedClassIdsOf(s).includes(target)) { showToast('المخدوم موجود في الفصل ده أصلًا', 'error'); return; }
+  const btn = document.getElementById('edit-add-class-btn'); if (btn) btn.disabled = true;
+  const linkId = s.linkId || s.id;
+  try {
+    if (currentRole === 'admin') { // الأدمن يقدر يتأكد إن مفيش نسخة في الفصل ده أصلًا (حتى لو مش متحملة على الشاشة)
+      const ex = await countedGetDocs(query(collection(db,'students'), where('linkId','==', linkId)), 'students (فحص النسخ المربوطة)');
+      if (ex.docs.some(d => d.data().classSection === target)) { showToast('المخدوم موجود في الفصل ده أصلًا', 'error'); renderEditAddClass(s); return; }
+    }
+    const copy = {};
+    Object.entries(s).forEach(([k, v]) => { if (!LINK_COPY_SKIP.includes(k) && v !== undefined) copy[k] = v; });
+    const linkedOfCopy = [...new Set([s.classSection, ...linkedClassIdsOf(s)])].filter(c => c !== target);
+    const ref = doc(collection(db,'students'));
+    await setDoc(ref, { ...copy, classSection: target, linkId, linkedClasses: linkedOfCopy, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    const nowLinked = [...new Set([...linkedClassIdsOf(s), target])];
+    await updateDoc(doc(db,'students',id), { linkId, linkedClasses: nowLinked, updatedAt: serverTimestamp() });
+    bumpStudentsRev();
+    s.linkId = linkId; s.linkedClasses = nowLinked;
+    const sc = readScopeClasses();
+    if (!sc.length || sc.includes(target)) allStudents.push({ ...copy, id: ref.id, classSection: target, linkId, linkedClasses: linkedOfCopy });
+    renderEditAddClass(s);
+    renderStudentsList(); renderTodayList(); updateStats();
+    showToast(`✓ ${s.name} اتضاف كمان في ${classLabel(target)}`, 'success');
+    logActivity('إضافة مخدوم لفصل تاني', `${s.name} — ${classLabel(target)}`);
+  } catch(e) {
+    console.error(e);
+    showToast('معرفتش أضيفه — غالبًا مفيش صلاحية على الفصل ده', 'error');
+  } finally { if (btn) btn.disabled = false; }
+};
+// تعديل بيانات المخدوم بيتنسخ لباقي النسخ المربوطة (اللي عنده صلاحية عليها)
+async function syncLinkedCopies(id, linkId, shared) {
+  if (!linkId) return;
+  const ids = new Set(allStudents.filter(x => x.linkId === linkId && x.id !== id).map(x => x.id));
+  if (currentRole === 'admin') {
+    try { (await countedGetDocs(query(collection(db,'students'), where('linkId','==', linkId)), 'students (مزامنة النسخ المربوطة)')).docs.forEach(d => { if (d.id !== id) ids.add(d.id); }); } catch(e) { console.warn(e); }
+  }
+  for (const t of ids) {
+    try {
+      await updateDoc(doc(db,'students',t), { ...shared, updatedAt: serverTimestamp() });
+      const i = allStudents.findIndex(x => x.id === t); if (i !== -1) allStudents[i] = { ...allStudents[i], ...shared };
+    } catch(e) { console.warn('linked copy sync skipped', t, e && e.code); }
+  }
+}
+
 window.closeEditModal = () => {
   document.getElementById('edit-modal').style.display = 'none';
   document.body.style.overflow = '';
@@ -7578,10 +7679,10 @@ window.saveEditStudent = async () => {
   const err = validateStudentData({ name, dob, address, father, mother, student, others, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
   const prev = allStudents.find(s => s.id === id);
-  const dupEdit = allStudents.find(s => s.id !== id && normalizeArabic(s.name) === normalizeArabic(name));
+  const dupEdit = allStudents.find(s => s.id !== id && normalizeArabic(s.name) === normalizeArabic(name) && !(prev && prev.linkId && s.linkId === prev.linkId));
   if (dupEdit) { showToast(dupMsg(dupEdit), 'error'); return; }
   if (!prev || normalizeArabic(prev.name) !== normalizeArabic(name)) {
-    const dupEditSrv = await findNameOnServer(name, id);
+    const dupEditSrv = await findNameOnServer(name, id, prev && prev.linkId);
     if (dupEditSrv) { showToast(dupMsg(dupEditSrv), 'error'); return; }
   }
   const visitNotes = [];
@@ -7609,6 +7710,7 @@ window.saveEditStudent = async () => {
     await updateDoc(doc(db,'students',id), { ...data, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(s => s.id === id);
     if (idx !== -1) allStudents[idx] = { ...allStudents[idx], ...data };
+    if (prev && prev.linkId) { const shared = { ...data }; delete shared.classSection; await syncLinkedCopies(id, prev.linkId, shared); bumpStudentsRev(); }
     renderStudentsList();
     renderTodayList();
     closeEditModal();
