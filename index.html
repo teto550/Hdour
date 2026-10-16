@@ -4061,15 +4061,16 @@ function waRecipientsSource() {
   if (waBdayMonth > 0) {
     list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === waBdayMonth);
   }
-  if (waAbsenceFilter !== 'all' && dates.length > 0) {
-    const n = parseInt(waAbsenceFilter);
-    const lastDates = dates.slice(-n);
-    list = list.filter(s => lastDates.every(d => !allAttendance[d]?.[s.id]));
-  }
-  if (waAttendanceFilter !== 'all' && dates.length > 0) {
-    const n = parseInt(waAttendanceFilter);
-    const lastDates = dates.slice(-n);
-    list = list.filter(s => lastDates.length === n && lastDates.every(d => !!allAttendance[d]?.[s.id]));
+  if ((waAbsenceFilter !== 'all' || waAttendanceFilter !== 'all') && dates.length > 0) {
+    const sessOf = classSessionLookup();
+    if (waAbsenceFilter !== 'all') {
+      const n = parseInt(waAbsenceFilter);
+      list = list.filter(s => { const last = sessOf(s.classSection).slice(-n); return !last.length || last.every(d => !allAttendance[d]?.[s.id]); });
+    }
+    if (waAttendanceFilter !== 'all') {
+      const n = parseInt(waAttendanceFilter);
+      list = list.filter(s => { const last = sessOf(s.classSection).slice(-n); return last.length === n && last.every(d => !!allAttendance[d]?.[s.id]); });
+    }
   }
   const siblingInfo = computeSiblingInfo(classScope(ownClassStudents()));
   if (waSiblingsFilter === 'siblings') {
@@ -4320,6 +4321,16 @@ window.renderWaTab = () => {
 // ===== ATTENDANCE =====
 let recentAttWeeks = 0;
 // تاريخ بيتحسب "جلسة" لو فيه حضور فعلي مسجّل فيه بس (مفتاح النهارده الفاضي كان بيخلي الكل غايب/الفلتر يتلخبط)
+// جلسات الحضور لكل فصل لوحده: يوم يتحسب جلسة لفصل بس لو اتاخد فيه حضور لحد من مخدومينه (فصل الخميس مايتحسبش غايب في يوم حضور فصل الجمعة)
+function classSessionLookup() {
+  const cm = new Map(allStudents.map(x => [x.id, x.classSection || '']));
+  const byClass = {};
+  Object.keys(allAttendance).sort().forEach(d => {
+    const seen = new Set();
+    Object.keys(allAttendance[d] || {}).forEach(id => { const c = cm.get(id); if (c !== undefined && !seen.has(c)) { seen.add(c); (byClass[c] ||= []).push(d); } });
+  });
+  return c => byClass[c || ''] || [];
+}
 function attSessionDates() { return Object.keys(allAttendance).filter(d => allAttendance[d] && Object.keys(allAttendance[d]).length).sort(); }
 // آخر مرة حضور النهارده اتزامن فيها مع السيرفر — لو عدّى أكتر من دقيقتين ومفيش بث لحظي شغال بنجدّده (قراءة حضور النهارده بس)
 let todayAttSyncAt = 0, attRefreshBusy = false;
@@ -5046,15 +5057,16 @@ function renderFilterList() {
   if (bdayMonth > 0) {
     list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === bdayMonth);
   }
-  if (absenceFilter !== 'all' && dates.length > 0) {
-    const n = parseInt(absenceFilter);
-    const lastDates = dates.slice(-n);
-    list = list.filter(s => lastDates.every(d => !allAttendance[d]?.[s.id]));
-  }
-  if (attendanceFilter !== 'all' && dates.length > 0) {
-    const n = parseInt(attendanceFilter);
-    const lastDates = dates.slice(-n);
-    list = list.filter(s => lastDates.length === n && lastDates.every(d => !!allAttendance[d]?.[s.id]));
+  if ((absenceFilter !== 'all' || attendanceFilter !== 'all') && dates.length > 0) {
+    const sessOf = classSessionLookup();
+    if (absenceFilter !== 'all') {
+      const n = parseInt(absenceFilter);
+      list = list.filter(s => { const last = sessOf(s.classSection).slice(-n); return !last.length || last.every(d => !allAttendance[d]?.[s.id]); });
+    }
+    if (attendanceFilter !== 'all') {
+      const n = parseInt(attendanceFilter);
+      list = list.filter(s => { const last = sessOf(s.classSection).slice(-n); return last.length === n && last.every(d => !!allAttendance[d]?.[s.id]); });
+    }
   }
   if (verseFilter !== 'all') {
     const vDates = verseSessionDates();
@@ -6251,6 +6263,7 @@ window.setMonitorClass = (id) => {
 };
 window.onMonitorSearch = () => {
   if (document.getElementById('monitor-subtab-servants').style.display === 'block') renderServantsList();
+  else if (document.getElementById('monitor-subtab-messages').style.display === 'block') renderSmTab();
   else renderServAttList();
 };
 window.switchMonitorSubTab = (which) => {
@@ -6265,13 +6278,14 @@ window.switchMonitorSubTab = (which) => {
   const hero = document.getElementById('mon-hero'); if (hero) hero.classList.toggle('srv-mode', which !== 'attendance');
   const hsub = document.getElementById('mon-hero-sub');
   if (hsub) hsub.textContent = which === 'servants' ? 'إدارة الخدام وطلبات الانضمام' : which === 'messages' ? 'رسائل الخدام على واتساب' : 'متابعة حضور الخدام';
+  if (which === 'messages') smAttLoadedAt = 0; // كل ما تفتح الرسائل يجيب أحدث حضور
   if (which === 'attendance') renderServAttList(); else if (which === 'messages') renderSmTab(); else renderServantsList();
 };
 
 // ===== رسائل الخدام (واتساب) — فلاتر: أعياد الميلاد / الغياب / الحضور المتصل، وفلتر الفصل من الشيبس اللي فوق =====
 let smActivity = 'mass', smAbsence = 'all', smAttendance = 'all', smBdayMonth = 0;
 let smChecked = new Set(), smQueue = [], smQueueIndex = 0;
-let smAttRecs = [], smAttLoadedAt = 0, smAttLoading = false;
+let smAttRecs = [], smAttLoadedAt = 0, smAttPromise = null, smRenderSeq = 0;
 const SM_WEEKS = 14;
 const smHasPhone = x => !!String(x.phone || '').replace(/\D/g, '');
 const smFirstName = x => String(x.name || '').trim().split(/\s+/)[0] || '';
@@ -6286,32 +6300,39 @@ function smRecipients() {
   if (smAttendance !== 'all' && dates.length) { const last = dates.slice(-smAttendance); list = list.filter(x => last.length === smAttendance && last.every(d => smPresentOn(d, x.id))); }
   return list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
 }
-async function smEnsureAttendance() {
-  if (smAttLoading || (smAttRecs.length && Date.now() - smAttLoadedAt < 2 * 60 * 1000)) return;
-  smAttLoading = true;
-  try {
-    const d = new Date(); d.setDate(d.getDate() - SM_WEEKS * 7);
-    const snap = await countedGetDocs(query(collection(db,'servantAttendance'), where('date','>=', toLocalDateKey(d))), 'servantAttendance (فلاتر رسائل الخدام)');
-    smAttRecs = snap.docs.map(x => { const v = x.data(); return { servantId: v.servantId, date: v.date, activity: v.activity }; });
-    smAttLoadedAt = Date.now();
-  } finally { smAttLoading = false; }
+function smEnsureAttendance() {
+  if (smAttPromise) return smAttPromise;
+  if (smAttLoadedAt && Date.now() - smAttLoadedAt < 2 * 60 * 1000) return Promise.resolve();
+  const d = new Date(); d.setDate(d.getDate() - SM_WEEKS * 7);
+  smAttPromise = countedGetDocs(query(collection(db,'servantAttendance'), where('date','>=', toLocalDateKey(d))), 'servantAttendance (فلاتر رسائل الخدام)')
+    .then(snap => {
+      smAttRecs = snap.docs.map(x => { const v = x.data(); return { servantId: v.servantId, date: v.date, activity: v.activity }; });
+      smAttLoadedAt = Date.now();
+    })
+    .finally(() => { smAttPromise = null; });
+  return smAttPromise;
 }
 function smResetChecked() { smChecked = new Set(smRecipients().filter(smHasPhone).map(x => x.id)); }
-function smUpdateCount() {
-  const withPhone = smRecipients().filter(smHasPhone);
+function smUpdateCount(list) {
+  list = list || smRecipients();
+  const withPhone = list.filter(smHasPhone);
   const el = document.getElementById('sm-recipients-count');
-  if (el) el.textContent = `${smChecked.size} محدد من ${withPhone.length} برقم تليفون`;
+  if (el) el.textContent = `${smChecked.size} محدد من ${withPhone.length} برقم تليفون` + (list.length > withPhone.length ? ` (${list.length - withPhone.length} بدون رقم)` : '');
+  const tot = document.getElementById('mon-stat-total'); if (tot) tot.textContent = list.length; // رقم الخدام فوق بيتبع الفلاتر
 }
 async function renderSmTab() {
   const cont = document.getElementById('sm-recipients-list'); if (!cont) return;
-  const needAtt = smAbsence !== 'all' || smAttendance !== 'all';
-  if (needAtt && (!smAttRecs.length || Date.now() - smAttLoadedAt > 2 * 60 * 1000)) {
+  const seq = ++smRenderSeq;
+  if (!servantsLoadedFlag) { cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`; try { await loadServantsOnce(); } catch (e) { console.error(e); } if (seq !== smRenderSeq) return; }
+  if (smAbsence !== 'all' || smAttendance !== 'all') {
     cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
-    try { await smEnsureAttendance(); } catch (e) { console.error(e); cont.innerHTML = '<div class="empty-state">تعذّر تحميل بيانات الحضور<br><button class="action-btn" style="margin-top:10px" onclick="renderSmTab()">🔄 حاول تاني</button></div>'; return; }
+    try { await smEnsureAttendance(); }
+    catch (e) { if (seq !== smRenderSeq) return; console.error(e); cont.innerHTML = '<div class="empty-state">تعذّر تحميل بيانات الحضور<br><button class="action-btn" style="margin-top:10px" onclick="renderSmTab()">🔄 حاول تاني</button></div>'; return; }
+    if (seq !== smRenderSeq) return; // فلتر أحدث اتضغط وإنت مستني
   }
   smResetChecked();
   renderSmList();
-}
+};
 window.renderSmTab = renderSmTab;
 function renderSmList() {
   const cont = document.getElementById('sm-recipients-list'); if (!cont) return;
@@ -6323,7 +6344,7 @@ function renderSmList() {
       <div class="s-info"><div class="s-name">${x.name || '—'}</div><div class="s-sub">${has ? x.phone : 'لا يوجد رقم تليفون'}</div></div>
     </div>`;
   }).join('') : `<div class="empty-state"><div class="empty-icon">📋</div>مفيش خدام بالفلاتر دي</div>`;
-  smUpdateCount();
+  smUpdateCount(list);
 }
 window.smToggle = (id, on) => { if (on) smChecked.add(id); else smChecked.delete(id); smUpdateCount(); };
 window.smSelectAll = (val) => { smRecipients().filter(smHasPhone).forEach(x => val ? smChecked.add(x.id) : smChecked.delete(x.id)); renderSmList(); };
