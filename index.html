@@ -489,8 +489,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     </div>
     <div id="tab-sup-home" style="display:none">
       <div class="admin-grid">
-        <button class="admin-card" onclick="supOpenClasses()"><span class="ac-emoji">🏫</span>الفصول</button>
-        <button class="admin-card" onclick="switchTab('allclassservants')"><span class="ac-emoji">👥</span>الخدام<span id="sup-pending-badge" style="display:none;margin-top:6px;background:var(--danger);color:#fff;border-radius:12px;padding:1px 9px;font-size:12px;font-weight:800"></span></button>
+        <button class="admin-card" id="sup-classes-card" onclick="supOpenClasses()"><span class="ac-emoji">🏫</span>الفصول</button>
+        <button class="admin-card" onclick="supOpenServants()"><span class="ac-emoji">👥</span>الخدام<span id="sup-pending-badge" style="display:none;margin-top:6px;background:var(--danger);color:#fff;border-radius:12px;padding:1px 9px;font-size:12px;font-weight:800"></span></button>
       </div>
       <div class="creator-credit">Creator by David Emil : 01274005969</div>
     </div>
@@ -1862,7 +1862,7 @@ function formatAssignedClasses(raw) {
   return list.map(cls => classLabel(cls)).join(' + ');
 }
 function getAllowedAssignedClasses(raw = currentAssignedClass) {
-  const allowed = normalizeAssignedClasses(raw);
+  const allowed = normalizeAssignedClasses(raw).filter(id => id !== SERVANTS_CLASS_ID);
   return currentRole === 'admin' || !allowed.length ? [] : allowed;
 }
 // نطاق قراءة الخادم: فصوله بس. ولو واحد منهم بيبي كلاس 1/2 أو كي جي 1 → التلات فصول دول + المخدومين اللي لسه متقسموش ('')
@@ -2016,8 +2016,11 @@ function unifyKgEmoji(c) {
 function classById(id) { return allClasses.find(c => c.id === id); }
 // يوم حضور الفصل: 5 = الجمعة، وأي حاجة تانية (أو فصل قديم من غير الحقل) = الخميس
 function classServiceDay(id) { return Number((classById(id) || {}).serviceDay) === 5 ? 5 : 4; }
-function classLabel(sec) { if (!sec) return 'بدون فصل'; const c = classById(sec); return c ? c.name : sec; }
-function classEmoji(sec) { if (!sec) return '؟'; const c = classById(sec); return c ? (c.emoji || '📘') : '❔'; }
+// "الخدام" بيتعامل كأنه فصل في الأدوار: مسؤول الخدام بيدخل (الحضور / الخدام / الرسائل) زي الأدمن. مش فصل حقيقي — مفيش مخدومين بيتسجلوا عليه
+const SERVANTS_CLASS_ID = '__servants__';
+function canManageServants() { return currentRole === 'admin' || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).includes(SERVANTS_CLASS_ID)); }
+function classLabel(sec) { if (!sec) return 'بدون فصل'; if (sec === SERVANTS_CLASS_ID) return 'الخدام'; const c = classById(sec); return c ? c.name : sec; }
+function classEmoji(sec) { if (!sec) return '؟'; if (sec === SERVANTS_CLASS_ID) return '👥'; const c = classById(sec); return c ? (c.emoji || '📘') : '❔'; }
 function classPalette(sec) {
   const idx = allClasses.findIndex(c => c.id === sec);
   return CLASS_PALETTE[(idx < 0 ? 0 : idx) % CLASS_PALETTE.length];
@@ -3119,7 +3122,7 @@ window.forceRefreshStudents = async () => { await loadStudents(true); showToast(
 async function loadStudents(force = false) {
   await waitClassesReady();
   // الخادم اللي لسه متوزعش على فصل مش بيشوف أي مخدومين (قواعد فايرستور بتمنع كمان)
-  if (currentRole !== 'admin' && !normalizeAssignedClasses(currentAssignedClass).length) {
+  if (currentRole !== 'admin' && !getAllowedAssignedClasses().length) {
     allStudents = []; studentsLoaded = true; updateStuCount(); renderStudentsList(); return;
   }
   let rev = null, delRev = 0, classFieldMig = false;
@@ -6038,7 +6041,10 @@ window.goHome = () => {
   hideAllScreens();
   const hdr = document.getElementById('class-home-header'); if (hdr) hdr.style.display = 'none';
   if (currentRole === 'admin') document.getElementById('tab-admin-home').style.display = 'block';
-  else if (hasSupHome()) document.getElementById('tab-sup-home').style.display = 'block'; // المسؤول: الفصول / الخدام زي الأدمن
+  else if (hasSupHome()) { // المسؤول: الفصول / الخدام زي الأدمن (ومسؤول الخدام بس مبيشوفش كارت الفصول)
+    const cc = document.getElementById('sup-classes-card'); if (cc) cc.style.display = getAllowedAssignedClasses().length ? '' : 'none';
+    document.getElementById('tab-sup-home').style.display = 'block';
+  }
   else if (needsClassPick()) showClassPicker(); // الرئيسية للي عنده أكتر من فصل = يختار فصل من فصوله
   else showClassHome();
   applyMonitorVisibility();
@@ -6046,6 +6052,8 @@ window.goHome = () => {
 // الخادم المتوزع على أكتر من فصل (مش أدمن) لازم يختار الفصل اللي داخله الأول
 // المسؤول عن فصل (أو أكتر) بيبقى عنده رئيسية فيها "الفصول" و"الخدام" زي الأدمن
 function hasSupHome() { return currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0; }
+// كارت "الخدام" عند المسؤول: مسؤول الخدام بيفتحله (الحضور / الخدام / الرسائل)، ومسؤول الفصل بيفتحله خدام فصوله
+window.supOpenServants = () => { if (canManageServants()) showServantsHome(); else switchTab('allclassservants'); };
 window.supOpenClasses = () => { if (needsClassPick()) showClassPicker(); else showClassHome(); };
 function needsClassPick() { return currentRole !== 'admin' && getAllowedAssignedClasses().length > 1; }
 function renderClassPicker() {
@@ -6111,7 +6119,7 @@ window.goBack = () => {
   closeSettingsMenu();
   const lvl = navLevel();
   if (lvl === 'tab') {
-    if (currentRole === 'admin' && document.getElementById('tab-monitor').style.display === 'block') showServantsHome(); // من جوه (حضور/خدام/رسائل) ← كروت الخدام
+    if (canManageServants() && document.getElementById('tab-monitor').style.display === 'block') showServantsHome(); // من جوه (حضور/خدام/رسائل) ← كروت الخدام
     else if (hasSupHome() && document.getElementById('tab-classservants').style.display === 'block') goHome(); // خدام المسؤول ← رئيسيته
     else showClassHome(); // يرجع لكروت الفصل (حضور/مخدومين/…) من غير ما يعدّي على كل الفصول
   }
@@ -6135,7 +6143,7 @@ window.tabsHome = () => {
 // شاشة كروت الخدام للأدمن (الحضور / الخدام / الرسائل) — زي كروت الفصل
 let monitorEntrySub = 'servants';
 window.showServantsHome = () => {
-  if (currentRole !== 'admin') return;
+  if (!canManageServants()) return;
   hideAllScreens();
   document.getElementById('tab-servants-home').style.display = 'block';
   applyMonitorVisibility();
@@ -6146,7 +6154,7 @@ window.switchTab = async (tab) => {
   if (tab === 'allclassservants') { tab = 'classservants'; classServScope = 'all'; }
   else if (tab === 'classservants') classServScope = 'class';
   if (tab !== 'attendance') { stopVoice(); stopTodayListeners(); }
-  if (tab === 'monitor' && currentRole !== 'admin') return;
+  if (tab === 'monitor' && !canManageServants()) return;
   if (tab === 'classservants' && currentRole !== 'supervisor') return;
   hideAdminScreens();
   document.getElementById('tab-home').style.display = 'none';
@@ -6230,7 +6238,7 @@ window.applyClassRestrictionUI = applyClassRestrictionUI;
 // بث لحظي على قائمة الخدام كلها: أي قبول/رفض/ترقية/تنزيل/حذف بيحصل من أي أدمن (حتى من جهاز تاني)
 // يظهر فورًا عند كل الأدمنز الفاتحين تبويب "متابعة" من غير reload
 window.loadMonitorTab = async () => {
-  if (currentRole !== 'admin') return;
+  if (!canManageServants()) return;
   renderMonitorClassChips();
   // القسم اللي الأدمن اختاره من كروت الخدام (الحضور / الخدام / الرسائل)
   const di = document.getElementById('activity-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
@@ -6432,8 +6440,9 @@ function servantRoleChip(s) {
   if (s.role === 'admin') return `<span class="mon-role admin">👑 أدمن</span>`;
   if (s.role === 'supervisor') {
     const sup = supervisedClassesOf(s), all = normalizeAssignedClasses(s.assignedClass);
-    const mixed = sup.length && all.some(c => !sup.includes(c));
-    return `<span class="mon-role sup">🗝️ مسؤول فصل${mixed ? ' (' + sup.map(classLabel).join(' + ') + ')' : ''}</span>`;
+    const onlyServ = sup.length && sup.every(c => c === SERVANTS_CLASS_ID);
+    const mixed = sup.length && (all.some(c => !sup.includes(c)) || (sup.includes(SERVANTS_CLASS_ID) && !onlyServ));
+    return `<span class="mon-role sup">🗝️ ${onlyServ ? 'مسؤول الخدام' : 'مسؤول فصل'}${mixed ? ' (' + sup.map(classLabel).join(' + ') + ')' : ''}</span>`;
   }
   return '';
 }
@@ -6554,7 +6563,7 @@ function renderClassServList() {
   if (!cont || currentRole !== 'supervisor') return;
   const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const titleEl = document.getElementById('class-serv-scope-title'); if (titleEl) titleEl.textContent = '🏫 خدام الفصول';
-  const supervised = normalizeAssignedClasses(currentSupervisorClass);
+  const supervised = normalizeAssignedClasses(currentSupervisorClass).filter(c => c !== SERVANTS_CLASS_ID);
   if (!supervised.length) { cont.innerHTML = `<div class="empty-state">إنت مش مسؤول عن أي فصل</div>`; return; }
   if (!servantsLoadedFlag) { cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`; return; }
   const q = normalizeArabic(document.getElementById('class-serv-list-search')?.value || '');
@@ -6753,7 +6762,7 @@ function renderSupPending() {
 function renderPendingList(list) {
   renderSupPending();
   renderClassServList();
-  const ps = document.getElementById('pending-section'); if (ps) ps.style.display = list.length ? '' : 'none';
+  const ps = document.getElementById('pending-section'); if (ps) ps.style.display = (list.length && currentRole === 'admin') ? '' : 'none'; // قبول/رفض الطلبات الكاملة للأدمن بس — المسؤول بيشوف طلبات فصوله من قسمه
   document.getElementById('pending-count').textContent = list.length;
   { const mp = document.getElementById('mon-stat-pending'); if (mp) mp.textContent = list.length; }
   const cont = document.getElementById('pending-list');
@@ -7531,6 +7540,7 @@ window.closeRoleEditor = () => { showRolesListView(); renderRolesList(); };
 
 window.setRoleType = (type) => {
   editingRoleType = type;
+  if (type !== 'classSupervisor') editingRoleClasses = editingRoleClasses.filter(c => c !== SERVANTS_CLASS_ID); // "الخدام" للمسؤول بس
   // لو غيّرت النوع لمسؤول/أدمن: بنشيل أي خدام اتضافوا تلقائي بسبب اختيار الفصل — الصلاحيات دي لازم تتدي لناس بالاسم بس
   if (type !== 'classServant') {
     editingRoleMemberIds = editingRoleMemberIds.filter(id => !roleAutoAddedIds.includes(id));
@@ -7549,11 +7559,12 @@ function renderRoleTypeChips() {
 function renderRoleClassChips() {
   const cont = document.getElementById('role-classes-chips');
   if (editingRoleType === 'admin') { cont.innerHTML = ''; return; }
-  if (!allClasses.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش فصول متضافة</div>`; return; }
+  if (!allClasses.length && editingRoleType !== 'classSupervisor') { cont.innerHTML = `<div class="empty-state" style="padding:10px">لسه مفيش فصول متضافة</div>`; return; }
   cont.innerHTML = allClasses.map(c => {
     const active = editingRoleClasses.includes(c.id);
     return `<button type="button" class="filter-chip ${active?'active':''}" onclick="toggleRoleClass('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`;
-  }).join('');
+  }).join('') + (editingRoleType === 'classSupervisor'
+    ? `<button type="button" class="filter-chip ${editingRoleClasses.includes(SERVANTS_CLASS_ID)?'active':''}" onclick="toggleRoleClass('${SERVANTS_CLASS_ID}')">👥 الخدام (الحضور + الخدام + الرسائل)</button>` : '');
 }
 // في الدور الجديد بس: أول ما تختار فصل، خدام الفصل ده بيتضافوا لخانة الأعضاء تلقائي (وتقدر تشيل أي حد بالـ ✕)،
 // ولو شلت الفصل بيتشال معاه الخدام اللي اتضافوا بسببه (إلا لو تبع فصل تاني لسه مختاره)
