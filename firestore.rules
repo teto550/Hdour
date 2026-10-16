@@ -105,7 +105,9 @@ service cloud.firestore {
       allow create: if classOk(request.resource.data.get('classSection', ''));
       allow update: if classOk(resource.data.get('classSection', ''))
                     && classOk(request.resource.data.get('classSection', ''));
-      allow delete: if isAdmin();
+      // الحذف للأدمن، وكمان لأي خادم عنده صلاحية على فصل "أولياء الأمور" (id ثابت = parents) يحذف أولياء الأمور بس
+      allow delete: if isAdmin()
+                    || (resource.data.get('classSection', '') == 'parents' && classOk('parents'));
     }
 
     // ===== attendance (حضور المخدومين) — بنفس تقييد الفصل (classSection بيتكتب مع كل تسجيل) =====

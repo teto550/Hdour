@@ -59,6 +59,15 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 #main-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap;}
 #main-tabs::-webkit-scrollbar{display:none;}
 #main-tabs .tab{flex:0 0 auto;white-space:nowrap;}
+/* فصل "أولياء الأمور": تابين بس (الحضور + أولياء الأمور) — body.parents-mode بيتحدد من applyParentsMode() */
+[data-pc="show"]{display:none!important;}
+body.parents-mode .admin-card[data-pc="show"]{display:flex!important;}
+body.parents-mode .tab[data-pc="show"]{display:inline-block!important;}
+body.parents-mode [data-pc="hide"]{display:none!important;}
+.phone-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+.phone-row .field-input{margin-bottom:0;flex:1;min-width:0;}
+.phone-row .del-btn{padding:10px 12px;font-size:13px;}
+.par-phone-link{display:inline-block;direction:ltr;font-size:11px;color:var(--text-dim);margin-top:2px;margin-inline-end:8px;text-decoration:none;}
 
 .stats-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 8px;text-align:center;}
@@ -515,9 +524,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="admin-grid">
         <button class="admin-card" onclick="switchTab('attendance')"><span class="ac-emoji">✅</span>الحضور</button>
-        <button class="admin-card" onclick="switchTab('students')"><span class="ac-emoji">🧒</span>المخدومين</button>
-        <button class="admin-card" onclick="switchTab('filters')"><span class="ac-emoji">📞</span>الافتقاد</button>
-        <button class="admin-card" onclick="switchTab('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
+        <button class="admin-card" data-pc="show" onclick="switchTab('parents')"><span class="ac-emoji">👨‍👩‍👧</span>أولياء الأمور</button>
+        <button class="admin-card" data-pc="hide" onclick="switchTab('students')"><span class="ac-emoji">🧒</span>المخدومين</button>
+        <button class="admin-card" data-pc="hide" onclick="switchTab('filters')"><span class="ac-emoji">📞</span>الافتقاد</button>
+        <button class="admin-card" data-pc="hide" onclick="switchTab('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
         <button class="admin-card" id="home-card-monitor" style="display:none" onclick="switchTab('monitor')"><span class="ac-emoji">📊</span>متابعة</button>
         <button class="admin-card" id="home-card-classservants" style="display:none" onclick="switchTab('classservants')"><span class="ac-emoji">🧑‍🏫</span>خدام الفصل</button>
         <button class="admin-card" id="home-card-allclassservants" style="display:none" onclick="switchTab('allclassservants')"><span class="ac-emoji">🏫</span>خدام الفصول</button>
@@ -528,9 +538,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div class="tabs" id="main-tabs">
       <button class="tab" style="flex:0 0 auto" onclick="tabsHome()">🏠</button>
       <button class="tab active" id="tab-btn-attendance" data-tab="attendance" onclick="switchTab('attendance')">الحضور</button>
-      <button class="tab" data-tab="students" onclick="switchTab('students')">المخدومين</button>
-      <button class="tab" data-tab="filters" onclick="switchTab('filters')">افتقاد</button>
-      <button class="tab" data-tab="messages" onclick="switchTab('messages')">📨 رسائل</button>
+      <button class="tab" data-pc="show" data-tab="parents" onclick="switchTab('parents')">👨‍👩‍👧 أولياء الأمور</button>
+      <button class="tab" data-pc="hide" data-tab="students" onclick="switchTab('students')">المخدومين</button>
+      <button class="tab" data-pc="hide" data-tab="filters" onclick="switchTab('filters')">افتقاد</button>
+      <button class="tab" data-pc="hide" data-tab="messages" onclick="switchTab('messages')">📨 رسائل</button>
       <button class="tab" id="tab-btn-monitor" style="display:none" data-tab="monitor" onclick="switchTab('monitor')">متابعة</button>
       <button class="tab" id="tab-btn-classservants" style="display:none" data-tab="classservants" onclick="switchTab('classservants')">👥 خدام الفصل</button>
       <button class="tab" id="tab-btn-allclassservants" style="display:none" data-tab="allclassservants" onclick="switchTab('allclassservants')">🏫 خدام الفصول</button>
@@ -544,9 +555,9 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <div class="stat-card t"><div class="stat-num" id="stat-total">0</div><div class="stat-label" id="stat-total-label">إجمالي</div></div>
         <div class="stat-card p"><div class="stat-num" id="stat-present">0</div><div class="stat-label" id="stat-present-label">حاضر</div></div>
         <div class="stat-card a"><div class="stat-num" id="stat-absent">0</div><div class="stat-label" id="stat-absent-label">غائب</div></div>
-        <div class="stat-card g" id="stat-gift-card" style="display:none"><div class="stat-num" id="stat-gift">0</div><div class="stat-label">🎁 استلموا الهدية</div></div>
+        <div class="stat-card g" id="stat-gift-card" data-pc="hide" style="display:none"><div class="stat-num" id="stat-gift">0</div><div class="stat-label">🎁 استلموا الهدية</div></div>
       </div>
-      <button id="voice-toggle-btn" class="btn-voice" onclick="startVoice()">🎤 تسجيل بالصوت</button>
+      <button id="voice-toggle-btn" data-pc="hide" class="btn-voice" onclick="startVoice()">🎤 تسجيل بالصوت</button>
       <div class="voice-zone" id="voice-zone" style="display:none">
         <div class="mic-pulse-wrap"><span class="mic-pulse-icon">🎤</span></div>
         <div id="voice-mode-badge" style="display:inline-block;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;margin-bottom:8px;cursor:pointer;background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:var(--success)" onclick="toggleVoiceMode()">✓ وضع: تسجيل حضور</div>
@@ -566,8 +577,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="filter-row" style="margin-bottom:8px">
         <button class="filter-chip active" id="today-filter-all" onclick="setTodayListFilter('all',this)">الكل</button>
-        <button class="filter-chip" id="today-filter-attendance" onclick="setTodayListFilter('attendance',this)">✅ حضور بس</button>
-        <button class="filter-chip" id="today-filter-verse" onclick="setTodayListFilter('verse',this)">📖 سماع بس</button>
+        <button class="filter-chip" id="today-filter-attendance" data-pc="hide" onclick="setTodayListFilter('attendance',this)">✅ حضور بس</button>
+        <button class="filter-chip" id="today-filter-verse" data-pc="hide" onclick="setTodayListFilter('verse',this)">📖 سماع بس</button>
         <button class="filter-chip" id="today-filter-birthday" onclick="setTodayListFilter('birthday',this)">🎂 أعياد ميلاد الشهر ده</button>
       </div>
       <div class="list-header" style="margin-top:-4px">
@@ -621,6 +632,18 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div class="filter-row" id="class-chips" style="margin-bottom:12px"></div>
       <div id="students-list"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
+    </div>
+
+    <!-- PARENTS TAB (فصل أولياء الأمور) -->
+    <div id="tab-parents" style="display:none">
+      <button class="btn-primary" onclick="openParentModal()" style="margin-bottom:14px">➕ إضافة ولي أمر</button>
+      <div class="list-header">
+        <span class="section-title">أولياء الأمور (<span id="par-count">0</span>)</span>
+      </div>
+      <div class="search-box" style="margin-bottom:12px">
+        <input type="text" id="parents-search-input" placeholder="🔍 ابحث عن ولي أمر بالاسم أو رقم التليفون…" oninput="renderParentsList()" autocomplete="off">
+      </div>
+      <div id="parents-list"><div class="loading"><div class="spinner"></div>جاري التحميل…</div></div>
     </div>
 
     <!-- FILTERS TAB -->
@@ -1221,6 +1244,37 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="btn-primary" onclick="saveEditStudent()" style="flex:1">💾 حفظ التعديلات</button>
         <button onclick="closeEditModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:15px;font-weight:700;padding:13px 18px;cursor:pointer">إلغاء</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- PARENT FILE MODAL (إضافة / فتح ملف / تعديل / حذف ولي أمر) -->
+<div id="parent-modal" class="modal-overlay" style="display:none" onclick="closeParentOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-avatar" id="par-avatar">👨‍👩‍👧</div>
+      <div style="flex:1;min-width:0">
+        <div id="par-modal-title" style="font-size:16px;font-weight:900">ملف ولي الأمر</div>
+        <div id="par-modal-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
+      </div>
+      <button class="modal-close" onclick="closeParentModal()">✕</button>
+    </div>
+    <div style="padding:18px">
+      <input type="hidden" id="par-id">
+      <label class="field-label">الاسم *</label>
+      <input type="text" id="par-name" class="field-input" placeholder="اسم ولي الأمر بالكامل" autocomplete="off">
+      <label class="field-label">تاريخ الميلاد</label>
+      <input type="date" id="par-dob" class="field-input">
+      <label class="field-label">العنوان</label>
+      <textarea id="par-address" class="field-input" rows="2" placeholder="اكتب العنوان بالتفصيل" style="min-height:64px;resize:vertical;font-family:Cairo,sans-serif;line-height:1.6"></textarea>
+      <label class="field-label">أرقام التليفون <span style="font-weight:400">(ممكن أكتر من رقم)</span></label>
+      <div id="par-phones"></div>
+      <button type="button" onclick="addParentPhoneRow('')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:9px 14px;cursor:pointer;margin-bottom:16px">➕ رقم تاني</button>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="btn-primary" onclick="saveParent()" style="flex:1">💾 حفظ</button>
+        <button onclick="closeParentModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:15px;font-weight:700;padding:13px 18px;cursor:pointer">إلغاء</button>
+      </div>
+      <button type="button" id="par-delete-btn" class="del-btn" onclick="deleteParentFromModal()" style="display:none;width:100%;margin-top:14px;padding:11px;font-size:13px">🗑 حذف ولي الأمر</button>
     </div>
   </div>
 </div>
@@ -1922,7 +1976,7 @@ function isAssignedClassRestricted() {
 function ownClassStudents() {
   const allowed = getAllowedAssignedClasses();
   const base = (currentRole !== 'admin' && allowed.length) ? allStudents.filter(s => allowed.includes(s.classSection)) : allStudents;
-  return currentRole !== 'admin' ? classScope(base) : base;
+  return currentRole !== 'admin' ? classScope(base) : (inParents() ? base : notParents(base));
 }
 let newGenderManuallySet  = false; // true لو المستخدم غيّر خانة "النوع" بنفسه في فورم الإضافة (يوقف التخمين التلقائي)
 let editGenderManuallySet = false; // نفس الفكرة بس في مودال التعديل
@@ -2018,6 +2072,43 @@ function classById(id) { return allClasses.find(c => c.id === id); }
 function classServiceDay(id) { return Number((classById(id) || {}).serviceDay) === 5 ? 5 : 4; }
 // "الخدام" بيتعامل كأنه فصل في الأدوار: مسؤول الخدام بيدخل (الحضور / الخدام / الرسائل) زي الأدمن. مش فصل حقيقي — مفيش مخدومين بيتسجلوا عليه
 const SERVANTS_CLASS_ID = '__servants__';
+// فصل "أولياء الأمور": فصل عادي في مجموعة `classes` بس id ثابت، وولي الأمر بيتخزن كمستند في `students` (classSection = 'parents')
+// عشان الحضور وقواعد الأمان والكاش والتحميل كلها تشتغل زي ما هي من غير ما نكرر أي كود. الفصل ده ليه تابين بس: الحضور + أولياء الأمور.
+const PARENTS_CLASS_ID = 'parents';
+const inParents = () => currentClassTab === PARENTS_CLASS_ID;
+const notParents = list => list.filter(s => s.classSection !== PARENTS_CLASS_ID);
+// بيبدّل شكل الواجهة لوضع أولياء الأمور (يخفي المخدومين/الافتقاد/الرسائل/الصوت/السماع/الهدايا) — الإخفاء نفسه بـ CSS على body.parents-mode
+function applyParentsMode() {
+  const on = inParents();
+  document.body.classList.toggle('parents-mode', on);
+  if (on && (todayListFilter === 'attendance' || todayListFilter === 'verse')) {
+    todayListFilter = 'all';
+    document.querySelectorAll('#today-filter-all,#today-filter-attendance,#today-filter-verse,#today-filter-birthday').forEach(b => b.classList.toggle('active', b.id === 'today-filter-all'));
+  }
+  const mi = document.getElementById('manual-input');
+  if (mi) mi.placeholder = on ? '🔍 أو اكتب اسم ولي الأمر…' : '🔍 أو اكتب اسم المخدوم…';
+}
+// لما الفصل يتبدل من الشريط فوق: لو التاب المفتوح مش من تابات الفصل الجديد نرجّع للحضور
+function guardParentsTab() {
+  const vis = id => document.getElementById(id)?.style.display === 'block';
+  if (inParents() && (vis('tab-students') || vis('tab-filters') || vis('tab-messages'))) switchTab('attendance');
+  else if (!inParents() && vis('tab-parents')) switchTab('attendance');
+}
+// أول مرة الأدمن يفتح البرنامج: بنعمل فصل "أولياء الأمور" لو مش موجود (مرة واحدة بس — لو الأدمن حذفه بعد كده مش بيتعمل تاني)
+let parentsSeedChecked = false;
+async function ensureParentsClass() {
+  if (currentRole !== 'admin' || parentsSeedChecked) return;
+  parentsSeedChecked = true;
+  try {
+    const metaRef = doc(db,'config','meta');
+    const m = await getDoc(metaRef);
+    if (m.exists() && m.data().parentsClassSeeded) return;
+    if (!allClasses.some(c => c.id === PARENTS_CLASS_ID)) {
+      await setDoc(doc(db,'classes',PARENTS_CLASS_ID), { name:'أولياء الأمور', emoji:'👨‍👩‍👧', serviceDay:4, order: allClasses.length, createdAt: serverTimestamp() });
+    }
+    await setDoc(metaRef, { parentsClassSeeded: true }, { merge:true });
+  } catch(e) { console.warn('parents class seed failed:', e); }
+}
 function canManageServants() { return currentRole === 'admin' || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).includes(SERVANTS_CLASS_ID)); }
 function classLabel(sec) { if (!sec) return 'بدون فصل'; if (sec === SERVANTS_CLASS_ID) return 'الخدام'; const c = classById(sec); return c ? c.name : sec; }
 function classEmoji(sec) { if (!sec) return '؟'; if (sec === SERVANTS_CLASS_ID) return '👥'; const c = classById(sec); return c ? (c.emoji || '📘') : '❔'; }
@@ -2092,6 +2183,7 @@ function startClassesListener() {
       .map(d => unifyKgEmoji({ id:d.id, ...d.data() }))
       .sort((a,b) => (a.order??0) - (b.order??0) || (a.name||'').localeCompare(b.name||'','ar'));
     if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
+    if (allClasses.length && currentRole === 'admin') ensureParentsClass();
     syncClassGroups();
     if (todayVersesUnsub && verseListenKey && liveVerseKeys().join(',') !== verseListenKey) restartTodayListeners();
     if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('hdour_attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('hdour_attendanceClassTab')) ? localStorage.getItem('hdour_attendanceClassTab') : allClasses[0].id;
@@ -2104,9 +2196,10 @@ function startClassesListener() {
     onClassesUpdated();
   }, err => console.error('classes listener error:', err));
 }
-function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; lastReadScopeKey = ''; classesSeedChecked = false; classGroupsSynced = ''; }
+function stopClassesListener() { if (classesUnsub) { classesUnsub(); classesUnsub = null; } allClasses = []; lastReadScopeKey = ''; classesSeedChecked = false; parentsSeedChecked = false; classGroupsSynced = ''; }
 // بيتنادى كل مرة قايمة الفصول تتغير (إضافة/تعديل/حذف فصل) — بيعيد بناء كل حتة في الواجهة معتمدة على الفصول
 function onClassesUpdated() {
+  applyParentsMode();
   renderGlobalClassTabs();
   if (document.getElementById('tab-pick-class')?.style.display === 'block') renderClassPicker();
   { const t = document.getElementById('class-home-title'); if (t && document.getElementById('tab-home')?.style.display === 'block') t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab); }
@@ -2147,7 +2240,7 @@ function classScopeActive() {
   if (!currentClassTab || !classById(currentClassTab)) return false;
   return !babyKgClasses().some(c => c.id === currentClassTab);
 }
-function classScope(list) { return classScopeActive() ? list.filter(s => s.classSection === currentClassTab) : list; }
+function classScope(list) { return classScopeActive() ? list.filter(s => s.classSection === currentClassTab) : notParents(list); }
 // الفلتر الفعلي المستخدم في قائمة المخدومين
 function effectiveClassFilter() {
   if (!currentClassTab || !classById(currentClassTab)) return classFilter;
@@ -2265,7 +2358,7 @@ window.openUsersRolesModal = () => {
   document.getElementById('main-tabs').style.display = 'none';
   document.getElementById('global-class-tabs').style.display = 'none';
   { const st = document.getElementById('section-title'); if (st) st.style.display = 'none'; }
-  ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
+  ['attendance','students','filters','messages','parents','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
   hideAdminScreens();
   document.getElementById('tab-roles').style.display = 'block';
   showRolesListView();
@@ -3182,7 +3275,7 @@ async function migrateClassField() {
 async function findNameOnServer(name, exceptId, linkId) {
   try {
     const snap = await countedGetDocs(query(collection(db,'students'), where('name','==',name)), 'students (فحص تكرار الاسم)');
-    const hit = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(x => x.id !== exceptId && !(linkId && x.linkId === linkId));
+    const hit = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(x => x.id !== exceptId && x.classSection !== PARENTS_CLASS_ID && !(linkId && x.linkId === linkId));
     return hit || null;
   } catch(e) { console.error('dup check failed:', e); return null; }
 }
@@ -3193,7 +3286,7 @@ window.removeDuplicateStudents = async () => {
   if (currentRole !== 'admin') { showToast('للأدمن بس', 'error'); return; }
   await ensureAllClassesForAdmin();
   const groups = new Map();
-  allStudents.forEach(s => { const k0 = normalizeArabic(s.name); if (!k0) return; const k = s.linkId ? k0 + '|' + (s.classSection || '') : k0; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); });
+  allStudents.forEach(s => { if (s.classSection === PARENTS_CLASS_ID) return; const k0 = normalizeArabic(s.name); if (!k0) return; const k = s.linkId ? k0 + '|' + (s.classSection || '') : k0; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); });
   const rich = s => Object.entries(s).filter(([k, v]) => !['id','name','createdAt','updatedAt'].includes(k) && (Array.isArray(v) ? v.length : !!v)).length;
   const plan = [];
   groups.forEach(list => {
@@ -3260,7 +3353,7 @@ window.addStudent = async () => {
   const { father, mother, student } = readPhoneInputs('new');
   const err = validateStudentData({ name, dob, address, father, mother, student, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
-  const dup = allStudents.find(s => normalizeArabic(s.name) === normalizeArabic(name));
+  const dup = allStudents.find(s => s.classSection !== PARENTS_CLASS_ID && normalizeArabic(s.name) === normalizeArabic(name));
   if (dup) { showToast(dupMsg(dup), 'error'); return; }
   const dupSrv = await findNameOnServer(name, null);
   if (dupSrv) { showToast(dupMsg(dupSrv), 'error'); return; }
@@ -3838,10 +3931,11 @@ function renderStudentsList() {
   }
   const qRaw = (document.getElementById('students-search-input')?.value || '').trim();
   const q = normalizeArabic(qRaw);
-  let list = q ? searchStudents(allStudents, q) : allStudents;
+  const baseStudents = notParents(allStudents); // أولياء الأمور ليهم تاب لوحدهم — مش بيظهروا هنا
+  let list = q ? searchStudents(baseStudents, q) : baseStudents;
 
   // فلتر الإخوات: بيتحسب على أساس كل المخدومين (مش بس اللي طلعوا من البحث) عشان يبقى دقيق
-  const siblingInfo = computeSiblingInfo(allStudents);
+  const siblingInfo = computeSiblingInfo(baseStudents);
   if (siblingsFilter === 'siblings') {
     list = list.filter(s => isSiblingIn(s, siblingInfo));
   } else if (siblingsFilter === 'nonSiblings') {
@@ -3912,6 +4006,134 @@ function renderStudentsList() {
   }).join('');
 }
 window.renderStudentsList = renderStudentsList; // ضروري عشان oninput في الـ HTML يقدر يلاقيها (لأننا جوه type=module)
+
+// ===== أولياء الأمور (فصل "أولياء الأمور") =====
+// ولي الأمر = مستند في students بـ classSection = PARENTS_CLASS_ID. حقوله: name / dob / address / phones[] (ممكن أكتر من رقم).
+// الحضور بيتسجل عليه زي أي مخدوم (من تاب الحضور)، وفلتر أعياد الميلاد وزرار الأول/الأخير شغالين عليه من غير أي كود زيادة.
+const parEsc = t => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const parentsOnly = () => allStudents.filter(s => s.classSection === PARENTS_CLASS_ID);
+const parentPhones = p => (Array.isArray(p.phones) ? p.phones : []).filter(Boolean);
+
+window.renderParentsList = () => {
+  const cont = document.getElementById('parents-list');
+  if (!cont) return;
+  const all = parentsOnly();
+  const raw = (document.getElementById('parents-search-input')?.value || '').trim();
+  const q = normalizeArabic(raw);
+  const qDigits = cleanPhone(raw).replace(/\D/g, '');
+  let list = all;
+  if (raw) list = all.filter(p => normalizeArabic(p.name || '').includes(q) || (qDigits.length >= 3 && parentPhones(p).some(ph => ph.replace(/\D/g, '').includes(qDigits))));
+  list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+  const cnt = document.getElementById('par-count');
+  if (cnt) cnt.textContent = raw ? list.length : all.length;
+  if (!all.length) { cont.innerHTML = `<div class="empty-state"><div class="empty-icon">👨‍👩‍👧</div>لا يوجد أولياء أمور بعد — اضغط "➕ إضافة ولي أمر"</div>`; return; }
+  if (!list.length) { cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>مفيش نتايج</div>`; return; }
+  cont.innerHTML = list.map(p => {
+    const dob = p.dob ? new Date(p.dob).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    const phones = parentPhones(p);
+    return `<div class="student-item" style="cursor:pointer" onclick="openParentModal('${p.id}')">
+      <div class="s-avatar">${parEsc((p.name || '؟').trim()[0] || '؟')}</div>
+      <div class="s-info">
+        <div class="s-name">${parEsc(p.name)}</div>
+        ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
+        ${phones.length ? `<div class="s-sub" dir="ltr" style="text-align:right">📞 ${phones.map(parEsc).join(' · ')}</div>` : ''}
+        ${p.address ? `<div class="s-sub">📍 ${parEsc(p.address)}</div>` : ''}
+      </div>
+      <button class="action-btn" onclick="event.stopPropagation();openParentModal('${p.id}')">📂 فتح</button>
+      <button class="del-btn" onclick="event.stopPropagation();deleteParent('${p.id}')">🗑</button>
+    </div>`;
+  }).join('');
+};
+
+// صف رقم تليفون في ملف ولي الأمر (زرار ✕ بيشيل الرقم، ودايمًا بيفضل صف واحد على الأقل)
+window.addParentPhoneRow = (val = '') => {
+  const box = document.getElementById('par-phones');
+  if (!box) return;
+  const row = document.createElement('div');
+  row.className = 'phone-row';
+  row.innerHTML = `<input type="tel" class="field-input par-phone-input" placeholder="رقم التليفون" dir="ltr" autocomplete="off"><button type="button" class="del-btn" title="شيل الرقم">✕</button>`;
+  row.querySelector('input').value = val || '';
+  row.querySelector('button').onclick = () => { row.remove(); if (!box.children.length) addParentPhoneRow(''); };
+  box.appendChild(row);
+};
+
+// فتح ملف ولي أمر (id) للعرض والتعديل — أو فورم إضافة جديد لو من غير id
+window.openParentModal = (id) => {
+  const p = id ? allStudents.find(x => x.id === id) : null;
+  if (id && !p) return;
+  document.getElementById('par-id').value = id || '';
+  document.getElementById('par-name').value = p ? (p.name || '') : '';
+  document.getElementById('par-dob').value = p ? (p.dob || '') : '';
+  document.getElementById('par-address').value = p ? (p.address || '') : '';
+  document.getElementById('par-phones').innerHTML = '';
+  const phones = p ? parentPhones(p) : [];
+  (phones.length ? phones : ['']).forEach(ph => addParentPhoneRow(ph));
+  document.getElementById('par-avatar').textContent = p ? ((p.name || '؟').trim()[0] || '؟') : '➕';
+  document.getElementById('par-modal-title').textContent = p ? 'ملف ولي الأمر' : 'إضافة ولي أمر جديد';
+  document.getElementById('par-modal-sub').textContent = p ? 'تقدر تعدّل أي بيانات وتدوس حفظ' : '';
+  document.getElementById('par-delete-btn').style.display = p ? 'block' : 'none';
+  document.getElementById('parent-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+  if (!p) setTimeout(() => document.getElementById('par-name')?.focus(), 50);
+};
+window.closeParentModal = () => {
+  document.getElementById('parent-modal').style.display = 'none';
+  document.body.style.overflow = '';
+};
+window.closeParentOutside = (e) => { if (e.target.id === 'parent-modal') closeParentModal(); };
+
+let parentSaving = false;
+window.saveParent = async () => {
+  if (parentSaving) return;
+  const id = document.getElementById('par-id').value;
+  const name = canonicalizeName(document.getElementById('par-name').value);
+  const dob = document.getElementById('par-dob').value || '';
+  const address = document.getElementById('par-address').value.trim();
+  if (!name) { showToast('اكتب اسم ولي الأمر', 'error'); return; }
+  const rawPhones = [...document.querySelectorAll('#par-phones .par-phone-input')].map(i => cleanPhone(i.value)).filter(Boolean);
+  const bad = rawPhones.find(ph => !PHONE_RE.test(ph));
+  if (bad) { showToast('رقم التليفون "' + bad + '" مش صحيح', 'error'); return; }
+  const phones = [...new Set(rawPhones)];
+  const dup = parentsOnly().find(p => p.id !== id && normalizeArabic(p.name) === normalizeArabic(name));
+  if (dup) { showToast(`"${dup.name}" مسجل قبل كده في أولياء الأمور`, 'error'); return; }
+  const data = { name, dob, address, phones };
+  parentSaving = true;
+  try {
+    if (id) {
+      await updateDoc(doc(db, 'students', id), { ...data, updatedAt: serverTimestamp() }); bumpStudentsRev();
+      const idx = allStudents.findIndex(s => s.id === id);
+      if (idx !== -1) allStudents[idx] = { ...allStudents[idx], ...data };
+      logActivity('تعديل بيانات ولي أمر', name);
+    } else {
+      const ref = doc(collection(db, 'students'));
+      await setDoc(ref, { ...data, classSection: PARENTS_CLASS_ID, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }); bumpStudentsRev();
+      allStudents.push({ ...data, id: ref.id, classSection: PARENTS_CLASS_ID });
+      allStudents.sort((a, b) => (a.name || '') < (b.name || '') ? -1 : ((a.name || '') > (b.name || '') ? 1 : 0));
+      logActivity('إضافة ولي أمر', name);
+    }
+    closeParentModal();
+    renderParentsList(); updateStuCount(); updateStats(); renderTodayList();
+    showToast(id ? 'تم حفظ التعديلات ✓' : 'تمت إضافة ولي الأمر ✓', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('حصل خطأ أثناء الحفظ — ممكن مفيش صلاحية على الفصل ده', 'error');
+  } finally { parentSaving = false; }
+};
+
+window.deleteParent = async (id) => {
+  const p = allStudents.find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`هتحذف ولي الأمر "${p.name}"؟ ملفه هيتمسح نهائيًا.`)) return;
+  try { await deleteDoc(doc(db, 'students', id)); } catch (e) { console.error(e); showToast('مقدرتش أحذف — مفيش صلاحية', 'error'); return; }
+  bumpStudentsRev(true);
+  allStudents = allStudents.filter(s => s.id !== id);
+  delete todayAttendance[id]; delete todayAttendanceTime[id];
+  closeParentModal();
+  renderParentsList(); updateStuCount(); updateStats(); renderTodayList();
+  showToast('تم حذف ولي الأمر', 'success');
+  logActivity('حذف ولي أمر', p.name);
+};
+window.deleteParentFromModal = () => deleteParent(document.getElementById('par-id').value);
 
 // ===== WHATSAPP BULK MESSAGE TAB =====
 let waSiblingsFilter = 'all'; // 'all' | 'siblings' | 'nonSiblings'
@@ -4780,7 +5002,8 @@ function todayListRelevantTime(s) {
 function renderTodayList() {
   updateStats(); // الأرقام اللي فوق دايمًا مظبوطة على الفلتر الحالي حتى لو الحدث جه من تسجيل سماع أو بث لحظي
   const cont = document.getElementById('today-list');
-  if (!allStudents.length) { cont.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div>أضف مخدومين أولاً</div>`; return; }
+  const par = inParents(); // فصل أولياء الأمور: حضور بس (من غير سماع آيات ولا هدايا)
+  if (!allStudents.length) { cont.innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div>${par ? 'أضف أولياء أمور أولاً (من تاب أولياء الأمور)' : 'أضف مخدومين أولاً'}</div>`; return; }
 
   const visibleClasses = [currentClassTab];
   let filtered = allStudents.filter(s => visibleClasses.includes(s.classSection)).filter(s => {
@@ -4810,7 +5033,7 @@ function renderTodayList() {
 
   cont.innerHTML = sorted.map(s => {
     const present = !!todayAttendance[s.id];
-    const verseEntry = todayVerses[s.id];
+    const verseEntry = par ? null : todayVerses[s.id];
     const hasVerse = !!verseEntry;
     const isBday = todayListFilter === 'birthday';
     return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}">
@@ -4820,12 +5043,12 @@ function renderTodayList() {
         ${isBday ? `<div class="s-sub" style="color:#f1c40f">🎂 ${birthdayDay(s)}/${birthdayMonth(s)}${s.dob ? ' — ' + (new Date().getFullYear() - parseInt(String(s.dob).split('-')[0], 10)) + ' سنة' : ''}</div>` : ''}
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
       </div>
-      ${isBday ? `<div class="gift-slot">${giftGiven(s)
+      ${isBday && !par ? `<div class="gift-slot">${giftGiven(s)
         ? `<div class="check-box gift-box checked" title="استلم الهدية — اضغط للإلغاء" onclick="toggleGift('${s.id}')">✓</div>`
         : `<div class="gift-icon" title="اضغط لتسجيل استلام الهدية" onclick="toggleGift('${s.id}')">🎁</div>`}</div>` : ''}
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <div class="check-box att-box${present?' checked':''}" onclick="${present?`removeAttendance('${s.id}')`:`quickToggleAttendance('${s.id}')`}">${present?'✓':''}</div>
-        <div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseEntry.verse:'تسجيل آية'}" onclick="${hasVerse?`removeVerse('${s.id}')`:`showVerseModal('${s.id}')`}">${hasVerse?'✓':'📖'}</div>
+        ${par ? '' : `<div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseEntry.verse:'تسجيل آية'}" onclick="${hasVerse?`removeVerse('${s.id}')`:`showVerseModal('${s.id}')`}">${hasVerse?'✓':'📖'}</div>`}
       </div>
     </div>`;
   }).join('');
@@ -4855,9 +5078,10 @@ function updateStats() {
   set('stat-total', c1); set('stat-present', c2); set('stat-absent', c3);
   const gc = document.getElementById('stat-gift-card');
   if (gc) {
-    gc.style.display = bday ? '' : 'none';
+    const showGift = bday && !inParents(); // أولياء الأمور مفيهمش هدايا
+    gc.style.display = showGift ? '' : 'none';
     document.getElementById('stat-gift').textContent = base.filter(giftGiven).length;
-    document.getElementById('att-stats-row').style.gridTemplateColumns = bday ? '1fr 1fr 1fr 1fr' : '';
+    document.getElementById('att-stats-row').style.gridTemplateColumns = showGift ? '1fr 1fr 1fr 1fr' : '';
   }
 }
 
@@ -4875,9 +5099,10 @@ window.onManualSearch = () => {
     .sort((a, b) => groupRank(a) - groupRank(b))
     .slice(0,30);
   if (!list.length) {
-    cont.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:8px 4px">لا يوجد مخدوم بهذا الاسم</div>`;
+    cont.innerHTML = `<div style="color:var(--text-dim);font-size:13px;padding:8px 4px">${inParents() ? 'لا يوجد ولي أمر بهذا الاسم' : 'لا يوجد مخدوم بهذا الاسم'}</div>`;
     return;
   }
+  const par = inParents();
   // لو الخادم في بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1: المخدوم اللي لسه متقسمش بيتوزع على التلات فصول دول بس
   const pickGrp = babyKgClasses();
   const pickClasses = pickGrp.some(c => c.id === currentClassTab) ? pickGrp : undefined;
@@ -4899,7 +5124,7 @@ window.onManualSearch = () => {
       ${studentAvatarHTML(s,'result-avatar')}
       <div style="flex:1;font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>
       <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
-      <div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>
+      ${par ? '' : `<div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>`}
     </div>`;
   }).join('');
 };
@@ -6028,7 +6253,7 @@ window.openClassFromAdmin = (id) => {
 function hideAllScreens() {
   stopVoice();
   stopTodayListeners();
-  ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
+  ['attendance','students','filters','messages','parents','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = 'none');
   hideAdminScreens();
   hideRolesScreen();
   document.getElementById('main-tabs').style.display = 'none';
@@ -6093,6 +6318,7 @@ window.showClassHome = () => {
   if (hdr) hdr.style.display = canGoBack ? 'block' : 'none';
   const back = document.getElementById('class-home-back'); if (back) back.textContent = (currentRole === 'admin' || (hasSupHome() && !needsClassPick())) ? '→ رجوع' : '→ تغيير الفصل';
   const t = document.getElementById('class-home-title'); if (t) t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab);
+  applyParentsMode();
   document.getElementById('tab-home').style.display = 'block';
   applyMonitorVisibility();
 };
@@ -6105,7 +6331,7 @@ function navLevel() {
   if (shown('tab-admin-classes')) return 'adminClasses';
   if (shown('tab-pick-class')) return 'picker';
   if (shown('tab-home')) return 'classHome';
-  if (['attendance','students','filters','messages','monitor','classservants'].some(t => shown('tab-' + t))) return 'tab';
+  if (['attendance','students','filters','messages','parents','monitor','classservants'].some(t => shown('tab-' + t))) return 'tab';
   return '';
 }
 function updateBackBtn() {
@@ -6156,6 +6382,8 @@ window.switchTab = async (tab) => {
   if (tab !== 'attendance') { stopVoice(); stopTodayListeners(); }
   if (tab === 'monitor' && !canManageServants()) return;
   if (tab === 'classservants' && currentRole !== 'supervisor') return;
+  applyParentsMode();
+  if (tab === 'parents' && !inParents()) return;
   hideAdminScreens();
   document.getElementById('tab-home').style.display = 'none';
   document.getElementById('main-tabs').style.display = 'flex';
@@ -6165,7 +6393,7 @@ window.switchTab = async (tab) => {
     const single = currentRole !== 'admin' && allowedCls.length === 1;
     const showClassBar = tab !== 'monitor' && !(tab === 'classservants' && classServScope === 'all') && currentRole !== 'admin' && !single;
     document.getElementById('global-class-tabs').style.display = showClassBar ? '' : 'none';
-    const titles = { attendance:'✅ الحضور', students:'🧒 المخدومين', filters:'📞 الافتقاد', messages:'📨 الرسائل' };
+    const titles = { attendance:'✅ الحضور', students:'🧒 المخدومين', filters:'📞 الافتقاد', messages:'📨 الرسائل', parents:'👨‍👩‍👧 أولياء الأمور' };
     const tb = document.getElementById('section-title');
     if (tb) {
       if (titles[tab]) {
@@ -6175,7 +6403,7 @@ window.switchTab = async (tab) => {
     }
   }
   document.querySelectorAll('.tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabKey));
-  ['attendance','students','filters','messages','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
+  ['attendance','students','filters','messages','parents','monitor','classservants'].forEach(t => document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none');
   if (tab === 'monitor') { loadMonitorTab(); return; }
   if (tab === 'classservants') { switchClassServSub('servants'); if (!servantsLoadedFlag) await loadServantsOnce(); renderClassServList(); return; }
   await ensureStudents();
@@ -6183,6 +6411,7 @@ window.switchTab = async (tab) => {
   if (tab === 'students')  { renderClassChips(); renderStudentsList(); }
   if (tab === 'filters')   renderFilterList();
   if (tab === 'messages')  renderWaTab();
+  if (tab === 'parents')   renderParentsList();
 };
 
 // تبديل تاب الفصل فوق خالص في شاشة الحضور (فصل أ / فصل ب / كي جي ١) — كل حاجة في الشاشة (الإحصائيات، البحث، قائمة اليوم) بترجع بس للفصل المختار
@@ -6193,10 +6422,13 @@ window.switchClassTab = (cls, btn) => {
   localStorage.setItem('hdour_attendanceClassTab', cls);
   classFilter = cls;
   adminClassChanged();
+  applyParentsMode();
   renderClassChips();
   if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
   if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
   if (document.getElementById('tab-messages')?.style.display === 'block') renderWaTab();
+  if (document.getElementById('tab-parents')?.style.display === 'block') renderParentsList();
+  guardParentsTab();
   document.querySelectorAll('.class-tab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   updateStats();
@@ -6229,6 +6461,7 @@ function applyClassRestrictionUI() {
       b.disabled = restricted && !allowed.includes(cls);
     });
   }
+  applyParentsMode();
   // تبويب "المخدومين" بيعرض كل الفصول دايمًا، فشيبس فلتر الفصل تفضل ظاهرة حتى للخادم المقيّد
   // عشان يقدر يفلتر لفصله بس لو حب
 }
@@ -7957,7 +8190,7 @@ window.saveEditStudent = async () => {
   const err = validateStudentData({ name, dob, address, father, mother, student, others, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
   const prev = allStudents.find(s => s.id === id);
-  const dupEdit = allStudents.find(s => s.id !== id && normalizeArabic(s.name) === normalizeArabic(name) && !(prev && prev.linkId && s.linkId === prev.linkId));
+  const dupEdit = allStudents.find(s => s.id !== id && s.classSection !== PARENTS_CLASS_ID && normalizeArabic(s.name) === normalizeArabic(name) && !(prev && prev.linkId && s.linkId === prev.linkId));
   if (dupEdit) { showToast(dupMsg(dupEdit), 'error'); return; }
   if (!prev || normalizeArabic(prev.name) !== normalizeArabic(name)) {
     const dupEditSrv = await findNameOnServer(name, id, prev && prev.linkId);
