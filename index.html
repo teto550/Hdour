@@ -259,14 +259,16 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 #monitor-class-chips .tab.active{background:rgba(79,142,247,.12);color:var(--accent);border-color:rgba(79,142,247,.25);box-shadow:none;animation:none;}
 #monitor-subtabs{padding:5px;}
 #monitor-subtabs .tab{padding:12px 10px;font-size:14px;font-weight:800;border-radius:10px;}
-#serv-att-activity-chips{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:transparent;border:none;padding:0;}
-#serv-att-activity-chips .tab{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 8px;border-radius:14px;background:var(--surface);border:1px solid var(--border);font-size:14px;font-weight:700;color:var(--text-dim);}
-#serv-att-activity-chips .act-ic{font-size:20px;line-height:1;}
-#serv-att-activity-chips .tab[data-act="mass"]{--c:160,125,224;}
-#serv-att-activity-chips .tab[data-act="sunday_school"]{--c:79,142,247;}
-#serv-att-activity-chips .tab[data-act="meeting"]{--c:46,204,113;}
-#serv-att-activity-chips .tab[data-act="preparation"]{--c:243,156,18;}
-#serv-att-activity-chips .tab.active{background:rgba(var(--c),0.1);border-color:rgba(var(--c),0.35);color:var(--text);box-shadow:none;animation:none;}
+#serv-att-activity-chips,#class-serv-att-activity-chips{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:transparent;border:none;padding:0;}
+#serv-att-activity-chips .tab,#class-serv-att-activity-chips .tab{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 8px;border-radius:14px;background:rgba(var(--c),0.10);border:1.5px solid rgba(var(--c),0.35);font-size:14px;font-weight:700;color:rgb(var(--c));box-shadow:none;animation:none;transition:background .15s,color .15s,transform .15s;}
+#serv-att-activity-chips .act-ic,#class-serv-att-activity-chips .act-ic{font-size:20px;line-height:1;}
+.tab[data-act="mass"]{--c:160,125,224;}
+.tab[data-act="sunday_school"]{--c:79,142,247;}
+.tab[data-act="meeting"]{--c:46,204,113;}
+.tab[data-act="preparation"]{--c:243,156,18;}
+#serv-att-activity-chips .tab.active,#class-serv-att-activity-chips .tab.active{background:rgb(var(--c));border-color:rgb(var(--c));color:#fff;font-weight:800;box-shadow:0 4px 14px rgba(var(--c),0.35);animation:none;transform:translateY(-1px);}
+.mon-summary[style*="--c"]{border-color:rgba(var(--c),0.45);border-top:3px solid rgb(var(--c));}
+.mon-summary[style*="--c"] .mon-sum-fill{background:linear-gradient(90deg,rgb(var(--c)),rgba(var(--c),0.65));}
 #tab-monitor .search-box input{padding:13px 14px;border-radius:14px;font-size:14px;}
 .mon-date-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
 .mon-date-lbl{font-size:13px;font-weight:800;flex-shrink:0;}
@@ -1038,10 +1040,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div id="class-serv-sub-att" style="display:none">
       <div class="tabs" id="class-serv-att-activity-chips" style="margin-bottom:12px">
-        <button class="tab active" onclick="setClassServAttActivity('mass',this)">⛪ القداس</button>
-        <button class="tab" onclick="setClassServAttActivity('sunday_school',this)">📖 مدارس الأحد</button>
-        <button class="tab" onclick="setClassServAttActivity('meeting',this)">🤝 اجتماع الخدام</button>
-        <button class="tab" onclick="setClassServAttActivity('preparation',this)">📝 التحضير</button>
+        <button class="tab active" data-act="mass" onclick="setClassServAttActivity('mass',this)"><span class="act-ic">⛪</span>القداس</button>
+        <button class="tab" data-act="sunday_school" onclick="setClassServAttActivity('sunday_school',this)"><span class="act-ic">📖</span>مدارس الأحد</button>
+        <button class="tab" data-act="meeting" onclick="setClassServAttActivity('meeting',this)"><span class="act-ic">🤝</span>اجتماع الخدام</button>
+        <button class="tab" data-act="preparation" onclick="setClassServAttActivity('preparation',this)"><span class="act-ic">📝</span>التحضير</button>
       </div>
       <input type="date" id="class-serv-att-date" class="field-input" onchange="renderClassServAttList()">
       <div class="search-box" style="margin:10px 0">
@@ -6244,6 +6246,7 @@ window.loadMonitorTab = async () => {
 let servAttActivity = 'mass'; // 'mass' | 'sunday_school' | 'meeting' | 'preparation'
 const SERV_ATT_LABELS = { mass:'القداس', sunday_school:'مدارس الأحد', meeting:'اجتماع الخدام', preparation:'التحضير' };
 const SERV_ATT_EMOJI = { mass:'⛪', sunday_school:'📖', meeting:'🤝', preparation:'📝' };
+const SERV_ATT_RGB = { mass:'160,125,224', sunday_school:'79,142,247', meeting:'46,204,113', preparation:'243,156,18' };
 let monitorClassFilter = 'all';
 function monitorFilterServants(list) {
   if (monitorClassFilter === 'all') return list;
@@ -6461,8 +6464,8 @@ async function renderServAttList() {
     const presentTotal = classBase.filter(s => presentIds.has(s.id)).length;
     updateMonHero(date, classBase.length, presentTotal);
     const pct = classBase.length ? Math.round(presentTotal / classBase.length * 100) : 0;
-    const summary = `<div class="mon-summary">
-      <div class="mon-sum-row"><span><b>${presentTotal}</b> من ${classBase.length} حضروا ${SERV_ATT_EMOJI[servAttActivity]}</span><span class="mon-sum-pct">${pct}%</span></div>
+    const summary = `<div class="mon-summary" style="--c:${SERV_ATT_RGB[servAttActivity]}">
+      <div class="mon-sum-row"><span><b>${presentTotal}</b> من ${classBase.length} حضروا ${SERV_ATT_EMOJI[servAttActivity]} ${SERV_ATT_LABELS[servAttActivity]}</span><span class="mon-sum-pct">${pct}%</span></div>
       <div class="mon-sum-track"><div class="mon-sum-fill" style="width:${pct}%"></div></div>
     </div>`;
     cont.innerHTML = summary + servants.map(s => {
