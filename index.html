@@ -2237,13 +2237,9 @@ function toLocalDateKey(d) {
   return `${y}-${m}-${day}`;
 }
 
-// تاريخ الحضور بيتسجل دايماً تحت تاريخ يوم الخميس بتاع نفس الأسبوع (الأسبوع بيبدأ سبت الصبح ويخلص جمعة بالليل)
-// الحضور: بيتصفّر كل يوم سبت الصبح (سبت → أربع بيتحسبوا على الخميس اللي جاي)
-const todayKey = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - ((d.getDay() + 1) % 7) + 5); // رجوع لأقرب سبت، وبعدين 5 أيام لقدام = خميس الأسبوع ده
-  return toLocalDateKey(d);
-};
+// الحضور يوم بيوم: بيتسجل تحت تاريخ النهارده الفعلي (بالتوقيت المحلي) وبيتصفّر تلقائي مع كل يوم جديد.
+// (قبل كده كان بيتسجل على خميس الأسبوع ويفضل لحد السبت — السجلات القديمة لسه تحت تواريخ الخميس زي ما هي)
+const todayKey = () => toLocalDateKey(new Date());
 // الآيات: أسبوعها من السبت الصبح لحد الجمعة بالليل، والقايمة بترجع فاضية كل يوم سبت.
 // وبتتسجل على حضور الأسبوع اللي قبله = تاريخ الخميس اللي قبل السبت بتاع الأسبوع ده (سبت 03/10 → جمعة 09/10 = خميس 01/10).
 // التسجيل مفتوح طول الأسبوع.
@@ -3233,7 +3229,7 @@ const IMP_SKIP_RE = /^(مستر|الاجمالي|اجمالي|المجموع|م�
 const IMP_NO = /^(0|false|غ|غايب|غياب|absent|a|لا|no|-|—|×)$/;
 const IMP_VERSE_LBL = /^(ايه|الايه|تسميع|التسميع|سماع|السماع)$/;
 const IMP_ATT_LBL = /^(حضور|الحضور|حاضر)$/;
-// تاريخ الحضور بيتسجل تحت خميس نفس الأسبوع (سبت → جمعة) — نفس منطق todayKey
+// التسميع بيتسجل تحت خميس نفس الأسبوع (سبت → جمعة). الحضور بتاريخه الفعلي (يوم بيوم)
 const impWeekKey = (y, m, d) => { const dt = new Date(y, m - 1, d, 12); dt.setDate(dt.getDate() - ((dt.getDay() + 1) % 7) + 5); return toLocalDateKey(dt); };
 function impParseDate(v) {
   if (v == null || v === '' || typeof v === 'boolean') return null;
@@ -3296,8 +3292,9 @@ function impAnalyzeSheet(aoa) {
     if (!dt && lab && last) dt = last; // تاريخ مدموج فوق عمودين (حضور + آية)
     if (dt) {
       last = dt;
-      if (new Date(dt.y, dt.m - 1, dt.d, 12).getDay() !== 4) shifted = true;
-      (lab === 'verse' ? verseCols : attCols).push({ c, key: impWeekKey(dt.y, dt.m, dt.d) });
+      // الحضور بقى يوم بيوم: بيتسجل بتاريخه الفعلي. التسميع بس هو اللي لسه بيتحوّل لخميس الأسبوع
+      if (lab === 'verse' && new Date(dt.y, dt.m - 1, dt.d, 12).getDay() !== 4) shifted = true;
+      (lab === 'verse' ? verseCols : attCols).push({ c, key: lab === 'verse' ? impWeekKey(dt.y, dt.m, dt.d) : toLocalDateKey(new Date(dt.y, dt.m - 1, dt.d, 12)) });
     } else last = null;
   }
   const hasProfile = ['dob','phone','father','mother','others','gender','address','cls'].some(k => col[k] != null);
@@ -3451,7 +3448,7 @@ window.handleImportFile = async (e) => {
       + (skippedDup.length ? `<br>♻️ متسجلين قبل كده: <b>${skippedDup.length}</b><br><span style="font-size:12px;color:var(--text-dim)">${skippedDup.slice(0, 12).map(impEsc).join(' · ')}</span>` : '')
       + (importAtt.length || dupAtt ? `<br>📅 حضور هيتسجل: <b>${importAtt.length}</b>${dupAtt ? ` · ♻️ متسجل قبل كده: <b>${dupAtt}</b>` : ''}` : '')
       + (attOnlyNames.length ? `<br>🆕 أسماء في شيت الحضور مش موجودة عندنا: <b>${attOnlyNames.length}</b><br><span style="font-size:12px;color:var(--text-dim)">${attOnlyNames.slice(0, 12).map(impEsc).join(' · ')}</span>` : '')
-      + (shifted ? '<br><span style="font-size:12px;color:var(--text-dim)">ℹ️ تواريخ الحضور اتحوّلت لخميس الأسبوع (زي ما التطبيق بيسجل)</span>' : '')
+      + (shifted ? '<br><span style="font-size:12px;color:var(--text-dim)">ℹ️ تواريخ التسميع اتحوّلت لخميس الأسبوع (زي ما التطبيق بيسجل)</span>' : '')
       + (badPhones ? `<br>⚠️ صفوف فيها رقم غلط اتتجاهل: <b>${badPhones}</b>` : '')
       + (noPhone ? `<br>⚠️ صفوف من غير أي رقم صالح: <b>${noPhone}</b>` : '')
       + (noDob ? `<br>⚠️ صفوف من غير تاريخ ميلاد: <b>${noDob}</b>` : '')
