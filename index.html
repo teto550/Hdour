@@ -471,7 +471,17 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     <div id="tab-admin-home" style="display:none">
       <div class="admin-grid">
         <button class="admin-card" onclick="showAdminClasses()"><span class="ac-emoji">🏫</span>الفصول</button>
-        <button class="admin-card" onclick="switchTab('monitor')"><span class="ac-emoji">👥</span>الخدام</button>
+        <button class="admin-card" onclick="showServantsHome()"><span class="ac-emoji">👥</span>الخدام</button>
+      </div>
+      <div class="creator-credit">Creator by David Emil : 01274005969</div>
+    </div>
+    <div id="tab-servants-home" style="display:none">
+      <button class="admin-back" onclick="goHome()">→ رجوع</button>
+      <div class="page-title-box">👥 الخدام</div>
+      <div class="admin-grid">
+        <button class="admin-card" onclick="openServantsSection('attendance')"><span class="ac-emoji">✅</span>الحضور</button>
+        <button class="admin-card" onclick="openServantsSection('servants')"><span class="ac-emoji">👥</span>الخدام</button>
+        <button class="admin-card" onclick="openServantsSection('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
       </div>
       <div class="creator-credit">Creator by David Emil : 01274005969</div>
     </div>
@@ -870,7 +880,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         </div>
       </div>
       <div class="tabs" id="monitor-class-chips" style="overflow-x:auto;margin-bottom:12px"></div>
-      <div class="tabs" id="monitor-subtabs" style="margin-bottom:12px">
+      <div class="tabs" id="monitor-subtabs" style="margin-bottom:12px;display:none">
         <button class="tab active" id="monitor-subtab-btn-attendance" onclick="switchMonitorSubTab('attendance')">✅ الحضور</button>
         <button class="tab" id="monitor-subtab-btn-servants" onclick="switchMonitorSubTab('servants')">👥 الخدام</button>
       </div>
@@ -890,6 +900,103 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <div id="monitor-subtab-attendance">
         <div class="mon-date-row"><span class="mon-date-lbl">📅 التاريخ</span><input type="date" id="serv-att-date" class="field-input" onchange="renderServAttList()"></div>
         <div id="serv-att-list"></div>
+      </div>
+
+      <!-- رسائل الخدام (واتساب) -->
+      <div id="monitor-subtab-messages" style="display:none">
+        <div class="filter-bar" style="margin-bottom:16px">
+          <p class="section-title" style="margin-bottom:10px">✏️ نص الرسالة</p>
+          <textarea id="sm-message" class="field-input" rows="5" style="resize:vertical;font-family:'Cairo',sans-serif;margin-bottom:10px" placeholder="اكتب رسالتك هنا…"></textarea>
+          <button type="button" onclick="smInsertName()" style="background:rgba(79,142,247,0.12);border:1px solid rgba(79,142,247,0.3);border-radius:8px;color:var(--accent);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer">➕ ضع اسم الخادم هنا</button>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:10px">هيتم استبدال <b>{اسم_الخادم}</b> باسم كل خادم تلقائيًا (أول اسم بس) عند الإرسال.</div>
+        </div>
+
+        <p class="section-title">📤 اختر المستلمين</p>
+
+        <div class="filter-bar" style="margin-bottom:10px">
+          <details class="filter-acc">
+            <summary class="filter-acc-header">
+              <span class="section-title">🎂 أعياد الميلاد</span>
+              <span class="filter-acc-right"><span class="filter-acc-value" id="sm-bday-value">كل الشهور</span><span class="filter-acc-chevron">⌄</span></span>
+            </summary>
+            <div class="filter-acc-body">
+              <select class="field-select" id="sm-month-select" style="margin-bottom:0" onchange="smSetBdayMonth(this.value)">
+                <option value="0">كل الشهور</option>
+                <option value="1">يناير</option><option value="2">فبراير</option><option value="3">مارس</option><option value="4">أبريل</option>
+                <option value="5">مايو</option><option value="6">يونيو</option><option value="7">يوليو</option><option value="8">أغسطس</option>
+                <option value="9">سبتمبر</option><option value="10">أكتوبر</option><option value="11">نوفمبر</option><option value="12">ديسمبر</option>
+              </select>
+              <div style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.7">الفلتر ده بيعتمد على تاريخ ميلاد الخادم المتسجل في ملفه (من تبويب "الخدام" ← دوس على الخادم).</div>
+            </div>
+          </details>
+        </div>
+
+        <div class="filter-bar" style="margin-bottom:10px">
+          <details class="filter-acc">
+            <summary class="filter-acc-header">
+              <span class="section-title">📌 النشاط (للغياب والحضور)</span>
+              <span class="filter-acc-right"><span class="filter-acc-value" id="sm-activity-value">القداس</span><span class="filter-acc-chevron">⌄</span></span>
+            </summary>
+            <div class="filter-acc-body">
+              <div class="filter-row" id="sm-activity-chips">
+                <button class="filter-chip active" onclick="smSetActivity('mass',this)">⛪ القداس</button>
+                <button class="filter-chip" onclick="smSetActivity('sunday_school',this)">📖 مدارس الأحد</button>
+                <button class="filter-chip" onclick="smSetActivity('meeting',this)">🤝 اجتماع الخدام</button>
+                <button class="filter-chip" onclick="smSetActivity('preparation',this)">📝 التحضير</button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="filter-bar" style="margin-bottom:10px">
+          <details class="filter-acc">
+            <summary class="filter-acc-header">
+              <span class="section-title">😔 الغياب</span>
+              <span class="filter-acc-right"><span class="filter-acc-value" id="sm-absence-value">الكل</span><span class="filter-acc-chevron">⌄</span></span>
+            </summary>
+            <div class="filter-acc-body">
+              <div class="filter-row" id="sm-absence-chips">
+                <button class="filter-chip active" onclick="smSetAbsence('all',this)">الكل</button>
+                <button class="filter-chip" onclick="smSetAbsence(1,this)">غاب آخر مرة</button>
+                <button class="filter-chip" onclick="smSetAbsence(2,this)">غاب آخر مرتين</button>
+                <button class="filter-chip" onclick="smSetAbsence(3,this)">غاب آخر 3 مرات</button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="filter-bar" style="margin-bottom:12px">
+          <details class="filter-acc">
+            <summary class="filter-acc-header">
+              <span class="section-title">✅ الحضور المتصل</span>
+              <span class="filter-acc-right"><span class="filter-acc-value" id="sm-attendance-value">الكل</span><span class="filter-acc-chevron">⌄</span></span>
+            </summary>
+            <div class="filter-acc-body">
+              <div class="filter-row" id="sm-attendance-chips">
+                <button class="filter-chip active" onclick="smSetAttendance('all',this)">الكل</button>
+                <button class="filter-chip" onclick="smSetAttendance(1,this)">حضر آخر مرة</button>
+                <button class="filter-chip" onclick="smSetAttendance(2,this)">حضر آخر مرتين</button>
+                <button class="filter-chip" onclick="smSetAttendance(3,this)">حضر آخر 3 مرات</button>
+                <button class="filter-chip" onclick="smSetAttendance(4,this)">حضر آخر 4 مرات</button>
+                <button class="filter-chip" onclick="smSetAttendance(5,this)">حضر آخر 5 مرات</button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="list-header">
+          <span class="section-title">قائمة المستلمين</span>
+          <span id="sm-recipients-count" style="font-size:12px;color:var(--text-dim)"></span>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button class="export-btn" style="flex:1" onclick="smSelectAll(true)">تحديد الكل</button>
+          <button class="export-btn" style="flex:1" onclick="smSelectAll(false)">إلغاء التحديد</button>
+        </div>
+        <div id="sm-recipients-list"></div>
+
+        <button onclick="startSmQueue()" style="width:100%;margin-top:16px;background:linear-gradient(135deg,#25D366,#128C7E);border:none;border-radius:10px;color:#fff;font-family:'Cairo',sans-serif;font-size:16px;font-weight:700;padding:14px;cursor:pointer">📱 ابدأ إرسال الرسائل</button>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:10px;line-height:1.7">ملحوظة: واتساب بيمنع الإرسال الجماعي التلقائي، فهيتم فتح شات كل خادم برسالته جاهزة، وانت بس هتضغط "إرسال" جوه واتساب، وبعدين هتنتقل للخادم اللي بعده.</div>
+        <div id="sm-queue-box" style="display:none;margin-top:18px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;text-align:center"></div>
       </div>
 
       <!-- إدارة الخدام وطلبات الانضمام وسجل الأنشطة -->
@@ -5848,7 +5955,7 @@ window.applyMonitorVisibility = () => {
 };
 // ===== الصفحة الرئيسية للأدمن: الفصول / الخدام =====
 function hideAdminScreens() {
-  ['tab-admin-home','tab-sup-home','tab-admin-classes','tab-pick-class'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+  ['tab-admin-home','tab-servants-home','tab-sup-home','tab-admin-classes','tab-pick-class'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
   hideRolesScreen();
 }
 // شاشة "المستخدمين والأدوار" لازم تتقفل مع أي تنقل تاني (هوم / تابات / فصول)، وإلا الشاشة الجديدة بتظهر فوقها أو تحتها
@@ -5971,6 +6078,7 @@ window.showClassHome = () => {
 function navLevel() {
   const shown = id => document.getElementById(id)?.style.display === 'block';
   if (shown('tab-admin-home')) return 'adminHome';
+  if (shown('tab-servants-home')) return 'servantsHome';
   if (shown('tab-sup-home')) return 'supHome';
   if (shown('tab-admin-classes')) return 'adminClasses';
   if (shown('tab-pick-class')) return 'picker';
@@ -5982,20 +6090,20 @@ function updateBackBtn() {
   const b = document.getElementById('top-back-btn'); if (!b) return;
   const lvl = navLevel();
   const canGoBack = currentRole === 'admin' || needsClassPick() || hasSupHome();
-  const show = lvl === 'tab' || lvl === 'adminClasses' || lvl === 'picker' && hasSupHome() || (lvl === 'classHome' && canGoBack);
+  const show = lvl === 'tab' || lvl === 'adminClasses' || lvl === 'servantsHome' || lvl === 'picker' && hasSupHome() || (lvl === 'classHome' && canGoBack);
   b.style.display = show ? 'flex' : 'none';
 }
 window.goBack = () => {
   closeSettingsMenu();
   const lvl = navLevel();
   if (lvl === 'tab') {
-    if (currentRole === 'admin' && document.getElementById('tab-monitor').style.display === 'block') goHome();
+    if (currentRole === 'admin' && document.getElementById('tab-monitor').style.display === 'block') showServantsHome(); // من جوه (حضور/خدام/رسائل) ← كروت الخدام
     else if (hasSupHome() && document.getElementById('tab-classservants').style.display === 'block') goHome(); // خدام المسؤول ← رئيسيته
     else showClassHome(); // يرجع لكروت الفصل (حضور/مخدومين/…) من غير ما يعدّي على كل الفصول
   }
   else if (lvl === 'classHome') classHomeBack();
   else if (lvl === 'picker' && hasSupHome()) goHome();
-  else if (lvl === 'adminClasses') goHome();
+  else if (lvl === 'adminClasses' || lvl === 'servantsHome') goHome();
 };
 {
   let backRaf = 0;
@@ -6010,6 +6118,15 @@ window.tabsHome = () => {
   else if (hasSupHome() && document.getElementById('tab-classservants').style.display !== 'block' && currentClassTab) showClassHome();
   else goHome();
 };
+// شاشة كروت الخدام للأدمن (الحضور / الخدام / الرسائل) — زي كروت الفصل
+let monitorEntrySub = 'servants';
+window.showServantsHome = () => {
+  if (currentRole !== 'admin') return;
+  hideAllScreens();
+  document.getElementById('tab-servants-home').style.display = 'block';
+  applyMonitorVisibility();
+};
+window.openServantsSection = (which) => { monitorEntrySub = which; switchTab('monitor'); };
 window.switchTab = async (tab) => {
   let tabKey = tab;
   if (tab === 'allclassservants') { tab = 'classservants'; classServScope = 'all'; }
@@ -6101,12 +6218,14 @@ window.applyClassRestrictionUI = applyClassRestrictionUI;
 window.loadMonitorTab = async () => {
   if (currentRole !== 'admin') return;
   renderMonitorClassChips();
-  // الأدمن لما يفتح "الخدام" يفتحله تبويب "الخدام" (مش الحضور) تلقائي
-  switchMonitorSubTab('servants');
-  await loadServantsFresh();
+  // القسم اللي الأدمن اختاره من كروت الخدام (الحضور / الخدام / الرسائل)
   const di = document.getElementById('activity-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
   document.getElementById('activity-list').innerHTML = `<div class="empty-state">اختار التاريخ واضغط "عرض"</div>`;
   const sd = document.getElementById('serv-att-date'); if (sd && !sd.value) sd.value = toLocalDateKey(new Date());
+  switchMonitorSubTab(monitorEntrySub);
+  await loadServantsFresh();
+  if (monitorEntrySub === 'attendance') renderServAttList();
+  else if (monitorEntrySub === 'messages') renderSmTab();
 };
 
 // ===== حضور الخدام (القداس / مدارس الأحد / اجتماع الخدام / التحضير) =====
@@ -6135,14 +6254,136 @@ window.onMonitorSearch = () => {
   else renderServAttList();
 };
 window.switchMonitorSubTab = (which) => {
+  monitorEntrySub = which;
   document.getElementById('monitor-subtab-btn-attendance').classList.toggle('active', which === 'attendance');
   document.getElementById('monitor-subtab-btn-servants').classList.toggle('active', which === 'servants');
   document.getElementById('monitor-subtab-attendance').style.display = which === 'attendance' ? 'block' : 'none';
   document.getElementById('monitor-subtab-servants').style.display   = which === 'servants'   ? 'block' : 'none';
+  document.getElementById('monitor-subtab-messages').style.display   = which === 'messages'   ? 'block' : 'none';
   document.getElementById('monitor-attendance-activities').style.display = which === 'attendance' ? 'block' : 'none';
-  const hero = document.getElementById('mon-hero'); if (hero) hero.classList.toggle('srv-mode', which === 'servants');
-  const hsub = document.getElementById('mon-hero-sub'); if (hsub && which === 'servants') hsub.textContent = 'إدارة الخدام وطلبات الانضمام';
-  if (which === 'attendance') renderServAttList(); else renderServantsList();
+  const sb = document.getElementById('monitor-search-input')?.parentElement; if (sb) sb.style.display = which === 'messages' ? 'none' : '';
+  const hero = document.getElementById('mon-hero'); if (hero) hero.classList.toggle('srv-mode', which !== 'attendance');
+  const hsub = document.getElementById('mon-hero-sub');
+  if (hsub) hsub.textContent = which === 'servants' ? 'إدارة الخدام وطلبات الانضمام' : which === 'messages' ? 'رسائل الخدام على واتساب' : 'متابعة حضور الخدام';
+  if (which === 'attendance') renderServAttList(); else if (which === 'messages') renderSmTab(); else renderServantsList();
+};
+
+// ===== رسائل الخدام (واتساب) — فلاتر: أعياد الميلاد / الغياب / الحضور المتصل، وفلتر الفصل من الشيبس اللي فوق =====
+let smActivity = 'mass', smAbsence = 'all', smAttendance = 'all', smBdayMonth = 0;
+let smChecked = new Set(), smQueue = [], smQueueIndex = 0;
+let smAttRecs = [], smAttLoadedAt = 0, smAttLoading = false;
+const SM_WEEKS = 14;
+const smHasPhone = x => !!String(x.phone || '').replace(/\D/g, '');
+const smFirstName = x => String(x.name || '').trim().split(/\s+/)[0] || '';
+function smSessionDates() { return [...new Set(smAttRecs.filter(r => r.activity === smActivity).map(r => r.date))].sort(); }
+function smPresentOn(date, id) { return smAttRecs.some(r => r.activity === smActivity && r.date === date && r.servantId === id); }
+function smBaseList() { return monitorFilterServants(cachedServants.filter(x => x.status === 'approved')); }
+function smRecipients() {
+  let list = smBaseList();
+  if (smBdayMonth > 0) list = list.filter(x => x.dob && parseInt(String(x.dob).split('-')[1], 10) === smBdayMonth);
+  const dates = smSessionDates();
+  if (smAbsence !== 'all' && dates.length) { const last = dates.slice(-smAbsence); list = list.filter(x => last.every(d => !smPresentOn(d, x.id))); }
+  if (smAttendance !== 'all' && dates.length) { const last = dates.slice(-smAttendance); list = list.filter(x => last.length === smAttendance && last.every(d => smPresentOn(d, x.id))); }
+  return list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+}
+async function smEnsureAttendance() {
+  if (smAttLoading || (smAttRecs.length && Date.now() - smAttLoadedAt < 2 * 60 * 1000)) return;
+  smAttLoading = true;
+  try {
+    const d = new Date(); d.setDate(d.getDate() - SM_WEEKS * 7);
+    const snap = await countedGetDocs(query(collection(db,'servantAttendance'), where('date','>=', toLocalDateKey(d))), 'servantAttendance (فلاتر رسائل الخدام)');
+    smAttRecs = snap.docs.map(x => { const v = x.data(); return { servantId: v.servantId, date: v.date, activity: v.activity }; });
+    smAttLoadedAt = Date.now();
+  } finally { smAttLoading = false; }
+}
+function smResetChecked() { smChecked = new Set(smRecipients().filter(smHasPhone).map(x => x.id)); }
+function smUpdateCount() {
+  const withPhone = smRecipients().filter(smHasPhone);
+  const el = document.getElementById('sm-recipients-count');
+  if (el) el.textContent = `${smChecked.size} محدد من ${withPhone.length} برقم تليفون`;
+}
+async function renderSmTab() {
+  const cont = document.getElementById('sm-recipients-list'); if (!cont) return;
+  const needAtt = smAbsence !== 'all' || smAttendance !== 'all';
+  if (needAtt && (!smAttRecs.length || Date.now() - smAttLoadedAt > 2 * 60 * 1000)) {
+    cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
+    try { await smEnsureAttendance(); } catch (e) { console.error(e); cont.innerHTML = '<div class="empty-state">تعذّر تحميل بيانات الحضور<br><button class="action-btn" style="margin-top:10px" onclick="renderSmTab()">🔄 حاول تاني</button></div>'; return; }
+  }
+  smResetChecked();
+  renderSmList();
+}
+window.renderSmTab = renderSmTab;
+function renderSmList() {
+  const cont = document.getElementById('sm-recipients-list'); if (!cont) return;
+  const list = smRecipients();
+  cont.innerHTML = list.length ? list.map(x => {
+    const has = smHasPhone(x);
+    return `<div class="wa-recipient-row ${!has ? 'no-phone' : ''}">
+      <input type="checkbox" ${smChecked.has(x.id) ? 'checked' : ''} ${!has ? 'disabled' : ''} onchange="smToggle('${x.id}', this.checked)">
+      <div class="s-info"><div class="s-name">${x.name || '—'}</div><div class="s-sub">${has ? x.phone : 'لا يوجد رقم تليفون'}</div></div>
+    </div>`;
+  }).join('') : `<div class="empty-state"><div class="empty-icon">📋</div>مفيش خدام بالفلاتر دي</div>`;
+  smUpdateCount();
+}
+window.smToggle = (id, on) => { if (on) smChecked.add(id); else smChecked.delete(id); smUpdateCount(); };
+window.smSelectAll = (val) => { smRecipients().filter(smHasPhone).forEach(x => val ? smChecked.add(x.id) : smChecked.delete(x.id)); renderSmList(); };
+const smChipActive = (boxId, btn) => { document.querySelectorAll('#' + boxId + ' .filter-chip').forEach(b => b.classList.remove('active')); if (btn) btn.classList.add('active'); };
+window.smSetBdayMonth = (m) => {
+  smBdayMonth = parseInt(m) || 0;
+  const names = ['كل الشهور','يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  document.getElementById('sm-bday-value').textContent = names[smBdayMonth];
+  renderSmTab();
+};
+window.smSetActivity = (act, btn) => { smActivity = act; smChipActive('sm-activity-chips', btn); document.getElementById('sm-activity-value').textContent = SERV_ATT_LABELS[act]; renderSmTab(); };
+window.smSetAbsence = (n, btn) => { smAbsence = n === 'all' ? 'all' : parseInt(n); smChipActive('sm-absence-chips', btn); document.getElementById('sm-absence-value').textContent = n === 'all' ? 'الكل' : (n === 1 ? 'غاب آخر مرة' : n === 2 ? 'غاب آخر مرتين' : 'غاب آخر ' + n + ' مرات'); renderSmTab(); };
+window.smSetAttendance = (n, btn) => { smAttendance = n === 'all' ? 'all' : parseInt(n); smChipActive('sm-attendance-chips', btn); document.getElementById('sm-attendance-value').textContent = n === 'all' ? 'الكل' : (n === 1 ? 'حضر آخر مرة' : n === 2 ? 'حضر آخر مرتين' : 'حضر آخر ' + n + ' مرات'); renderSmTab(); };
+window.smInsertName = () => {
+  const ta = document.getElementById('sm-message');
+  const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? ta.value.length;
+  const token = '{اسم_الخادم}';
+  ta.value = ta.value.slice(0, a) + token + ta.value.slice(b);
+  ta.focus(); ta.selectionStart = ta.selectionEnd = a + token.length;
+};
+window.startSmQueue = () => {
+  const tpl = document.getElementById('sm-message').value.trim();
+  if (!tpl) { showToast('اكتب نص الرسالة الأول', 'error'); return; }
+  const list = smRecipients().filter(x => smChecked.has(x.id) && smHasPhone(x));
+  if (!list.length) { showToast('اختر خادم واحد على الأقل عنده رقم تليفون', 'error'); return; }
+  smQueue = list; smQueueIndex = 0;
+  const box = document.getElementById('sm-queue-box');
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px" id="sm-queue-progress"></div>
+    <div style="font-size:18px;font-weight:900;margin-bottom:4px" id="sm-queue-name"></div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px" id="sm-queue-phone"></div>
+    <div style="display:flex;gap:10px">
+      <button onclick="sendSmQueueItem()" style="flex:2;background:linear-gradient(135deg,#25D366,#128C7E);border:none;border-radius:10px;color:#fff;font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;padding:13px;cursor:pointer">📱 فتح واتساب</button>
+      <button onclick="skipSmQueueItem()" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;padding:13px;cursor:pointer">تخطي</button>
+    </div>`;
+  renderSmQueueItem();
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+function renderSmQueueItem() {
+  if (smQueueIndex >= smQueue.length) { document.getElementById('sm-queue-box').innerHTML = `<div style="font-size:16px;font-weight:800;color:var(--success)">✅ تم الانتهاء من كل الرسائل (${smQueue.length})</div>`; return; }
+  const x = smQueue[smQueueIndex];
+  document.getElementById('sm-queue-progress').textContent = `${smQueueIndex + 1} من ${smQueue.length}`;
+  document.getElementById('sm-queue-name').textContent = x.name;
+  document.getElementById('sm-queue-phone').textContent = x.phone;
+}
+window.sendSmQueueItem = () => {
+  const x = smQueue[smQueueIndex]; if (!x) return;
+  const msg = encodeURIComponent((document.getElementById('sm-message').value || '').split('{اسم_الخادم}').join(smFirstName(x)));
+  openExternalLink(`https://api.whatsapp.com/send?phone=${normalizeEgyptPhone(x.phone)}&text=${msg}&type=phone_number&app_absent=0`);
+  smQueueIndex++; renderSmQueueItem();
+};
+window.skipSmQueueItem = () => { smQueueIndex++; renderSmQueueItem(); };
+// تاريخ ميلاد الخادم (الأدمن بيسجله من ملفه) — بيستخدمه فلتر أعياد الميلاد في رسائل الخدام
+window.saveServantDob = async (id, val) => {
+  try {
+    await updateDoc(doc(db,'servants',id), { dob: val || '' });
+    cachedServants = cachedServants.map(x => x.id === id ? { ...x, dob: val || '' } : x);
+    showToast('تم حفظ تاريخ الميلاد ✓', 'success');
+  } catch(e) { console.error(e); showToast('معرفتش أحفظ تاريخ الميلاد', 'error'); }
 };
 window.setServAttActivity = (activity, btn) => {
   servAttActivity = activity;
@@ -6704,6 +6945,8 @@ window.openServantProfile = (id) => {
   if (s.email) contactLines.push(`📧 <span dir="ltr">${s.email}</span>`);
   if (s.phone) contactLines.push(`📞 <span dir="ltr">${s.phone}</span>`);
   if (s.address) contactLines.push(`📍 ${s.address}`);
+  if (currentRole === 'admin' && s.status !== 'pending') contactLines.push(`🎂 <input type="date" value="${s.dob || ''}" onchange="saveServantDob('${s.id}', this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Cairo,sans-serif;padding:4px 8px">`);
+  else if (s.dob) contactLines.push(`🎂 ${s.dob}`);
   document.getElementById('sprof-contact').innerHTML = contactLines.join('<br>') || '';
   renderServantProfileActions(s);
   document.getElementById('servant-profile-modal').style.display = 'flex';
