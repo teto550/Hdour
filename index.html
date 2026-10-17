@@ -773,6 +773,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <div class="list-header">
         <span class="section-title">النتائج</span>
         <span id="filter-count" style="font-size:12px;color:var(--text-dim)"></span>
+        <button class="action-btn" id="filter-export-btn" onclick="exportFilterExcel()" style="display:none">📥 تصدير Excel</button>
       </div>
       <div id="filter-list"><div class="empty-state"><div class="empty-icon">🔍</div>اختر فلتر لعرض النتائج</div></div>
     </div>
@@ -5305,6 +5306,46 @@ window.setNoteFilter = (v, btn) => {
   renderFilterList();
 };
 
+// تصدير نتيجة الفلتر الحالية لـ Excel: الاسم + أيام الغياب + عدد مرات الحضور + التليفونات
+window.exportFilterExcel = async () => {
+  const list = window._lastFilterList || [];
+  if (!list.length) { showToast('مفيش نتايج للتصدير', 'error'); return; }
+  try {
+    if (recentAttWeeks < Math.max(filterWeeks(), RECENT_WINDOW_WEEKS)) await ensureRecentAttendance(filterWeeks());
+    const sessOf = classSessionLookup();
+    const fmt = d => { const q = d.split('-'); return `${q[2]}/${q[1]}/${q[0]}`; };
+    const nAbs = absenceFilter !== 'all' ? parseInt(absenceFilter) : 0;
+    const head = ['الاسم', nAbs ? `أيام الغياب (آخر ${nAbs})` : 'أيام الغياب', 'عدد مرات الحضور', 'من أصل (جلسات)', 'تليفون الأب', 'تليفون الأم', 'تليفون المخدوم', 'أرقام أخرى'];
+    const rows = list.map(s => {
+      const sess = sessOf(s.classSection);
+      const absent = sess.filter(d => !allAttendance[d]?.[s.id]);
+      const shown = nAbs ? sess.slice(-nAbs).filter(d => !allAttendance[d]?.[s.id]) : absent;
+      const attended = sess.length - absent.length;
+      return [
+        s.name || '',
+        shown.map(fmt).join('، '),
+        attended,
+        sess.length,
+        s.fatherPhone || '',
+        s.motherPhone || '',
+        s.studentPhone || '',
+        (hasRolePhones(s) ? (s.otherPhones || []) : (s.phones || [])).filter(Boolean).join(' / ')
+      ];
+    });
+    const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
+    styleSimpleSheet(ws, head.length, rows.length, [26, 40, 12, 12, 16, 16, 16, 22]);
+    // أرقام التليفونات تفضل نص عشان الصفر اللي في الأول ميتشالش
+    for (let r = 1; r <= rows.length; r++) for (let c = 4; c <= 7; c++) { const a = XLSX.utils.encode_cell({ r, c }); if (ws[a]) { ws[a].t = 's'; ws[a].z = '@'; } }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'افتقاد');
+    XLSX.writeFile(wb, `افتقاد-${todayKey()}.xlsx`, { cellStyles: true });
+    showToast(`تم تصدير ${rows.length} مخدوم ✓`, 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('حصل خطأ أثناء التصدير', 'error');
+  }
+};
+
 window.renderFilterList = renderFilterList;
 function renderFilterList() {
   const cont = document.getElementById('filter-list');
@@ -5376,6 +5417,8 @@ function renderFilterList() {
     return c !== 0 ? c : a.name.localeCompare(b.name, 'ar');
   });
   document.getElementById('filter-count').textContent = `${list.length} مخدوم`;
+  window._lastFilterList = list;
+  { const eb = document.getElementById('filter-export-btn'); if (eb) eb.style.display = list.length ? '' : 'none'; }
   if (!list.length && verseFilter !== 'all' && !verseRetriedFull) {
     // النتيجة فاضية: ممكن الكاش المحلي ناقص، فبنعمل قراءة كاملة مرة واحدة من فايرستور ونعيد الفلتر
     verseRetriedFull = true; verseForceFull = true; recentVerseWeeks = 0;
