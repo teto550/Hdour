@@ -4583,8 +4583,11 @@ function ensureRecentAttendance(weeks) {
   return run;
 }
 let recentAttScope = null;
+// نافذة تحميل ثابتة (بتغطي أكبر فلتر: حضر آخر 5 مرات = 7 أسابيع) عشان تغيير الفلتر من 1 لـ 5 مثلًا ميعملش قراءة جديدة من فايرستور كل مرة
+// (الكاش المحلي كان بيبقى "ناقص" لما النافذة تكبر، فكان بيقرا كل الأسابيع تاني)
+const RECENT_WINDOW_WEEKS = 8;
 async function _ensureRecentAttendance(weeks) {
-  weeks = Math.max(weeks || 4, 4);
+  weeks = Math.max(weeks || 4, RECENT_WINDOW_WEEKS);
   { const k = readScopeClasses().join(','); if (recentAttScope !== null && recentAttScope !== k) recentAttWeeks = 0; recentAttScope = k; }
   if (recentAttWeeks >= weeks) { await refreshTodayAttendanceIfStale(); return; }
   const d = new Date(); d.setDate(d.getDate() - weeks*7);
@@ -4785,7 +4788,7 @@ const VERSE_CACHE_KEY = 'verse_recent_cache_v2'; // v2: الكاش القديم 
 let verseForceFull = false, verseRetriedFull = false; // قراءة كاملة من فايرستور بدون كاش (بتتفعّل تلقائي لو الفلتر رجّع فاضي)
 // نفس فكرة الحضور: القراءة محصورة في فصل الخادم، والأسابيع اللي فاتت متخزنة على الجهاز، وبنقرا من آخر مزامنة بس
 async function _ensureRecentVerses(weeks) {
-  weeks = Math.max(weeks || 4, 4);
+  weeks = Math.max(weeks || 4, RECENT_WINDOW_WEEKS);
   const scope = readScopeClasses(), scopeKey = scope.join(',');
   if (recentVerseScope !== null && recentVerseScope !== scopeKey) recentVerseWeeks = 0;
   recentVerseScope = scopeKey;
