@@ -667,6 +667,18 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         </select>
       </div>
 
+      <div class="filter-bar" id="fclass-bar" style="margin-bottom:10px;display:none">
+        <details class="filter-acc">
+          <summary class="filter-acc-header">
+            <span class="section-title">🏫 الفصل</span>
+            <span class="filter-acc-right"><span class="filter-acc-value" id="fclass-value">الكل</span><span class="filter-acc-chevron">⌄</span></span>
+          </summary>
+          <div class="filter-acc-body">
+            <div class="filter-row" id="fclass-chips"></div>
+          </div>
+        </details>
+      </div>
+
       <div class="filter-bar" style="margin-bottom:10px">
         <details class="filter-acc">
           <summary class="filter-acc-header">
@@ -2425,6 +2437,7 @@ function renderSettingsPeopleList() {
   }).join('');
 }
 let filterSiblings = 'all'; // 'all' | 'siblings' | 'nonSiblings' (تبويب الافتقاد)
+let filterClasses = new Set(); // فلتر الفصل في الافتقاد (فاضي = الكل) — شوف activeFilterClasses()
 const NOTE_LABELS = {
   traveling:   { emoji:'🧳', text:'مسافر' },
   friday:      { emoji:'📅', text:'بيحضر يوم الجمعة' },
@@ -5207,6 +5220,38 @@ window.setBdayMonth = (m) => {
   renderFilterList();
 };
 
+// فلتر الفصل في الافتقاد (اختيار متعدد) — بيظهر بس لما الفصل المفتوح هو بيبي كلاس 1 / بيبي كلاس 2 / كي جي 1
+// فاضي = الكل. القيم: id الفصل أو 'none' (لسه متقسمش)
+function activeFilterClasses() {
+  const grp = babyKgClasses();
+  if (!currentClassTab || !grp.some(c => c.id === currentClassTab)) return new Set();
+  const ok = new Set([...grp.map(c => c.id), 'none']);
+  return new Set([...filterClasses].filter(v => ok.has(v)));
+}
+function renderFilterClassChips() {
+  const bar = document.getElementById('fclass-bar'), cont = document.getElementById('fclass-chips');
+  if (!bar || !cont) return;
+  const grp = babyKgClasses();
+  const show = !!currentClassTab && grp.some(c => c.id === currentClassTab);
+  bar.style.display = show ? '' : 'none';
+  if (!show) return;
+  const sel = activeFilterClasses();
+  cont.innerHTML = `<button class="filter-chip ${sel.size?'':'active'}" onclick="toggleFilterClass('all')">الكل</button>`
+    + grp.map(c => `<button class="filter-chip ${sel.has(c.id)?'active':''}" onclick="toggleFilterClass('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`).join('')
+    + `<button class="filter-chip ${sel.has('none')?'active':''}" onclick="toggleFilterClass('none')">؟ لسه متقسمش</button>`;
+  const names = [...sel].map(v => v === 'none' ? 'لسه متقسمش' : (classById(v)?.name || v));
+  document.getElementById('fclass-value').textContent = names.length ? names.join(' + ') : 'الكل';
+}
+window.toggleFilterClass = (v) => {
+  if (v === 'all') filterClasses = new Set();
+  else {
+    const s = activeFilterClasses();
+    s.has(v) ? s.delete(v) : s.add(v);
+    filterClasses = s;
+  }
+  renderFilterList();
+};
+
 window.setFilterSiblings = (v, btn) => {
   filterSiblings = v;
   document.querySelectorAll('#filter-siblings-chips .filter-chip').forEach(b => b.classList.remove('active'));
@@ -5263,6 +5308,7 @@ window.setNoteFilter = (v, btn) => {
 window.renderFilterList = renderFilterList;
 function renderFilterList() {
   const cont = document.getElementById('filter-list');
+  renderFilterClassChips();
   if ((absenceFilter !== 'all' || attendanceFilter !== 'all') && recentAttWeeks < filterWeeks()) {
     cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
     ensureRecentAttendance(filterWeeks()).then(renderFilterList).catch(()=>{ cont.innerHTML = '<div class="empty-state">تعذّر التحميل<br><button class="action-btn" style="margin-top:10px" onclick="renderFilterList()">🔄 حاول تاني</button></div>'; });
@@ -5287,6 +5333,7 @@ function renderFilterList() {
     list = list.filter(s => allowed.includes(s.classSection));
   }
   list = classScope(list);
+  { const fc = activeFilterClasses(); if (fc.size) list = list.filter(s => fc.has(s.classSection || 'none')); }
   if (bdayMonth > 0) {
     list = list.filter(s => s.dob && new Date(s.dob).getMonth() + 1 === bdayMonth);
   }
