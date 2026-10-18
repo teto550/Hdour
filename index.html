@@ -7920,10 +7920,14 @@ window.deleteServant = async (id, name, roleIds) => {
     catch(e) { console.error(e); showToast('مش مسموحلك تحذف الخادم ده — راجع صلاحيات Firestore', 'error'); return; }
   }
   patchServantLocal(id, null);
-  // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
-  if (name && roleIds) {
-    try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
-  }
+  // الاسم بيتشال خالص من البرنامج (من قوايم أسماء كل الأدوار) — يرجع بس لو انت كتبته من تاني
+  try {
+    if (!rolesLoadedFlag) await loadRolesOnce();
+    const ops = allRoles.filter(r => !r.isAdmin && name && nameVariantsIn(r, name).length)
+      .map(r => updateDoc(doc(db,'roles',r.id), { pendingNames: arrayRemove(...nameVariantsIn(r, name)) }));
+    await Promise.all(ops);
+    if (ops.length) await loadRolesOnce(true);
+  } catch(e) { console.error(e); }
   if (authGone) showToast('تم حذف الخادم من الداتا بيز وإيميله اتشال من Authentication ✓', 'success');
   else { console.warn('delete-servant worker:', r); showToast('اتحذف من الداتا بيز، لكن إيميله لسه في Authentication — حدّث الـ Worker (workers/push-worker.js) وراجع صلاحيات الـ service account', 'info'); }
 };
