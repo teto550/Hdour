@@ -1239,7 +1239,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       </div>
       <div id="rh-add-new" style="display:none">
         <label class="field-label" style="display:block;margin-bottom:6px">اسم الخادم</label>
-        <input type="text" id="rh-new-name" class="field-input" maxlength="60" autocomplete="off" placeholder="الاسم زي ما هيسجل بيه" style="margin-bottom:14px">
+        <input type="text" id="rh-new-name" class="field-input" maxlength="60" autocomplete="off" placeholder="الاسم زي ما هيسجل بيه" oninput="renderRhAdd()" style="margin-bottom:8px">
+        <div id="rh-new-suggest" style="margin-bottom:12px"></div>
         <div class="section-title" style="margin-bottom:8px">الفصل</div>
         <div id="rh-new-classes" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
         <div class="section-title" style="margin-bottom:8px">هو إيه؟</div>
@@ -8325,6 +8326,7 @@ window.openRhAdd = () => {
   document.getElementById('rh-new-name').value = '';
   setRhAddMode('reg');
   document.getElementById('rh-add-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('rh-add-search').focus(), 80);
 };
 window.closeRhAdd = () => { document.getElementById('rh-add-modal').style.display = 'none'; };
 window.setRhAddMode = (m) => {
@@ -8337,21 +8339,44 @@ window.setRhAddMode = (m) => {
 };
 window.setRhNewClass = (cid) => { rhNewClass = cid; if (cid === SERVANTS_CLASS_ID) rhNewType = 'classSupervisor'; renderRhAdd(); };
 window.setRhNewType = (t) => { rhNewType = t; renderRhAdd(); };
+function rhMatches(qRaw) {
+  const toks = normalizeArabic(qRaw || '').split(/\s+/).filter(Boolean);
+  if (!toks.length) return [];
+  return buildPeople().filter(p => !p.awaiting && !p.isAdmin && (() => { const n = normalizeArabic(p.name); return toks.every(t => n.includes(t)); })())
+    .sort((a, b) => {
+      const f = normalizeArabic(a.name).startsWith(toks[0]) ? 0 : 1, g = normalizeArabic(b.name).startsWith(toks[0]) ? 0 : 1;
+      return (f - g) || a.name.localeCompare(b.name, 'ar');
+    }).slice(0, 30);
+}
+function rhMatchRow(p) {
+  const roles = p.classes.length
+    ? p.classes.map(c => `<span style="display:inline-flex;align-items:center;gap:3px">${p.sup.has(c) ? '🗝️' : '🧑‍🏫'}${classBadgeHTML(c)}</span>`).join('')
+    : `<span class="class-badge class-none">⚠️ من غير فصل</span>`;
+  const pend = p.kind === 'pend' ? `<span class="mon-role" style="background:rgba(255,255,255,0.06);color:var(--text-dim);border:1px solid var(--border)">⏳ لسه مسجلش</span>` : '';
+  return `<div class="servant-item mon-row" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="gap:10px;cursor:pointer">
+    <div class="s-info"><div class="mon-name">${dEsc(p.name)}${pend}</div><div class="mon-badges">${roles}</div></div>
+    <button type="button" class="action-btn" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير / زيادة دور</button></div>`;
+}
+window.rhStartNewFromSearch = () => {
+  const v = (document.getElementById('rh-add-search').value || '').replace(/\s+/g, ' ').trim();
+  setRhAddMode('new');
+  document.getElementById('rh-new-name').value = v;
+  renderRhAdd();
+  setTimeout(() => document.getElementById('rh-new-name').focus(), 50);
+};
 function renderRhAdd() {
   if (rhAddMode === 'reg') {
-    const q = normalizeArabic(document.getElementById('rh-add-search').value || '');
+    const raw = document.getElementById('rh-add-search').value || '';
     const box = document.getElementById('rh-add-results');
-    if (!q) { box.innerHTML = `<div class="empty-state" style="padding:12px">اكتب اسم الخادم عشان يظهر دوره</div>`; return; }
-    const res = buildPeople().filter(p => p.kind === 'reg' && !p.awaiting && !p.isAdmin && normalizeArabic(p.name).includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ar')).slice(0, 40);
-    box.innerHTML = res.length ? res.map(p => {
-      const roles = p.classes.length
-        ? p.classes.map(c => `<span style="display:inline-flex;align-items:center;gap:3px">${p.sup.has(c) ? '🗝️' : '🧑‍🏫'}${classBadgeHTML(c)}</span>`).join('')
-        : `<span class="class-badge class-none">⚠️ من غير فصل</span>`;
-      return `<div class="servant-item mon-row" style="gap:10px"><div class="s-info"><div class="mon-name">${dEsc(p.name)}</div><div class="mon-badges">${roles}</div></div>
-        <button type="button" class="action-btn" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير الدور</button></div>`;
-    }).join('') : `<div class="empty-state" style="padding:12px">مفيش خادم مسجل بالاسم ده — جرّب "خادم جديد"</div>`;
+    if (!normalizeArabic(raw).trim()) { box.innerHTML = `<div class="empty-state" style="padding:12px">اكتب أول حروف اسم الخادم وهتظهرلك الأسماء — اختار الاسم وغيّر دوره أو زوّد دور</div>`; return; }
+    const res = rhMatches(raw);
+    box.innerHTML = (res.length ? res.map(rhMatchRow).join('') : `<div class="empty-state" style="padding:12px">مفيش خادم بالاسم ده</div>`)
+      + `<button type="button" class="export-btn" onclick="rhStartNewFromSearch()" style="width:100%;margin-top:10px;padding:10px;text-align:center">🆕 إضافة "${dEsc(raw.trim())}" كخادم جديد</button>`;
   } else {
+    const nm = document.getElementById('rh-new-name').value || '';
+    const sug = normalizeArabic(nm).trim() ? rhMatches(nm).slice(0, 5) : [];
+    document.getElementById('rh-new-suggest').innerHTML = sug.length
+      ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">⚠️ أسماء شبه كده موجودة بالفعل — لو هو، اختاره وغيّر دوره:</div>` + sug.map(rhMatchRow).join('') : '';
     document.getElementById('rh-new-classes').innerHTML = rhClassesList().map(c =>
       `<button type="button" class="filter-chip ${rhNewClass === c.id ? 'active' : ''}" onclick="setRhNewClass('${c.id}')">${dEsc(c.label)}</button>`).join('');
     const types = rhNewClass === SERVANTS_CLASS_ID ? ['classSupervisor'] : ['classServant', 'classSupervisor'];
@@ -8390,6 +8415,7 @@ window.openRhChange = (key) => {
     (p.kind === 'reg' ? (sv && servantInRole(sv, r.id)) : nameVariantsIn(r, p.name).length))
     .forEach(r => r.classes.forEach(c => { locked[c] = r.name || 'دور متعدد الفصول'; }));
   rhChange = { key, kind: p.kind, id: p.id || '', name: p.name, state, locked };
+  document.getElementById('rh-add-modal').style.display = 'none';
   document.getElementById('rh-change-title').textContent = '🔄 تغيير الدور — ' + p.name;
   renderRhChange();
   document.getElementById('rh-change-modal').style.display = 'flex';
