@@ -1066,6 +1066,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <div id="pending-list" style="margin-bottom:22px"></div>
         </div>
 
+        <div id="srv-reg-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
         <div class="list-header"><span class="section-title">👥 الخدام المعتمدين (<span id="servants-count">0</span>)</span></div>
         <div id="servants-list" style="margin-bottom:22px"></div>
 
@@ -7326,6 +7327,15 @@ function renderServantsList(list) {
         </div>
       </div>`;
   }).join('') : '';
+  // فلتر "لسه مسجلوش": بيعرض بس الأسماء المضافة في الفصول وملهاش حساب لسه
+  { const all = pendingPeopleList().filter(x => monitorClassFilter === 'all' || x.classes.includes(String(monitorClassFilter)));
+    const chips = document.getElementById('srv-reg-chips');
+    if (chips) chips.innerHTML = [['all', 'الكل'], ['notReg', `⏳ لسه مسجلوش (${all.length})`]].map(([k, l]) =>
+      `<button type="button" class="filter-chip ${srvRegFilter === k ? 'active' : ''}" onclick="setSrvRegFilter('${k}')">${l}</button>`).join(''); }
+  if (srvRegFilter === 'notReg') {
+    cont.innerHTML = pendingHTML || `<div class="empty-state">${q ? 'مفيش حد بالاسم ده' : 'كل الأسماء المضافة سجّلت حساب ✓'}</div>`;
+    return;
+  }
   if (!filtered.length) { cont.innerHTML = (q && !pendingHTML ? `<div class="empty-state">مفيش خادم بالاسم ده</div>` : (!q && !pendingHTML ? `<div class="empty-state">لا يوجد خدام معتمدين بعد</div>` : '')) + pendingHTML; return; }
   cont.innerHTML = filtered
     .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'))
@@ -7343,6 +7353,8 @@ function renderServantsList(list) {
       </div>`).join('') + pendingHTML;
 }
 let rolesTriedForServantsList = false;
+let srvRegFilter = 'all'; // 'all' | 'notReg'
+window.setSrvRegFilter = (k) => { srvRegFilter = k; renderServantsList(); };
 // كل الأسماء المضافة مقدمًا في أدوار الفصول ولسه ملهاش حساب: [{ name, classes, sup:Set }] — الاسم بيظهر مرة واحدة حتى لو في أكتر من دور
 function pendingPeopleList() {
   const registered = new Set(cachedServants.map(x => nameKey(x.name)));
