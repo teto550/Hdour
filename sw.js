@@ -3,7 +3,7 @@
 // ولو مفيش نت (أو النت بطيء جدًا) التطبيق بيفتح من الكاش.
 // سكربتات فايربيز والخطوط والمكتبات (نسخها ثابتة): cache-first.
 const APP = 'hdour';
-const CACHE = APP + '-shell-v1';
+const CACHE = APP + '-shell-v2';
 const CORE = ['./', './index.html', './manifest.json', './icon-193.png', './icon-513.png', './badge-96.png'];
 const STATIC_CDN = [
   /^https:\/\/www\.gstatic\.com\/firebasejs\//,
