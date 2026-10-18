@@ -487,7 +487,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <div id="settings-dropdown" class="settings-dropdown" style="display:none">
         <button class="settings-dropdown-item" onclick="openMyProfileModal()">👤 ملفي</button>
         <button class="settings-dropdown-item" onclick="openExportModal()">📥 تصدير Excel</button>
-        <button class="settings-dropdown-item" id="settings-dropdown-roles" style="display:none" onclick="openUsersRolesModal()">👥 المستخدمين والأدوار</button>
         <button class="settings-dropdown-item" id="settings-dropdown-notif" style="display:none" onclick="toggleNotifications()"><span>🔔 الإشعارات</span><span id="notif-state" style="font-size:12px;font-weight:800"></span></button>
         <div class="settings-dropdown-divider"></div>
         <button class="settings-dropdown-item danger" onclick="closeSettingsMenu();doLogout()">🚪 تسجيل الخروج</button>
@@ -513,6 +512,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="admin-card" onclick="openServantsSection('attendance')"><span class="ac-emoji">✅</span>الحضور</button>
         <button class="admin-card" onclick="openServantsSection('servants')"><span class="ac-emoji">👥</span>الخدام</button>
         <button class="admin-card" onclick="openServantsSection('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
+        <button class="admin-card" id="srv-card-roles" style="display:none" onclick="openUsersRolesModal('roles')"><span class="ac-emoji">🗂</span>المستخدمين والأدوار</button>
+        <button class="admin-card" id="srv-card-distribute" style="display:none" onclick="openUsersRolesModal('people')"><span class="ac-emoji">🎯</span>توزيع الأدوار</button>
       </div>
       <div class="creator-credit">Creator by David Emil : 01274005969</div>
     </div>
@@ -2404,7 +2405,6 @@ window.toggleSettingsMenu = (e) => {
   if (e) e.stopPropagation();
   const dd = document.getElementById('settings-dropdown');
   const opening = dd.style.display === 'none';
-  document.getElementById('settings-dropdown-roles').style.display = (opening && currentRole === 'admin') ? 'flex' : 'none';
   document.getElementById('settings-dropdown-notif').style.display = opening ? 'flex' : 'none';
   updateNotifBtn();
   dd.style.display = opening ? 'block' : 'none';
@@ -2436,12 +2436,14 @@ window.openMyProfileModal = () => {
   document.getElementById('settings-modal').style.display = 'flex';
 };
 // "المستخدمين والأدوار" — شاشة الأدوار (اسم + صلاحية أدمن + فصول + أعضاء)، للأدمن بس
-window.openUsersRolesModal = () => {
+window.openUsersRolesModal = (startTab) => {
   closeSettingsMenu();
   if (currentRole !== 'admin') return;
+  if (startTab === 'roles' || startTab === 'people') rolesTab = startTab;
+  const fromServantsHome = document.getElementById('tab-servants-home').style.display === 'block';
   const homeVisible = document.getElementById('tab-home').style.display !== 'none' || document.getElementById('tab-admin-home').style.display !== 'none' || document.getElementById('tab-admin-classes').style.display !== 'none';
   const activeBtn = document.querySelector('#main-tabs .tab.active[data-tab]');
-  rolesReturnTab = homeVisible ? '' : (activeBtn ? activeBtn.dataset.tab : '');
+  rolesReturnTab = fromServantsHome ? '__servantsHome__' : (homeVisible ? '' : (activeBtn ? activeBtn.dataset.tab : ''));
   stopVoice(); stopTodayListeners();
   document.getElementById('tab-home').style.display = 'none';
   document.getElementById('main-tabs').style.display = 'none';
@@ -6598,6 +6600,7 @@ window.showServantsHome = () => {
   if (!canManageServants()) return;
   hideAllScreens();
   document.getElementById('tab-servants-home').style.display = 'block';
+  ['srv-card-roles','srv-card-distribute'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = currentRole === 'admin' ? '' : 'none'; });
   applyMonitorVisibility();
 };
 window.openServantsSection = (which) => { monitorEntrySub = which; switchTab('monitor'); };
@@ -7879,7 +7882,8 @@ const ROLE_TYPE_SHORT   = { classServant:'خادم فصل', classSupervisor:'م�
 
 window.closeRolesModal = () => {
   document.getElementById('tab-roles').style.display = 'none';
-  if (rolesReturnTab) switchTab(rolesReturnTab); else goHome();
+  if (rolesReturnTab === '__servantsHome__') showServantsHome();
+  else if (rolesReturnTab) switchTab(rolesReturnTab); else goHome();
   rolesReturnTab = '';
 };
 
