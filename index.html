@@ -1124,6 +1124,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button type="button" id="rh-class-bar" onclick="rhToggleClassList()" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1.5px solid var(--accent);border-radius:14px;padding:13px 16px;color:var(--text);font-family:Cairo,sans-serif;font-size:16px;font-weight:900;cursor:pointer;margin-bottom:10px"></button>
         <div id="rh-class-list" style="display:none;flex-wrap:wrap;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px"></div>
         <button type="button" class="btn-primary" onclick="openRhAdd()" style="width:100%;margin-bottom:14px">➕ إضافة دور</button>
+        <div class="search-box" style="margin-bottom:10px"><input type="text" id="rh-filter" placeholder="🔍 دوّر في القايمة" autocomplete="off" oninput="renderRolesHome()"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span class="section-title" id="rh-list-title">الخدام</span>
         </div>
@@ -8275,6 +8276,7 @@ window.applyAssign = async () => {
 
 // ===== شاشة "الأدوار" (الجديدة): شريط فصول فوق، إضافة دور، وخدام الفصل المختار تحته مع زرار تغيير الدور =====
 let rhClass = '';
+const RH_ALL = '__all__';
 const RH_TYPES = { classServant:'🧑‍🏫 خادم', classSupervisor:'🗝️ مسؤول' };
 function rhClassesList() {
   return [...allClasses.map(c => ({ id: c.id, label: (c.emoji || '📘') + ' ' + c.name })), { id: SERVANTS_CLASS_ID, label: '👥 الخدام' }];
@@ -8293,28 +8295,37 @@ function rhRoleChip(p, cid) {
 function renderRolesHome() {
   const bar = document.getElementById('rh-class-bar');
   if (!bar) return;
-  const classes = rhClassesList();
-  if (!classes.some(c => c.id === rhClass)) rhClass = classes[0]?.id || '';
+  const classes = [{ id: RH_ALL, label: '🌐 الكل' }, ...rhClassesList()];
+  if (!classes.some(c => c.id === rhClass)) rhClass = rhClassesList()[0]?.id || RH_ALL;
   const cur = classes.find(c => c.id === rhClass);
   const open = document.getElementById('rh-class-list').style.display === 'flex';
   bar.innerHTML = `<span>🏫 ${cur ? dEsc(cur.label) : 'اختار فصل'}</span><span style="color:var(--text-dim);font-size:13px">${open ? '▲' : '▼ كل الفصول'}</span>`;
   document.getElementById('rh-class-list').innerHTML = classes.map(c =>
     `<button type="button" class="filter-chip ${c.id === rhClass ? 'active' : ''}" onclick="rhPickClass('${c.id}')">${dEsc(c.label)}</button>`).join('');
-  const list = buildPeople().filter(p => !p.isAdmin && p.classes.includes(rhClass))
-    .sort((a, b) => (Number(b.sup.has(rhClass)) - Number(a.sup.has(rhClass))) || a.name.localeCompare(b.name, 'ar'));
-  document.getElementById('rh-list-title').textContent = `الخدام (${list.length})`;
-  document.getElementById('rh-servants').innerHTML = list.length ? list.map(p => rhPersonRow(p, rhClass)).join('')
-    : `<div class="empty-state">مفيش خدام متسجلين في الفصل ده — دوس "➕ إضافة دور"</div>`;
+  const all = rhClass === RH_ALL;
+  const q = normalizeArabic(document.getElementById('rh-filter')?.value || '').trim();
+  const toks = q ? q.split(/\s+/) : [];
+  const list = buildPeople().filter(p => !p.awaiting && (all ? true : (!p.isAdmin && p.classes.includes(rhClass))))
+    .filter(p => { if (!toks.length) return true; const n = normalizeArabic(p.name); return toks.every(t => n.includes(t)); })
+    .sort(all ? ((a, b) => a.name.localeCompare(b.name, 'ar'))
+              : ((a, b) => (Number(b.sup.has(rhClass)) - Number(a.sup.has(rhClass))) || a.name.localeCompare(b.name, 'ar')));
+  document.getElementById('rh-list-title').textContent = `${all ? 'كل الخدام' : 'الخدام'} (${list.length})`;
+  document.getElementById('rh-servants').innerHTML = list.length ? list.map(p => rhPersonRow(p, all ? '' : rhClass)).join('')
+    : `<div class="empty-state">${toks.length ? 'مفيش خادم بالاسم ده' : 'مفيش خدام متسجلين في الفصل ده — دوس "➕ إضافة دور"'}</div>`;
 }
 function rhPersonRow(p, cid) {
-  const pal = classPalette(cid);
-  const others = p.classes.filter(c => c !== cid);
-  const extra = others.length ? `<div class="mon-badges">${others.map(c => `<span style="display:inline-flex;align-items:center;gap:2px">${p.sup.has(c) ? '🗝️' : ''}${classBadgeHTML(c)}</span>`).join('')}</div>` : '';
+  const pal = p.classes[0] ? classPalette(p.classes[0]) : { bg:'rgba(79,142,247,0.15)', text:'#4f8ef7' };
+  const shown = cid ? p.classes.filter(c => c !== cid) : p.classes;
+  const badges = p.isAdmin
+    ? `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`
+    : (shown.length ? shown.map(c => `<span style="display:inline-flex;align-items:center;gap:2px">${p.sup.has(c) ? '🗝️' : ''}${classBadgeHTML(c)}</span>`).join('')
+      : (cid ? '' : `<span class="class-badge class-none">⚠️ من غير فصل</span>`));
+  const chip = p.isAdmin ? `<span class="mon-role admin">👑 أدمن</span>` : (cid ? rhRoleChip(p, cid) : '');
   const pend = p.kind === 'pend' ? `<span class="mon-role" style="background:rgba(255,255,255,0.06);color:var(--text-dim);border:1px solid var(--border)">⏳ لسه مسجلش</span>` : '';
   return `<div class="servant-item mon-row" style="gap:10px">
     <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${(p.name || '؟').trim()[0] || '؟'}</div>
-    <div class="s-info"><div class="mon-name">${dEsc(p.name)}</div><div class="mon-badges" style="margin-top:2px">${rhRoleChip(p, cid)}${pend}</div>${extra}</div>
-    <button type="button" class="action-btn" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير الدور</button>
+    <div class="s-info"><div class="mon-name">${dEsc(p.name)}</div>${(chip || pend) ? `<div class="mon-badges" style="margin-top:2px">${chip}${pend}</div>` : ''}${badges ? `<div class="mon-badges">${badges}</div>` : ''}</div>
+    ${p.isAdmin ? '' : `<button type="button" class="action-btn" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير الدور</button>`}
   </div>`;
 }
 
