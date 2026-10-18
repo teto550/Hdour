@@ -2500,7 +2500,7 @@ window.openMyProfileModal = () => {
 window.openUsersRolesModal = (startTab) => {
   closeSettingsMenu();
   if (currentRole !== 'admin') return;
-  if (startTab === 'home') rolesMode = 'home';
+  if (startTab === 'home') { rolesMode = 'home'; rhClass = RH_ALL; { const f = document.getElementById('rh-filter'); if (f) f.value = ''; } }
   else if (startTab === 'roles' || startTab === 'people') { rolesTab = startTab; rolesMode = 'adv'; }
   const fromServantsHome = document.getElementById('tab-servants-home').style.display === 'block';
   const homeVisible = document.getElementById('tab-home').style.display !== 'none' || document.getElementById('tab-admin-home').style.display !== 'none' || document.getElementById('tab-admin-classes').style.display !== 'none';
@@ -8276,8 +8276,8 @@ window.applyAssign = async () => {
 
 
 // ===== شاشة "الأدوار" (الجديدة): شريط فصول فوق، إضافة دور، وخدام الفصل المختار تحته مع زرار تغيير الدور =====
-let rhClass = '';
 const RH_ALL = '__all__';
+let rhClass = RH_ALL; // الافتراضي: الكل
 const RH_TYPES = { classServant:'🧑‍🏫 خادم', classSupervisor:'🗝️ مسؤول' };
 function rhClassesList() {
   return [...allClasses.map(c => ({ id: c.id, label: (c.emoji || '📘') + ' ' + c.name })), { id: SERVANTS_CLASS_ID, label: '👥 الخدام' }];
@@ -8299,7 +8299,7 @@ function renderRolesHome() {
   const bar = document.getElementById('rh-class-bar');
   if (!bar) return;
   const classes = [{ id: RH_ALL, label: '🌐 الكل' }, ...rhClassesList()];
-  if (!classes.some(c => c.id === rhClass)) rhClass = rhClassesList()[0]?.id || RH_ALL;
+  if (!classes.some(c => c.id === rhClass)) rhClass = RH_ALL;
   const cur = classes.find(c => c.id === rhClass);
   const open = document.getElementById('rh-class-list').style.display === 'flex';
   bar.innerHTML = `<span>🏫 ${cur ? dEsc(cur.label) : 'اختار فصل'}</span><span style="color:var(--text-dim);font-size:13px">${open ? '▲' : '▼ كل الفصول'}</span>`;
@@ -8354,10 +8354,10 @@ window.setRhAddMode = (m) => {
 };
 window.setRhNewClass = (cid) => { rhNewClass = cid; if (cid === SERVANTS_CLASS_ID) rhNewType = 'classSupervisor'; renderRhAdd(); };
 window.setRhNewType = (t) => { rhNewType = t; renderRhAdd(); };
-function rhMatches(qRaw) {
+function rhMatches(qRaw, withAdmins) {
   const toks = normalizeArabic(qRaw || '').split(/\s+/).filter(Boolean);
   if (!toks.length) return [];
-  return buildPeople().filter(p => !p.awaiting && !p.isAdmin && (() => { const n = normalizeArabic(p.name); return toks.every(t => n.includes(t)); })())
+  return buildPeople().filter(p => !p.awaiting && (withAdmins || !p.isAdmin) && (() => { const n = normalizeArabic(p.name); return toks.every(t => n.includes(t)); })())
     .sort((a, b) => {
       const f = normalizeArabic(a.name).startsWith(toks[0]) ? 0 : 1, g = normalizeArabic(b.name).startsWith(toks[0]) ? 0 : 1;
       return (f - g) || a.name.localeCompare(b.name, 'ar');
@@ -8383,12 +8383,19 @@ function renderRhAdd() {
   if (rhAddMode === 'admin') {
     const raw = document.getElementById('rh-add-search').value || '';
     const box = document.getElementById('rh-add-results');
-    if (!normalizeArabic(raw).trim()) { box.innerHTML = `<div class="empty-state" style="padding:12px">اكتب أول حروف اسم الخادم وهتظهرلك الأسماء</div>`; return; }
-    const res = rhMatches(raw).filter(p => p.kind === 'reg');
-    box.innerHTML = res.length ? res.map(p => `<div class="servant-item mon-row" data-id="${p.id}" data-name="${dEsc(p.name)}" onclick="rhPromote(this.dataset.id,this.dataset.name)" style="gap:10px;cursor:pointer">
-        <div class="s-info"><div class="mon-name">${dEsc(p.name)}</div></div>
-        <button type="button" class="export-btn" style="flex:0 0 auto;white-space:nowrap">👑 خليه أدمن</button></div>`).join('')
-      : `<div class="empty-state" style="padding:12px">مفيش خادم مسجل بالاسم ده (الأدمن لازم يكون مسجل في التطبيق)</div>`;
+    const hasQ = !!normalizeArabic(raw).trim();
+    const res = (hasQ ? rhMatches(raw, true) : buildPeople().filter(p => p.isAdmin && !p.awaiting).sort((a, b) => a.name.localeCompare(b.name, 'ar')))
+      .filter(p => p.kind === 'reg');
+    const row = p => {
+      const under = p.isAdmin
+        ? `<span class="mon-role admin">👑 أدمن</span>`
+        : (p.classes.length ? p.classes.map(c => `<span style="display:inline-flex;align-items:center;gap:3px">${p.sup.has(c) ? '🗝️' : '🧑‍🏫'}${classBadgeHTML(c)}</span>`).join('') : `<span class="class-badge class-none">⚠️ من غير فصل</span>`);
+      return `<div class="servant-item mon-row" ${p.isAdmin ? '' : `data-id="${p.id}" data-name="${dEsc(p.name)}" onclick="rhPromote(this.dataset.id,this.dataset.name)"`} style="gap:10px;${p.isAdmin ? '' : 'cursor:pointer'}">
+        <div class="s-info"><div class="mon-name">${dEsc(p.name)}</div><div class="mon-badges">${under}</div></div>
+        ${p.isAdmin ? `<span style="font-size:12px;color:var(--success);font-weight:800;white-space:nowrap">✓ أدمن</span>` : `<button type="button" class="export-btn" style="flex:0 0 auto;white-space:nowrap">👑 خليه أدمن</button>`}</div>`;
+    };
+    box.innerHTML = (hasQ ? '' : `<div class="section-title" style="margin-bottom:8px">👑 الأدمن الحاليين (${res.length}) — اكتب اسم عشان تضيف أدمن جديد</div>`)
+      + (res.length ? res.map(row).join('') : `<div class="empty-state" style="padding:12px">${hasQ ? 'مفيش خادم مسجل بالاسم ده (الأدمن لازم يكون مسجل في التطبيق)' : 'مفيش أدمن لسه'}</div>`);
   } else {
     const nm = document.getElementById('rh-new-name').value || '';
     const sug = normalizeArabic(nm).trim() ? rhMatches(nm).slice(0, 5) : [];
