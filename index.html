@@ -1121,10 +1121,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 
       <!-- HOME VIEW (الأدوار): شريط الفصول + إضافة دور + خدام الفصل المختار -->
       <div id="roles-home-view">
+        <div class="search-box" style="margin-bottom:10px"><input type="text" id="rh-filter" placeholder="🔍 دوّر على خادم معين (في كل الفصول)" autocomplete="off" oninput="renderRolesHome()"></div>
         <button type="button" id="rh-class-bar" onclick="rhToggleClassList()" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1.5px solid var(--accent);border-radius:14px;padding:13px 16px;color:var(--text);font-family:Cairo,sans-serif;font-size:16px;font-weight:900;cursor:pointer;margin-bottom:10px"></button>
         <div id="rh-class-list" style="display:none;flex-wrap:wrap;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px"></div>
         <button type="button" class="btn-primary" onclick="openRhAdd()" style="width:100%;margin-bottom:14px">➕ إضافة دور</button>
-        <div class="search-box" style="margin-bottom:10px"><input type="text" id="rh-filter" placeholder="🔍 دوّر في القايمة" autocomplete="off" oninput="renderRolesHome()"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span class="section-title" id="rh-list-title">الخدام</span>
         </div>
@@ -1231,10 +1231,11 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
     </div>
     <div style="padding:16px;max-height:75vh;overflow-y:auto">
       <div class="tabs" style="margin-bottom:14px">
-        <button class="tab active" id="rh-add-tab-reg" onclick="setRhAddMode('reg')">👤 خادم مسجل</button>
-        <button class="tab" id="rh-add-tab-new" onclick="setRhAddMode('new')">🆕 خادم جديد</button>
+        <button class="tab active" id="rh-add-tab-new" onclick="setRhAddMode('new')">🆕 خادم جديد</button>
+        <button class="tab" id="rh-add-tab-reg" onclick="setRhAddMode('admin')">👑 إضافة أدمن</button>
       </div>
-      <div id="rh-add-reg">
+      <div id="rh-add-reg" style="display:none">
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.7">اكتب اسم خادم مسجل واختاره عشان يبقى أدمن (بيشوف كل الفصول ويدير الخدام)</div>
         <input type="text" id="rh-add-search" class="field-input" placeholder="🔍 اكتب اسم الخادم" autocomplete="off" oninput="renderRhAdd()" style="margin-bottom:10px">
         <div id="rh-add-results"></div>
       </div>
@@ -8302,14 +8303,14 @@ function renderRolesHome() {
   bar.innerHTML = `<span>🏫 ${cur ? dEsc(cur.label) : 'اختار فصل'}</span><span style="color:var(--text-dim);font-size:13px">${open ? '▲' : '▼ كل الفصول'}</span>`;
   document.getElementById('rh-class-list').innerHTML = classes.map(c =>
     `<button type="button" class="filter-chip ${c.id === rhClass ? 'active' : ''}" onclick="rhPickClass('${c.id}')">${dEsc(c.label)}</button>`).join('');
-  const all = rhClass === RH_ALL;
   const q = normalizeArabic(document.getElementById('rh-filter')?.value || '').trim();
   const toks = q ? q.split(/\s+/) : [];
+  const all = rhClass === RH_ALL || toks.length > 0; // أثناء البحث بندوّر في كل الخدام مش في الفصل المختار بس
   const list = buildPeople().filter(p => !p.awaiting && (all ? true : (!p.isAdmin && p.classes.includes(rhClass))))
     .filter(p => { if (!toks.length) return true; const n = normalizeArabic(p.name); return toks.every(t => n.includes(t)); })
     .sort(all ? ((a, b) => a.name.localeCompare(b.name, 'ar'))
               : ((a, b) => (Number(b.sup.has(rhClass)) - Number(a.sup.has(rhClass))) || a.name.localeCompare(b.name, 'ar')));
-  document.getElementById('rh-list-title').textContent = `${all ? 'كل الخدام' : 'الخدام'} (${list.length})`;
+  document.getElementById('rh-list-title').textContent = `${toks.length ? 'نتايج البحث' : (all ? 'كل الخدام' : 'الخدام')} (${list.length})`;
   document.getElementById('rh-servants').innerHTML = list.length ? list.map(p => rhPersonRow(p, all ? '' : rhClass)).join('')
     : `<div class="empty-state">${toks.length ? 'مفيش خادم بالاسم ده' : 'مفيش خدام متسجلين في الفصل ده — دوس "➕ إضافة دور"'}</div>`;
 }
@@ -8325,28 +8326,29 @@ function rhPersonRow(p, cid) {
   return `<div class="servant-item mon-row" style="gap:10px">
     <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${(p.name || '؟').trim()[0] || '؟'}</div>
     <div class="s-info"><div class="mon-name">${dEsc(p.name)}</div>${(chip || pend) ? `<div class="mon-badges" style="margin-top:2px">${chip}${pend}</div>` : ''}${badges ? `<div class="mon-badges">${badges}</div>` : ''}</div>
-    ${p.isAdmin ? '' : `<button type="button" class="action-btn" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير الدور</button>`}
+    ${p.isAdmin ? ((p.kind === 'reg' && !isPrimaryAdmin(cachedServants.find(x => x.id === p.id)?.email)) ? `<button type="button" class="del-btn" data-id="${p.id}" data-name="${dEsc(p.name)}" onclick="rhDemote(this.dataset.id,this.dataset.name)" style="flex:0 0 auto;white-space:nowrap">⬇️ شيل الأدمن</button>` : '') : `<button type="button" class="action-btn" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير الدور</button>`}
   </div>`;
 }
 
 // ---- إضافة دور ----
 let rhAddMode = 'reg', rhNewClass = '', rhNewType = 'classServant';
 window.openRhAdd = () => {
-  rhAddMode = 'reg'; rhNewClass = ''; rhNewType = 'classServant';
+  rhAddMode = 'new'; rhNewClass = ''; rhNewType = 'classServant';
   document.getElementById('rh-add-search').value = '';
   document.getElementById('rh-new-name').value = '';
-  setRhAddMode('reg');
+  setRhAddMode('new');
   document.getElementById('rh-add-modal').style.display = 'flex';
-  setTimeout(() => document.getElementById('rh-add-search').focus(), 80);
+  setTimeout(() => document.getElementById('rh-new-name').focus(), 80);
 };
 window.closeRhAdd = () => { document.getElementById('rh-add-modal').style.display = 'none'; };
 window.setRhAddMode = (m) => {
   rhAddMode = m;
-  document.getElementById('rh-add-tab-reg').classList.toggle('active', m === 'reg');
+  document.getElementById('rh-add-tab-reg').classList.toggle('active', m === 'admin');
   document.getElementById('rh-add-tab-new').classList.toggle('active', m === 'new');
-  document.getElementById('rh-add-reg').style.display = m === 'reg' ? 'block' : 'none';
+  document.getElementById('rh-add-reg').style.display = m === 'admin' ? 'block' : 'none';
   document.getElementById('rh-add-new').style.display = m === 'new' ? 'block' : 'none';
   renderRhAdd();
+  if (m === 'admin') setTimeout(() => document.getElementById('rh-add-search').focus(), 50);
 };
 window.setRhNewClass = (cid) => { rhNewClass = cid; if (cid === SERVANTS_CLASS_ID) rhNewType = 'classSupervisor'; renderRhAdd(); };
 window.setRhNewType = (t) => { rhNewType = t; renderRhAdd(); };
@@ -8376,13 +8378,15 @@ window.rhStartNewFromSearch = () => {
   setTimeout(() => document.getElementById('rh-new-name').focus(), 50);
 };
 function renderRhAdd() {
-  if (rhAddMode === 'reg') {
+  if (rhAddMode === 'admin') {
     const raw = document.getElementById('rh-add-search').value || '';
     const box = document.getElementById('rh-add-results');
-    if (!normalizeArabic(raw).trim()) { box.innerHTML = `<div class="empty-state" style="padding:12px">اكتب أول حروف اسم الخادم وهتظهرلك الأسماء — اختار الاسم وغيّر دوره أو زوّد دور</div>`; return; }
-    const res = rhMatches(raw);
-    box.innerHTML = (res.length ? res.map(rhMatchRow).join('') : `<div class="empty-state" style="padding:12px">مفيش خادم بالاسم ده</div>`)
-      + `<button type="button" class="export-btn" onclick="rhStartNewFromSearch()" style="width:100%;margin-top:10px;padding:10px;text-align:center">🆕 إضافة "${dEsc(raw.trim())}" كخادم جديد</button>`;
+    if (!normalizeArabic(raw).trim()) { box.innerHTML = `<div class="empty-state" style="padding:12px">اكتب أول حروف اسم الخادم وهتظهرلك الأسماء</div>`; return; }
+    const res = rhMatches(raw).filter(p => p.kind === 'reg');
+    box.innerHTML = res.length ? res.map(p => `<div class="servant-item mon-row" data-id="${p.id}" data-name="${dEsc(p.name)}" onclick="rhPromote(this.dataset.id,this.dataset.name)" style="gap:10px;cursor:pointer">
+        <div class="s-info"><div class="mon-name">${dEsc(p.name)}</div></div>
+        <button type="button" class="export-btn" style="flex:0 0 auto;white-space:nowrap">👑 خليه أدمن</button></div>`).join('')
+      : `<div class="empty-state" style="padding:12px">مفيش خادم مسجل بالاسم ده (الأدمن لازم يكون مسجل في التطبيق)</div>`;
   } else {
     const nm = document.getElementById('rh-new-name').value || '';
     const sug = normalizeArabic(nm).trim() ? rhMatches(nm).slice(0, 5) : [];
@@ -8413,6 +8417,14 @@ window.rhAddNew = async () => {
   } catch (e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
   finally { btn.disabled = false; }
 };
+
+window.rhPromote = async (id, name) => {
+  const before = cachedServants.find(x => x.id === id)?.role;
+  await promoteServant(id, name);
+  if (cachedServants.find(x => x.id === id)?.role === 'admin' && before !== 'admin') { closeRhAdd(); }
+  renderRolesHome();
+};
+window.rhDemote = async (id, name) => { await demoteServant(id, name); renderRolesHome(); };
 
 // ---- تغيير الدور (لكل فصل: مفيش / خادم / مسؤول) ----
 let rhChange = null; // { key, kind, id, name, state:{cid:type|'none'}, locked:{cid:roleName} }
