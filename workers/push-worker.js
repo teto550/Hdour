@@ -4,11 +4,13 @@
 //   POST /servant-decision → الأدمن/المشرف قبل أو رفض طلب انضمام (إشعار للخادم نفسه)
 //   POST /offline-pending  → بيانات اتسجلت أوفلاين ومترفعتش في الخلفية (إشعار للأدمن/المشرف باسم الفصل)
 //   POST /servant-open → خادم معتمد فتح التطبيق (مرة كل 30 دقيقة للخادم الواحد)
+//   POST /delete-servant → الأدمن بس: بيمسح إيميل الخادم من Firebase Authentication وحسابه من فايرستور (Admin API من غير Cloud Functions ولا Blaze)
 //
 // الإعدادات (Workers → Settings → Variables and Secrets):
 //   SERVICE_ACCOUNT  (Secret)  محتوى ملف الـ JSON بتاع service account لمشروع hdour-d66d8 كامل
 //   ALLOWED_ORIGIN   (Text)    origin موقعك بس، مثال: https://teto550.github.io  (من غير مسار ولا / في الآخر)
 //   APP_URL          (Text)    رابط التطبيق اللي هيفتح لما تدوس على الإشعار
+//   PROTECTED_EMAILS (Text)    اختياري: إيميلات (بينهم فاصلة) ممنوع الـ Worker يمسحها أبدًا (الأدمن الأساسي)
 //
 // الأمان: الـ Worker بيتحقق من Firebase ID token (توقيع + aud + iss + exp)، ونص الإشعار بيتبني من فايرستور مش من اللي الموقع بيبعته
 // (ما عدا تفاصيل الفصل في /servant-open وبتتقص وبتتبعت للأدمن بس، من خادم معتمد).
@@ -40,7 +42,7 @@ async function getAccessToken(sa) {
   const header = strToB64u(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const claim = strToB64u(JSON.stringify({
     iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging',
+    scope: 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging https://www.googleapis.com/auth/identitytoolkit',
     aud: 'https://oauth2.googleapis.com/token',
     iat: now,
     exp: now + 3600,
@@ -151,7 +153,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
     const url = new URL(request.url);
-    if (request.method !== 'POST' || (url.pathname !== '/new-request' && url.pathname !== '/servant-open' && url.pathname !== '/servant-decision' && url.pathname !== '/offline-pending')) {
+    if (request.method !== 'POST' || (url.pathname !== '/new-request' && url.pathname !== '/servant-open' && url.pathname !== '/servant-decision' && url.pathname !== '/offline-pending' && url.pathname !== '/delete-servant')) {
       return json({ error: 'not found' }, 404, cors);
     }
     if (allowed && request.headers.get('Origin') !== allowed) return json({ error: 'forbidden' }, 403, cors);
@@ -244,6 +246,31 @@ export default {
           url: env.APP_URL || '', tag: `offline-${uid}`,
         });
         return json({ ok: true, ...out }, 200, cors);
+      }
+
+      // ===== حذف خادم نهائيًا: إيميله من Firebase Authentication + مستنده من فايرستور (الأدمن بس) =====
+      if (url.pathname === '/delete-servant') {
+        if (me.status !== 'approved' || me.role !== 'admin') return json({ error: 'not allowed' }, 403, cors);
+        let body = {}; try { body = await request.json(); } catch (e) {}
+        const targetUid = String(body.targetUid || '');
+        if (!/^[A-Za-z0-9]{10,64}$/.test(targetUid) || targetUid === uid) return json({ error: 'bad target' }, 400, cors);
+        const tr = await fetch(`${fsBase(pid)}/servants/${targetUid}`, { headers: authH });
+        const target = tr.ok ? fvFields((await tr.json()).fields) : null;
+        const protectedList = String(env.PROTECTED_EMAILS || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean);
+        if (target && target.email && protectedList.includes(String(target.email).toLowerCase())) return json({ error: 'protected' }, 403, cors);
+        // 1) الإيميل من Authentication (لو مش موجود أصلًا نعتبرها اتمسحت)
+        const ar = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${pid}/accounts:delete`, {
+          method: 'POST', headers: jsonH, body: JSON.stringify({ localId: targetUid }),
+        });
+        let authDeleted = ar.ok;
+        if (!ar.ok) {
+          const t = await ar.text();
+          if (/USER_NOT_FOUND/.test(t)) authDeleted = true;
+          else return json({ error: 'auth delete failed', status: ar.status, detail: t.slice(0, 300) }, 502, cors);
+        }
+        // 2) المستند من فايرستور
+        const dd = await fetch(`${fsBase(pid)}/servants/${targetUid}`, { method: 'DELETE', headers: authH });
+        return json({ ok: true, authDeleted, docDeleted: dd.ok || dd.status === 404 }, 200, cors);
       }
 
       // ===== خادم فتح التطبيق → الأدمن بس =====

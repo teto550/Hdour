@@ -7909,13 +7909,22 @@ window.rejectServant = async (id, name, roleIds) => {
   showToast('تم رفض الطلب', 'info');
 };
 window.deleteServant = async (id, name, roleIds) => {
-  if (!confirm(`هتحذف الخادم "${name}"؟ هيفقد صلاحية الدخول للتطبيق فورًا حتى لو داخل بيسجل حضور دلوقتي`)) return;
-  await deleteDoc(doc(db,'servants',id)); patchServantLocal(id, null);
+  if (!confirm(`هتحذف الخادم \"${name}\"؟ هيتمسح من الداتا بيز وإيميله هيتشال من Firebase Authentication، وهيفقد صلاحية الدخول للتطبيق فورًا`)) return;
+  // الـ Worker (الأدمن بس) بيمسح الإيميل من Authentication + المستند من فايرستور مرة واحدة
+  const r = await callWorkerJson('/delete-servant', { targetUid: id });
+  const authGone = !!(r && r.ok && r.data && r.data.authDeleted);
+  const docGone = !!(r && r.ok && r.data && r.data.docDeleted);
+  if (!docGone) {
+    try { await deleteDoc(doc(db,'servants',id)); }
+    catch(e) { console.error(e); showToast('مش مسموحلك تحذف الخادم ده — راجع صلاحيات Firestore', 'error'); return; }
+  }
+  patchServantLocal(id, null);
   // لو الاسم ده كان مختار من قايمة أسماء الدور الجاهزة، يرجع يظهر في القايمة تاني عشان يقدر أي حد يختاره
   if (name && roleIds) {
     try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
   }
-  showToast('تم حذف الخادم', 'success');
+  if (authGone) showToast('تم حذف الخادم من الداتا بيز وإيميله اتشال من Authentication ✓', 'success');
+  else { console.warn('delete-servant worker:', r); showToast('اتحذف من الداتا بيز، لكن إيميله لسه في Authentication — حدّث الـ Worker (workers/push-worker.js) وراجع صلاحيات الـ service account', 'info'); }
 };
 window.promoteServant = async (id, name) => {
   if (!confirm(`هتخلي "${name}" أدمن؟ هيقدر يشوف تبويب "متابعة" ويوافق على الخدام ويحذفهم زيك بالظبط`)) return;
@@ -9002,6 +9011,18 @@ function setupPushOnLogin(user) {
   savePushToken(user, false).catch(e => console.warn('push token refresh:', e));
 }
 // بيبعت للـ Worker طلب إشعار (الـ Worker بيتحقق من هوية المرسل وبيبني نص الإشعار من فايرستور)
+// نفس callPushWorker بس بيرجّع الرد (للحالات اللي محتاجين نعرف نجحت ولا لأ — زي حذف الخادم)
+async function callWorkerJson(path, body) {
+  if (!isPushConfigured() || !auth.currentUser) return null;
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const r = await fetch(PUSH_WORKER_URL.replace(/\/$/, '') + path, {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + idToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
+    });
+    let data = null; try { data = await r.json(); } catch (e) {}
+    return { ok: r.ok, status: r.status, data };
+  } catch (e) { console.warn('worker error:', e); return null; }
+}
 async function callPushWorker(path, body) {
   if (!isPushConfigured() || !auth.currentUser) return;
   try {
