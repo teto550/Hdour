@@ -66,6 +66,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 .top-bar-sub{font-size:11px;color:var(--text-dim);margin-top:2px;}
 .icon-btn{background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:17px;width:38px;height:38px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .settings-menu-wrap{position:relative;}
+.theme-fab{position:fixed;top:calc(12px + env(safe-area-inset-top));left:12px;z-index:50;}
 .settings-dropdown{position:absolute;top:calc(100% + 8px);left:0;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 10px 30px rgba(0,0,0,0.4);min-width:220px;overflow:hidden;z-index:200;}
 .settings-dropdown-item{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;color:var(--text);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;padding:13px 16px;cursor:pointer;text-align:right;}
 .settings-dropdown-item:hover{background:var(--surface);}
@@ -491,6 +492,7 @@ html.light [style*="color:#f39c12"],html.light [style*="color: #f39c12"]{color:#
 
 <!-- AUTH -->
 <div id="auth-screen">
+  <button class="icon-btn theme-fab" type="button" onclick="toggleTheme()" title="الوضع الفاتح / المظلم" aria-label="تبديل الوضع الفاتح والمظلم">🌓</button>
   <img src="icon-193.png" style="width:100px;height:100px;border-radius:20px;object-fit:cover;margin-bottom:14px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
   <div class="auth-title">خدمة ابتدائي البابا اثناسيوس</div>
   <div class="auth-sub">نظام تسجيل الحضور</div>
@@ -534,6 +536,7 @@ html.light [style*="color:#f39c12"],html.light [style*="color: #f39c12"]{color:#
 
 <!-- PENDING APPROVAL -->
 <div id="pending-screen" style="display:none">
+  <button class="icon-btn theme-fab" type="button" onclick="toggleTheme()" title="الوضع الفاتح / المظلم" aria-label="تبديل الوضع الفاتح والمظلم">🌓</button>
   <div style="font-size:50px;margin-bottom:14px">⏳</div>
   <div class="auth-title" id="pending-title">في انتظار الموافقة</div>
   <div class="auth-sub" id="pending-msg" style="max-width:320px;text-align:center;margin-bottom:24px;line-height:1.7"></div>
@@ -543,6 +546,7 @@ html.light [style*="color:#f39c12"],html.light [style*="color: #f39c12"]{color:#
 
 <!-- COMPLETE PROFILE (إجباري: اسم ثلاثي + تاريخ ميلاد + تليفون) -->
 <div id="complete-screen" style="display:none">
+  <button class="icon-btn theme-fab" type="button" onclick="toggleTheme()" title="الوضع الفاتح / المظلم" aria-label="تبديل الوضع الفاتح والمظلم">🌓</button>
   <img src="icon-193.png" style="width:80px;height:80px;border-radius:18px;object-fit:cover;margin-bottom:12px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
   <div class="auth-title">كمّل بياناتك</div>
   <div class="auth-sub" style="margin-bottom:18px;max-width:320px;text-align:center;line-height:1.7">لازم تكمّل بياناتك الأول عشان تفتح البرنامج</div>
@@ -571,6 +575,7 @@ html.light [style*="color:#f39c12"],html.light [style*="color: #f39c12"]{color:#
     </div>
     <button class="icon-btn" id="top-home-btn" onclick="closeSettingsMenu();goHome()" title="الرئيسية" style="width:44px;height:44px;font-size:22px;border-radius:14px;margin:0 auto;flex:0 0 auto">🏠</button>
     <div style="flex:1;display:flex;align-items:center;justify-content:flex-end">
+    <button class="icon-btn" type="button" onclick="toggleTheme()" title="الوضع الفاتح / المظلم" aria-label="تبديل الوضع الفاتح والمظلم" style="margin-inline-end:8px">🌓</button>
     <div class="settings-menu-wrap">
       <button class="icon-btn" onclick="toggleSettingsMenu(event)">⚙️</button>
       <div id="settings-dropdown" class="settings-dropdown" style="display:none">
