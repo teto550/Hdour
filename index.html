@@ -8287,6 +8287,8 @@ window.rhToggleClassList = () => {
   el.style.display = el.style.display === 'flex' ? 'none' : 'flex';
   renderRolesHome();
 };
+// ضروري: الدوال دي بتتنادى من oninput في الـ HTML، وإحنا جوه type=module فلازم تتحط على window وإلا البحث مبيشتغلش
+Object.assign(window, { renderRolesHome, renderRhAdd, renderPeopleTab, renderRolesTab, renderServAttList, renderClassServList, renderClassServAttList, renderSettingsPeopleList });
 window.rhPickClass = (cid) => { rhClass = cid; document.getElementById('rh-class-list').style.display = 'none'; renderRolesHome(); };
 function rhRoleChip(p, cid) {
   return p.sup.has(cid)
