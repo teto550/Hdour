@@ -333,7 +333,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .auth-card .tabs{margin-bottom:18px;}
 
 /* PENDING SCREEN */
-#pending-screen{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at 50% 0%,rgba(79,142,247,0.12),transparent 65%);}
+#pending-screen,#complete-screen{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at 50% 0%,rgba(79,142,247,0.12),transparent 65%);}
 
 /* MONITOR / متابعة */
 .online-dot{width:10px;height:10px;border-radius:50%;background:var(--text-dim);flex-shrink:0;}
@@ -433,6 +433,8 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <input type="password" id="reg-pass" class="field-input" placeholder="••••••••  (6 حروف على الأقل)" dir="ltr">
       <label class="field-label">رقم التليفون</label>
       <input type="tel" id="reg-phone" class="field-input" placeholder="رقم تليفونك" dir="ltr">
+      <label class="field-label">تاريخ الميلاد</label>
+      <input type="date" id="reg-dob" class="field-input" dir="ltr">
       <label class="field-label">العنوان</label>
       <input type="text" id="reg-address" class="field-input" placeholder="عنوانك">
       <button class="btn-primary" id="register-btn" onclick="doRegister()">تسجيل</button>
@@ -448,6 +450,24 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
   <div class="auth-sub" id="pending-msg" style="max-width:320px;text-align:center;margin-bottom:24px;line-height:1.7"></div>
   <button class="btn-primary" id="pending-notif-btn" style="max-width:200px;margin-bottom:10px;display:none" onclick="enablePendingNotifications()">🔔 فعّل الإشعارات</button>
   <button class="btn-primary" style="max-width:200px" onclick="doLogout()">تسجيل خروج</button>
+</div>
+
+<!-- COMPLETE PROFILE (إجباري: اسم ثلاثي + تاريخ ميلاد + تليفون) -->
+<div id="complete-screen" style="display:none">
+  <img src="icon-193.png" style="width:80px;height:80px;border-radius:18px;object-fit:cover;margin-bottom:12px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+  <div class="auth-title">كمّل بياناتك</div>
+  <div class="auth-sub" style="margin-bottom:18px;max-width:320px;text-align:center;line-height:1.7">لازم تكمّل بياناتك الأول عشان تفتح البرنامج</div>
+  <div class="auth-card">
+    <label class="field-label">الاسم ثلاثي</label>
+    <input type="text" id="cp-name" class="field-input" maxlength="60" autocomplete="off" placeholder="الاسم الأول + اسم الأب + اسم الجد">
+    <label class="field-label">تاريخ الميلاد</label>
+    <input type="date" id="cp-dob" class="field-input" dir="ltr">
+    <label class="field-label">رقم التليفون</label>
+    <input type="tel" id="cp-phone" class="field-input" dir="ltr" placeholder="رقم تليفونك">
+    <button class="btn-primary" id="cp-save-btn" onclick="saveCompleteProfile()">حفظ ودخول</button>
+    <div id="cp-error" style="color:var(--danger);font-size:13px;text-align:center;margin-top:10px;display:none"></div>
+    <button class="action-btn" style="width:100%;margin-top:12px" onclick="doLogout()">تسجيل خروج</button>
+  </div>
 </div>
 
 <!-- APP -->
@@ -1318,8 +1338,10 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <div id="settings-profile-section">
         <div class="section-title" style="margin-bottom:8px">ملفي</div>
         <div id="settings-class-badge" style="margin-bottom:12px"></div>
-        <label class="field-label">الاسم</label>
+        <label class="field-label">الاسم (ثلاثي)</label>
         <input type="text" id="settings-name-input" class="field-input" maxlength="60" autocomplete="off">
+        <label class="field-label">تاريخ الميلاد</label>
+        <input type="date" id="settings-dob" class="field-input" dir="ltr">
         <label class="field-label">رقم التليفون</label>
         <input type="tel" id="settings-phone" class="field-input" dir="ltr">
         <label class="field-label">العنوان</label>
@@ -1916,7 +1938,7 @@ let currentSupervisorClass = ''; // الفصول اللي الخادم مسؤو�
 let currentAssignedClass = ''; // 'a' | 'b' | 'kg' | 'a,b' | '' — الفصول اللي الأدمن حدده للخادم من تبويب "متابعة" (فاضي = مقيدش، بيشوف كل الفصول)
 let classPicked = false;      // الخادم اللي في أكتر من فصل بيختار فصله مرة أول ما يفتح البرنامج
 let classServScope = 'class'; // 'class' = خدام الفصل الحالي بس | 'all' = خدام كل الفصول اللي المسؤول مسؤول عنها
-let currentPhone = '', currentAddress = ''; // بيانات ملفي الشخصي (شاشة الإعدادات)
+let currentPhone = '', currentAddress = '', currentDob = ''; // بيانات ملفي الشخصي (شاشة الإعدادات)
 let heartbeatTimer = null;
 
 function normalizeAssignedClasses(raw) {
@@ -2353,6 +2375,7 @@ window.openMyProfileModal = () => {
     : `<span class="class-badge" style="background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.3);color:#2ecc71">🔓 كل الفصول</span>`;
   document.getElementById('settings-name-input').value = currentName || '';
   document.getElementById('settings-phone').value = currentPhone || '';
+  document.getElementById('settings-dob').value = currentDob || '';
   document.getElementById('settings-address').value = currentAddress || '';
   document.getElementById('settings-profile-section').style.display = 'block';
   document.getElementById('settings-admin-section').style.display = 'none';
@@ -2390,12 +2413,14 @@ window.saveOwnSettings = async () => {
   const name = document.getElementById('settings-name-input').value.trim().replace(/\s+/g, ' ');
   const phone = document.getElementById('settings-phone').value.trim();
   const address = document.getElementById('settings-address').value.trim();
-  if (!name) { showToast('اكتب اسمك الأول', 'error'); return; }
-  const payload = { phone, address };
+  const dob = document.getElementById('settings-dob').value;
+  const bad = validateOwnProfile(name, dob, phone);
+  if (bad) { showToast(bad, 'error'); return; }
+  const payload = { phone, address, dob };
   if (name !== currentName) payload.name = name;
   try {
     await updateDoc(doc(db,'servants',currentUid), payload);
-    currentPhone = phone; currentAddress = address;
+    currentPhone = phone; currentAddress = address; currentDob = dob;
     if (payload.name) {
       currentName = name;
       fillSettingsHeader();
@@ -2804,12 +2829,14 @@ window.doRegister = async () => {
   const email = document.getElementById('reg-email').value.trim();
   const pass  = document.getElementById('reg-pass').value;
   const phone = document.getElementById('reg-phone').value.trim();
+  const dob = document.getElementById('reg-dob').value;
   const address = document.getElementById('reg-address').value.trim();
   err.style.display = 'none';
   if (!regClass)    { err.textContent = 'اختار فصلك الأول';       err.style.display = 'block'; return; }
   if (!name)        { err.textContent = 'اختار اسمك من القايمة';  err.style.display = 'block'; return; }
   if (!email||!pass){ err.textContent = 'اكتب الإيميل وكلمة المرور'; err.style.display = 'block'; return; }
   if (!phone)       { err.textContent = 'اكتب رقم تليفونك';       err.style.display = 'block'; return; }
+  if (!dob)         { err.textContent = 'اكتب تاريخ ميلادك';      err.style.display = 'block'; return; }
   // الاسم دايمًا مختار من القايمة الجاهزة، فبندوّر على الدور اللي هو منه عشان ناخد منه كل فصوله ونوعه بالظبط
   // نفس الاسم ممكن يبقى مضاف في أكتر من دور (مثلاً مسؤول فصل أ + خادم فصل ب) — بنجمع كل أدواره ونحسب صلاحياته منها
   const nameRoles = allRoles.filter(r => !r.isAdmin && Array.isArray(r.classes) && nameVariantsIn(r, name).length);
@@ -2831,7 +2858,7 @@ window.doRegister = async () => {
       return;
     }
     await setDoc(doc(db,'servants',cred.user.uid), {
-      name, email, phone, address,
+      name, email, phone, dob, address,
       assignedClass: isAdmin ? '' : matchedPerms.assignedClass,
       supervisorClass: isAdmin ? '' : matchedPerms.supervisorClass,
       roleId: matchedRoles[0] ? matchedRoles[0].id : '',
@@ -2881,11 +2908,13 @@ function showAuthScreen() {
   document.getElementById('splash-screen').style.display  = 'none';
   document.getElementById('auth-screen').style.display    = 'flex';
   document.getElementById('pending-screen').style.display  = 'none';
+  document.getElementById('complete-screen').style.display = 'none';
   document.getElementById('app-screen').style.display      = 'none';
 }
 function showPendingScreen(title, msg) {
   document.getElementById('splash-screen').style.display  = 'none';
   document.getElementById('auth-screen').style.display    = 'none';
+  document.getElementById('complete-screen').style.display = 'none';
   document.getElementById('app-screen').style.display      = 'none';
   document.getElementById('pending-screen').style.display  = 'flex';
   document.getElementById('pending-title').textContent = title;
@@ -2911,6 +2940,51 @@ onAuthStateChanged(auth, async user => {
   }
   await handleSignedInUser(user);
 });
+
+// ===== إكمال البيانات الإجباري (اسم ثلاثي + تاريخ ميلاد + تليفون) =====
+// بترجّع رسالة الخطأ لو الداتا ناقصة أو مش مظبوطة، أو '' لو كله تمام
+function validateOwnProfile(name, dob, phone) {
+  const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length < 3) return 'اكتب اسمك ثلاثي (اسمك + اسم أبوك + اسم جدك)';
+  if (!dob || !/^\d{4}-\d{2}-\d{2}$/.test(dob) || isNaN(new Date(dob).getTime()) || new Date(dob) > new Date()) return 'اكتب تاريخ ميلادك صح';
+  if (String(phone || '').replace(/\D/g, '').length < 10) return 'اكتب رقم تليفونك صح';
+  return '';
+}
+function showCompleteProfileScreen() {
+  document.getElementById('splash-screen').style.display  = 'none';
+  document.getElementById('auth-screen').style.display    = 'none';
+  document.getElementById('pending-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display     = 'none';
+  document.getElementById('cp-name').value  = currentName || '';
+  document.getElementById('cp-dob').value   = currentDob || '';
+  document.getElementById('cp-phone').value = currentPhone || '';
+  document.getElementById('cp-error').style.display = 'none';
+  const btn = document.getElementById('cp-save-btn'); btn.disabled = false; btn.textContent = 'حفظ ودخول';
+  document.getElementById('complete-screen').style.display = 'flex';
+}
+window.saveCompleteProfile = async () => {
+  const btn = document.getElementById('cp-save-btn');
+  const err = document.getElementById('cp-error');
+  const name  = document.getElementById('cp-name').value.trim().replace(/\s+/g, ' ');
+  const dob   = document.getElementById('cp-dob').value;
+  const phone = document.getElementById('cp-phone').value.trim();
+  const bad = validateOwnProfile(name, dob, phone);
+  if (bad) { err.textContent = bad; err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'جاري الحفظ…';
+  try {
+    await updateDoc(doc(db,'servants',currentUid), { name, dob, phone });
+    const user = auth.currentUser;
+    if (user) await handleSignedInUser(user);
+  } catch(e) {
+    console.error(e);
+    err.textContent = e.code === 'permission-denied'
+      ? 'مفيش صلاحية تحفظ تاريخ الميلاد دلوقتي — كلم الأدمن'
+      : 'حصل خطأ أثناء الحفظ، حاول تاني';
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'حفظ ودخول';
+  }
+};
 
 // بيتنادى من onAuthStateChanged، وكمان أول ما طلب الانضمام يتقبل (من غير reload)
 // القواعد بتشترط email_verified لحساب الأدمن الأساسي (عشان محدش يسجّل بإيميله من غير ما يملكه): بنبعت رابط التفعيل ونطلّع المستخدم لحد ما يفعّله
@@ -2983,7 +3057,13 @@ async function handleSignedInUser(user) {
     currentUid = user.uid; currentName = data.name || (user.email||'').split('@')[0]; currentRole = data.role || 'servant'; currentEmail = (user.email||'').toLowerCase();
     currentAssignedClass = data.assignedClass || '';
     currentSupervisorClass = supervisedClassesOf(data).join(',');
-    currentPhone = data.phone || ''; currentAddress = data.address || '';
+    currentPhone = data.phone || ''; currentAddress = data.address || ''; currentDob = data.dob || '';
+    // لازم كل خادم (حتى الأدمن) يكون عنده اسم ثلاثي + تاريخ ميلاد + رقم تليفون قبل ما يفتح البرنامج
+    if (validateOwnProfile(currentName, currentDob, currentPhone)) {
+      showCompleteProfileScreen();
+      return;
+    }
+    document.getElementById('complete-screen').style.display = 'none';
     document.getElementById('splash-screen').style.display  = 'none';
     document.getElementById('auth-screen').style.display    = 'none';
     document.getElementById('pending-screen').style.display = 'none';
@@ -3065,7 +3145,7 @@ function listenOwnServantDoc(uid) {
         goHome();
       }
     }
-    currentPhone = d.phone || ''; currentAddress = d.address || '';
+    currentPhone = d.phone || ''; currentAddress = d.address || ''; currentDob = d.dob || '';
     if (d.name && d.name !== currentName) { currentName = d.name; fillSettingsHeader(); }
     // لو الأدمن حدد/غيّر/شال الفصل المخصص للخادم من تبويب "متابعة"، يتفعل فورًا من غير reload
     if ((d.assignedClass || '') !== currentAssignedClass) {

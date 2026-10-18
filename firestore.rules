@@ -62,7 +62,7 @@ service cloud.firestore {
       allow update: if isAdmin()
         || (isSignedIn() && request.auth.uid == uid
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['name', 'phone', 'address', 'lastActive', 'fcmTokens']))
+                 .hasOnly(['name', 'phone', 'address', 'dob', 'lastActive', 'fcmTokens']))
         || (isSupervisor()
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['sscCount', 'meetingCount', 'prepCount']))
