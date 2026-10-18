@@ -18,5 +18,5 @@
 زرار "🗑 حذف" بيبعت للـ Worker، والـ Worker (بالـ service account) بيمسح إيميل الخادم من Authentication ومستنده من فايرستور. مجاني بالكامل (من غير Cloud Functions ولا Blaze).
 - لازم تحدّث كود الـ Worker في Cloudflare بآخر نسخة من `workers/push-worker.js` وتعمل Deploy.
 - الـ service account لازم يكون ليه صلاحية إدارة Authentication (الحساب اللي Firebase بينزّله بيكون `firebase-adminsdk-…` وعنده الصلاحية دي افتراضيًا).
-- اختياري: ضيف متغير `PROTECTED_EMAILS` (Text) فيه إيميل الأدمن الأساسي (أو أكتر، بينهم فاصلة) عشان الـ Worker يرفض يمسحه.
+- الأدمن الأساسي devidemele@gmail.com محمي دايمًا (الـ Worker والتطبيق بيرفضوا يمسحوه). `PROTECTED_EMAILS` (Text) اختياري لو عايز تحمي إيميلات تانية (بينهم فاصلة).
 - الأدمن بس هو اللي يقدر يستخدمه. لو الـ Worker مش متحدّث أو فشل، الخادم بيتمسح من الداتا بيز عادي وبتظهرلك رسالة إن الإيميل لسه في Authentication.

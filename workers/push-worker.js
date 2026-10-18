@@ -10,7 +10,7 @@
 //   SERVICE_ACCOUNT  (Secret)  محتوى ملف الـ JSON بتاع service account لمشروع hdour-d66d8 كامل
 //   ALLOWED_ORIGIN   (Text)    origin موقعك بس، مثال: https://teto550.github.io  (من غير مسار ولا / في الآخر)
 //   APP_URL          (Text)    رابط التطبيق اللي هيفتح لما تدوس على الإشعار
-//   PROTECTED_EMAILS (Text)    اختياري: إيميلات (بينهم فاصلة) ممنوع الـ Worker يمسحها أبدًا (الأدمن الأساسي)
+//   PROTECTED_EMAILS (Text)    اختياري: إيميلات إضافية (بينهم فاصلة) ممنوع الـ Worker يمسحها. devidemele@gmail.com (الأدمن الأساسي) محمي دايمًا من غير ما تضيفه
 //
 // الأمان: الـ Worker بيتحقق من Firebase ID token (توقيع + aud + iss + exp)، ونص الإشعار بيتبني من فايرستور مش من اللي الموقع بيبعته
 // (ما عدا تفاصيل الفصل في /servant-open وبتتقص وبتتبعت للأدمن بس، من خادم معتمد).
@@ -256,8 +256,16 @@ export default {
         if (!/^[A-Za-z0-9]{10,64}$/.test(targetUid) || targetUid === uid) return json({ error: 'bad target' }, 400, cors);
         const tr = await fetch(`${fsBase(pid)}/servants/${targetUid}`, { headers: authH });
         const target = tr.ok ? fvFields((await tr.json()).fields) : null;
-        const protectedList = String(env.PROTECTED_EMAILS || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean);
-        if (target && target.email && protectedList.includes(String(target.email).toLowerCase())) return json({ error: 'protected' }, 403, cors);
+        const protectedList = ['devidemele@gmail.com', ...String(env.PROTECTED_EMAILS || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean)];
+        // الإيميل من مستند الخادم، ولو المستند مش موجود نجيبه من حساب Authentication نفسه — الأدمن الأساسي ممنوع يتمسح أبدًا
+        let targetEmail = target && target.email ? String(target.email) : '';
+        if (!targetEmail) {
+          try {
+            const lr = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${pid}/accounts:lookup`, { method: 'POST', headers: jsonH, body: JSON.stringify({ localId: [targetUid] }) });
+            if (lr.ok) targetEmail = String(((await lr.json()).users || [])[0]?.email || '');
+          } catch (e) {}
+        }
+        if (targetEmail && protectedList.includes(targetEmail.toLowerCase())) return json({ error: 'protected' }, 403, cors);
         // 1) الإيميل من Authentication (لو مش موجود أصلًا نعتبرها اتمسحت)
         const ar = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${pid}/accounts:delete`, {
           method: 'POST', headers: jsonH, body: JSON.stringify({ localId: targetUid }),

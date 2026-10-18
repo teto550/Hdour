@@ -7909,6 +7909,7 @@ window.rejectServant = async (id, name, roleIds) => {
   showToast('تم رفض الطلب', 'info');
 };
 window.deleteServant = async (id, name, roleIds) => {
+  if (isPrimaryAdmin(cachedServants.find(x => x.id === id)?.email)) { showToast('الأدمن الأساسي محمي — مينفعش يتحذف', 'error'); return; }
   if (!confirm(`هتحذف الخادم \"${name}\"؟ هيتمسح من الداتا بيز وإيميله هيتشال من Firebase Authentication، وهيفقد صلاحية الدخول للتطبيق فورًا`)) return;
   // الـ Worker (الأدمن بس) بيمسح الإيميل من Authentication + المستند من فايرستور مرة واحدة
   const r = await callWorkerJson('/delete-servant', { targetUid: id });
