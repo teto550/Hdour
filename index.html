@@ -11,7 +11,7 @@
 <script>
 // الوضع الفاتح/المظلم: الاختيار محفوظ على الجهاز (localStorage 'appTheme'). المظلم هو الافتراضي.
 (function () {
-  var BAR = { dark: '#1a1f2e', light: '#e4ebf7' };
+  var BAR = { dark: '#1a1f2e', light: '#fbfcfe' };
   function current() { try { return localStorage.getItem('appTheme') === 'light' ? 'light' : 'dark'; } catch (e) { return 'dark'; } }
   function apply(t) {
     document.documentElement.classList.toggle('light', t === 'light');
@@ -429,6 +429,15 @@ html.light .install-inner{box-shadow:0 8px 28px rgba(31,42,61,0.16);}
 html.light #toast{box-shadow:0 6px 20px rgba(31,42,61,0.12);}
 html.light .class-badge.class-none{background:rgba(63,91,140,0.07);}
 html.light .mon-dash-btn{background:rgba(63,91,140,0.08);border-color:rgba(63,91,140,0.22);}
+/* مربعات إحصائيات المتابعة كانت غامقة على الفاتح */
+html.light .mon-stat{background:rgba(255,255,255,0.78);border-color:rgba(63,91,140,0.18);}
+html.light .mon-hero{border-color:rgba(63,123,224,0.26);background:linear-gradient(135deg,rgba(63,123,224,0.13),rgba(115,87,184,0.13));}
+/* حدود أوضح للحقول وظل خفيف للكروت عشان تبان فوق الخلفية الفاتحة */
+html.light .field-input,html.light .field-select{border-color:rgba(63,91,140,0.28);}
+html.light .field-input:focus,html.light .field-select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(63,123,224,0.14);}
+html.light .auth-card,html.light .modal-box,html.light .stat-card,html.light .admin-card,html.light .home-card,html.light .dash-card,html.light .student-item,html.light .servant-item,html.light .activity-item,html.light .result-item,html.light .wa-recipient-row,html.light .mon-summary{box-shadow:0 1px 3px rgba(31,42,61,0.07),0 2px 8px rgba(31,42,61,0.04);}
+html.light .top-bar{box-shadow:0 1px 6px rgba(31,42,61,0.06);}
+html.light .btn-primary{box-shadow:0 2px 10px rgba(63,123,224,0.25);}
 html.light #tab-monitor .serv-att-check{border-color:rgba(63,91,140,0.3);}
 html.light [style*="background:rgba(255,255,255,0.0"]{background:rgba(63,91,140,0.07)!important;}
 html.light .check-box.verse-box.checked,html.light .class-badge.class-b,html.light .class-pick-btn.pick-b,html.light .verse-badge{color:#6a49bd;}
