@@ -1129,7 +1129,6 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
           <span class="section-title" id="rh-list-title">الخدام</span>
         </div>
         <div id="rh-servants"></div>
-        <button type="button" class="action-btn" onclick="rolesGoAdvanced()" style="width:100%;margin-top:18px;opacity:.8">⚙️ إدارة متقدمة (الأدوار والأشخاص)</button>
       </div>
 
       <!-- LIST VIEW (متقدم) -->
@@ -7963,6 +7962,7 @@ async function loadRolesOnce(force) {
 
 let rolesMode = 'home'; // 'home' = شاشة الأدوار الجديدة | 'adv' = الإدارة المتقدمة (أشخاص/أدوار)
 function showRolesListView() {
+  if (document.getElementById('role-editor-view').style.display === 'block') rolesMode = 'home'; // بعد قفل محرر الدور نرجع لشاشة الأدوار
   const home = rolesMode === 'home';
   document.getElementById('roles-home-view').style.display = home ? 'block' : 'none';
   document.getElementById('roles-list-view').style.display = home ? 'none' : 'block';
@@ -8460,7 +8460,7 @@ function renderRhChange() {
     const st = rhChange.state[c.id];
     if (rhChange.locked[c.id]) {
       return `<div class="servant-item" style="padding:10px 12px;flex-direction:column;align-items:stretch;gap:4px"><div class="s-name" style="font-size:14px">${dEsc(c.label)} <span style="font-size:11px;color:var(--text-dim)">(${st === 'classSupervisor' ? 'مسؤول' : 'خادم'})</span></div>
-        <div style="font-size:11px;color:var(--text-dim)">🔒 جاي من دور "${dEsc(rhChange.locked[c.id])}" (متعدد الفصول) — عدّله من الإدارة المتقدمة</div></div>`;
+        <div style="font-size:11px;color:var(--text-dim)">🔒 جاي من دور "${dEsc(rhChange.locked[c.id])}" (متعدد الفصول) — مش بيتعدّل من هنا</div></div>`;
     }
     const types = c.id === SERVANTS_CLASS_ID ? ['classSupervisor'] : ['classServant', 'classSupervisor'];
     return `<div class="servant-item" style="padding:10px 12px;flex-direction:column;align-items:stretch;gap:8px">
