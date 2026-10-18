@@ -512,8 +512,7 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         <button class="admin-card" onclick="openServantsSection('attendance')"><span class="ac-emoji">✅</span>الحضور</button>
         <button class="admin-card" onclick="openServantsSection('servants')"><span class="ac-emoji">👥</span>الخدام</button>
         <button class="admin-card" onclick="openServantsSection('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
-        <button class="admin-card" id="srv-card-roles" style="display:none" onclick="openUsersRolesModal('roles')"><span class="ac-emoji">🗂</span>المستخدمين والأدوار</button>
-        <button class="admin-card" id="srv-card-distribute" style="display:none" onclick="openUsersRolesModal('people')"><span class="ac-emoji">🎯</span>توزيع الأدوار</button>
+        <button class="admin-card" id="srv-card-roles" style="display:none" onclick="openUsersRolesModal('home')"><span class="ac-emoji">🗂</span>الأدوار</button>
       </div>
       <div class="creator-credit">Creator by David Emil : 01274005969</div>
     </div>
@@ -1120,8 +1119,21 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
         </div>
       </div>
 
-      <!-- LIST VIEW -->
-      <div id="roles-list-view">
+      <!-- HOME VIEW (الأدوار): شريط الفصول + إضافة دور + خدام الفصل المختار -->
+      <div id="roles-home-view">
+        <button type="button" id="rh-class-bar" onclick="rhToggleClassList()" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1.5px solid var(--accent);border-radius:14px;padding:13px 16px;color:var(--text);font-family:Cairo,sans-serif;font-size:16px;font-weight:900;cursor:pointer;margin-bottom:10px"></button>
+        <div id="rh-class-list" style="display:none;flex-wrap:wrap;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px"></div>
+        <button type="button" class="btn-primary" onclick="openRhAdd()" style="width:100%;margin-bottom:14px">➕ إضافة دور</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span class="section-title" id="rh-list-title">الخدام</span>
+        </div>
+        <div id="rh-servants"></div>
+        <button type="button" class="action-btn" onclick="rolesGoAdvanced()" style="width:100%;margin-top:18px;opacity:.8">⚙️ إدارة متقدمة (الأدوار والأشخاص)</button>
+      </div>
+
+      <!-- LIST VIEW (متقدم) -->
+      <div id="roles-list-view" style="display:none">
+        <button type="button" class="action-btn" onclick="rolesGoHome()" style="margin-bottom:12px">→ شاشة الأدوار</button>
         <div class="tabs" style="margin-bottom:14px">
           <button class="tab active" id="rtab-people" onclick="setRolesTab('people')">👥 الأشخاص</button>
           <button class="tab" id="rtab-roles" onclick="setRolesTab('roles')">🗂 الأدوار</button>
@@ -1205,6 +1217,52 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
       <button class="export-btn" id="role-add-members-newname" onclick="addRolePendingName()" style="width:100%;margin-bottom:10px;padding:9px;text-align:center">➕ اسم جديد (خادم لسه هيسجل)</button>
       <div id="role-add-members-results" style="max-height:55vh;overflow-y:auto"></div>
       <button class="btn-primary" onclick="closeRoleAddMembersModal()" style="width:100%;margin-top:14px">تم (<span id="role-add-members-selected-count">0</span> متحدد)</button>
+    </div>
+  </div>
+</div>
+
+<!-- ROLES HOME: ADD ROLE MODAL -->
+<div id="rh-add-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeRhAdd()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0"><div style="font-size:16px;font-weight:900">➕ إضافة دور</div></div>
+      <button class="modal-close" onclick="closeRhAdd()">✕</button>
+    </div>
+    <div style="padding:16px;max-height:75vh;overflow-y:auto">
+      <div class="tabs" style="margin-bottom:14px">
+        <button class="tab active" id="rh-add-tab-reg" onclick="setRhAddMode('reg')">👤 خادم مسجل</button>
+        <button class="tab" id="rh-add-tab-new" onclick="setRhAddMode('new')">🆕 خادم جديد</button>
+      </div>
+      <div id="rh-add-reg">
+        <input type="text" id="rh-add-search" class="field-input" placeholder="🔍 اكتب اسم الخادم" autocomplete="off" oninput="renderRhAdd()" style="margin-bottom:10px">
+        <div id="rh-add-results"></div>
+      </div>
+      <div id="rh-add-new" style="display:none">
+        <label class="field-label" style="display:block;margin-bottom:6px">اسم الخادم</label>
+        <input type="text" id="rh-new-name" class="field-input" maxlength="60" autocomplete="off" placeholder="الاسم زي ما هيسجل بيه" style="margin-bottom:14px">
+        <div class="section-title" style="margin-bottom:8px">الفصل</div>
+        <div id="rh-new-classes" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+        <div class="section-title" style="margin-bottom:8px">هو إيه؟</div>
+        <div id="rh-new-types" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
+        <button type="button" class="btn-primary" id="rh-new-btn" onclick="rhAddNew()" style="width:100%">➕ إضافة</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ROLES HOME: CHANGE ROLE MODAL -->
+<div id="rh-change-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeRhChange()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div id="rh-change-title" style="font-size:16px;font-weight:900"></div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">اختار لكل فصل: مفيش / خادم / مسؤول — تقدر تديله أكتر من فصل أو دور إضافي</div>
+      </div>
+      <button class="modal-close" onclick="closeRhChange()">✕</button>
+    </div>
+    <div style="padding:16px;max-height:75vh;overflow-y:auto">
+      <div id="rh-change-rows"></div>
+      <button type="button" class="btn-primary" id="rh-change-save" onclick="rhSaveChange()" style="width:100%;margin-top:16px">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -2439,7 +2497,8 @@ window.openMyProfileModal = () => {
 window.openUsersRolesModal = (startTab) => {
   closeSettingsMenu();
   if (currentRole !== 'admin') return;
-  if (startTab === 'roles' || startTab === 'people') rolesTab = startTab;
+  if (startTab === 'home') rolesMode = 'home';
+  else if (startTab === 'roles' || startTab === 'people') { rolesTab = startTab; rolesMode = 'adv'; }
   const fromServantsHome = document.getElementById('tab-servants-home').style.display === 'block';
   const homeVisible = document.getElementById('tab-home').style.display !== 'none' || document.getElementById('tab-admin-home').style.display !== 'none' || document.getElementById('tab-admin-classes').style.display !== 'none';
   const activeBtn = document.querySelector('#main-tabs .tab.active[data-tab]');
@@ -6600,7 +6659,7 @@ window.showServantsHome = () => {
   if (!canManageServants()) return;
   hideAllScreens();
   document.getElementById('tab-servants-home').style.display = 'block';
-  ['srv-card-roles','srv-card-distribute'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = currentRole === 'admin' ? '' : 'none'; });
+  ['srv-card-roles'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = currentRole === 'admin' ? '' : 'none'; });
   applyMonitorVisibility();
 };
 window.openServantsSection = (which) => { monitorEntrySub = which; switchTab('monitor'); };
@@ -7464,7 +7523,7 @@ function renderServantProfileActions(s) {
 window.closeServantProfile = () => {
   document.getElementById('servant-profile-modal').style.display = 'none'; servantProfileId = ''; pendingProfileName = '';
   // لو الملف اتفتح من شاشة "المستخدمين والأدوار" بنفضل فيها ونحدّث القايمة (لو حاجة اتغيّرت)
-  if (document.getElementById('tab-roles')?.style.display === 'block' && document.getElementById('roles-list-view')?.style.display !== 'none') renderRolesList();
+  if (document.getElementById('tab-roles')?.style.display === 'block' && document.getElementById('role-editor-view')?.style.display !== 'block') renderRolesList();
 };
 window.closeServantProfileOutside = (e) => { if (e.target.id === 'servant-profile-modal') closeServantProfile(); };
 
@@ -7899,12 +7958,17 @@ async function loadRolesOnce(force) {
   } catch(e) { console.error(e); document.getElementById('people-list').innerHTML = `<div class="empty-state">تعذّر تحميل الأدوار</div>`; }
 }
 
+let rolesMode = 'home'; // 'home' = شاشة الأدوار الجديدة | 'adv' = الإدارة المتقدمة (أشخاص/أدوار)
 function showRolesListView() {
-  document.getElementById('roles-list-view').style.display = 'block';
+  const home = rolesMode === 'home';
+  document.getElementById('roles-home-view').style.display = home ? 'block' : 'none';
+  document.getElementById('roles-list-view').style.display = home ? 'none' : 'block';
   document.getElementById('role-editor-view').style.display = 'none';
-  document.getElementById('roles-modal-title').textContent = 'المستخدمين والأدوار';
-  setRolesTab(rolesTab);
+  document.getElementById('roles-modal-title').textContent = home ? 'الأدوار' : 'المستخدمين والأدوار';
+  if (home) renderRolesHome(); else setRolesTab(rolesTab);
 }
+window.rolesGoAdvanced = () => { rolesMode = 'adv'; showRolesListView(); };
+window.rolesGoHome = () => { rolesMode = 'home'; showRolesListView(); };
 
 // ===== شاشة "المستخدمين والأدوار" (على نمط STMina): تابين — "الأشخاص" و"الأدوار" =====
 // الأشخاص: كل خادم (مسجل أو لسه هيسجل) بأدواره هو بس، وتقدر تحدد كذا واحد وتضيفهم/تشيلهم من دور مرة واحدة.
@@ -7933,7 +7997,7 @@ window.setRolesTab = (t) => {
   document.getElementById('rview-roles').style.display = t === 'roles' ? 'block' : 'none';
   renderRolesList();
 };
-function renderRolesList() { if (rolesTab === 'roles') renderRolesTab(); else renderPeopleTab(); }
+function renderRolesList() { if (rolesMode === 'home') { renderRolesHome(); return; } if (rolesTab === 'roles') renderRolesTab(); else renderPeopleTab(); }
 
 // ---------- تاب الأشخاص ----------
 function buildPeople() {
@@ -8207,6 +8271,194 @@ window.applyAssign = async () => {
   finally { btn.disabled = false; }
 };
 
+
+// ===== شاشة "الأدوار" (الجديدة): شريط فصول فوق، إضافة دور، وخدام الفصل المختار تحته مع زرار تغيير الدور =====
+let rhClass = '';
+const RH_TYPES = { classServant:'🧑‍🏫 خادم', classSupervisor:'🗝️ مسؤول' };
+function rhClassesList() {
+  return [...allClasses.map(c => ({ id: c.id, label: (c.emoji || '📘') + ' ' + c.name })), { id: SERVANTS_CLASS_ID, label: '👥 الخدام' }];
+}
+window.rhToggleClassList = () => {
+  const el = document.getElementById('rh-class-list');
+  el.style.display = el.style.display === 'flex' ? 'none' : 'flex';
+  renderRolesHome();
+};
+window.rhPickClass = (cid) => { rhClass = cid; document.getElementById('rh-class-list').style.display = 'none'; renderRolesHome(); };
+function rhRoleChip(p, cid) {
+  return p.sup.has(cid)
+    ? `<span class="mon-role sup">🗝️ مسؤول فصل</span>`
+    : `<span class="mon-role" style="background:rgba(46,204,113,0.12);color:var(--success);border:1px solid rgba(46,204,113,0.35)">🧑‍🏫 خادم</span>`;
+}
+function renderRolesHome() {
+  const bar = document.getElementById('rh-class-bar');
+  if (!bar) return;
+  const classes = rhClassesList();
+  if (!classes.some(c => c.id === rhClass)) rhClass = classes[0]?.id || '';
+  const cur = classes.find(c => c.id === rhClass);
+  const open = document.getElementById('rh-class-list').style.display === 'flex';
+  bar.innerHTML = `<span>🏫 ${cur ? dEsc(cur.label) : 'اختار فصل'}</span><span style="color:var(--text-dim);font-size:13px">${open ? '▲' : '▼ كل الفصول'}</span>`;
+  document.getElementById('rh-class-list').innerHTML = classes.map(c =>
+    `<button type="button" class="filter-chip ${c.id === rhClass ? 'active' : ''}" onclick="rhPickClass('${c.id}')">${dEsc(c.label)}</button>`).join('');
+  const list = buildPeople().filter(p => !p.isAdmin && p.classes.includes(rhClass))
+    .sort((a, b) => (Number(b.sup.has(rhClass)) - Number(a.sup.has(rhClass))) || a.name.localeCompare(b.name, 'ar'));
+  document.getElementById('rh-list-title').textContent = `الخدام (${list.length})`;
+  document.getElementById('rh-servants').innerHTML = list.length ? list.map(p => rhPersonRow(p, rhClass)).join('')
+    : `<div class="empty-state">مفيش خدام متسجلين في الفصل ده — دوس "➕ إضافة دور"</div>`;
+}
+function rhPersonRow(p, cid) {
+  const pal = classPalette(cid);
+  const others = p.classes.filter(c => c !== cid);
+  const extra = others.length ? `<div class="mon-badges">${others.map(c => `<span style="display:inline-flex;align-items:center;gap:2px">${p.sup.has(c) ? '🗝️' : ''}${classBadgeHTML(c)}</span>`).join('')}</div>` : '';
+  const pend = p.kind === 'pend' ? `<span class="mon-role" style="background:rgba(255,255,255,0.06);color:var(--text-dim);border:1px solid var(--border)">⏳ لسه مسجلش</span>` : '';
+  return `<div class="servant-item mon-row" style="gap:10px">
+    <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${(p.name || '؟').trim()[0] || '؟'}</div>
+    <div class="s-info"><div class="mon-name">${dEsc(p.name)}</div><div class="mon-badges" style="margin-top:2px">${rhRoleChip(p, cid)}${pend}</div>${extra}</div>
+    <button type="button" class="action-btn" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير الدور</button>
+  </div>`;
+}
+
+// ---- إضافة دور ----
+let rhAddMode = 'reg', rhNewClass = '', rhNewType = 'classServant';
+window.openRhAdd = () => {
+  rhAddMode = 'reg'; rhNewClass = ''; rhNewType = 'classServant';
+  document.getElementById('rh-add-search').value = '';
+  document.getElementById('rh-new-name').value = '';
+  setRhAddMode('reg');
+  document.getElementById('rh-add-modal').style.display = 'flex';
+};
+window.closeRhAdd = () => { document.getElementById('rh-add-modal').style.display = 'none'; };
+window.setRhAddMode = (m) => {
+  rhAddMode = m;
+  document.getElementById('rh-add-tab-reg').classList.toggle('active', m === 'reg');
+  document.getElementById('rh-add-tab-new').classList.toggle('active', m === 'new');
+  document.getElementById('rh-add-reg').style.display = m === 'reg' ? 'block' : 'none';
+  document.getElementById('rh-add-new').style.display = m === 'new' ? 'block' : 'none';
+  renderRhAdd();
+};
+window.setRhNewClass = (cid) => { rhNewClass = cid; if (cid === SERVANTS_CLASS_ID) rhNewType = 'classSupervisor'; renderRhAdd(); };
+window.setRhNewType = (t) => { rhNewType = t; renderRhAdd(); };
+function renderRhAdd() {
+  if (rhAddMode === 'reg') {
+    const q = normalizeArabic(document.getElementById('rh-add-search').value || '');
+    const box = document.getElementById('rh-add-results');
+    if (!q) { box.innerHTML = `<div class="empty-state" style="padding:12px">اكتب اسم الخادم عشان يظهر دوره</div>`; return; }
+    const res = buildPeople().filter(p => p.kind === 'reg' && !p.awaiting && !p.isAdmin && normalizeArabic(p.name).includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ar')).slice(0, 40);
+    box.innerHTML = res.length ? res.map(p => {
+      const roles = p.classes.length
+        ? p.classes.map(c => `<span style="display:inline-flex;align-items:center;gap:3px">${p.sup.has(c) ? '🗝️' : '🧑‍🏫'}${classBadgeHTML(c)}</span>`).join('')
+        : `<span class="class-badge class-none">⚠️ من غير فصل</span>`;
+      return `<div class="servant-item mon-row" style="gap:10px"><div class="s-info"><div class="mon-name">${dEsc(p.name)}</div><div class="mon-badges">${roles}</div></div>
+        <button type="button" class="action-btn" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير الدور</button></div>`;
+    }).join('') : `<div class="empty-state" style="padding:12px">مفيش خادم مسجل بالاسم ده — جرّب "خادم جديد"</div>`;
+  } else {
+    document.getElementById('rh-new-classes').innerHTML = rhClassesList().map(c =>
+      `<button type="button" class="filter-chip ${rhNewClass === c.id ? 'active' : ''}" onclick="setRhNewClass('${c.id}')">${dEsc(c.label)}</button>`).join('');
+    const types = rhNewClass === SERVANTS_CLASS_ID ? ['classSupervisor'] : ['classServant', 'classSupervisor'];
+    document.getElementById('rh-new-types').innerHTML = types.map(t =>
+      `<button type="button" class="filter-chip ${rhNewType === t ? 'active' : ''}" onclick="setRhNewType('${t}')">${RH_TYPES[t]}</button>`).join('');
+  }
+}
+window.rhAddNew = async () => {
+  const name = document.getElementById('rh-new-name').value.replace(/\s+/g, ' ').trim();
+  if (!name) { showToast('اكتب اسم الخادم', 'error'); return; }
+  if (!rhNewClass) { showToast('اختار الفصل', 'error'); return; }
+  if (cachedServants.some(x => nameKey(x.name) === nameKey(name))) { showToast('الاسم ده مسجل بالفعل كخادم — اختاره من "خادم مسجل"', 'error'); return; }
+  const btn = document.getElementById('rh-new-btn'); btn.disabled = true;
+  try {
+    const existing = pendingPersonMap(name);
+    const desired = {};
+    existing.classes.forEach(c => { desired[c] = existing.sup.has(c) ? 'classSupervisor' : 'classServant'; });
+    desired[rhNewClass] = rhNewType;
+    await rhApplyPerson({ kind: 'pend', name }, desired);
+    rhClass = rhNewClass;
+    closeRhAdd();
+    showToast('تمت إضافة الخادم ✓', 'success');
+  } catch (e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
+  finally { btn.disabled = false; }
+};
+
+// ---- تغيير الدور (لكل فصل: مفيش / خادم / مسؤول) ----
+let rhChange = null; // { key, kind, id, name, state:{cid:type|'none'}, locked:{cid:roleName} }
+window.openRhChange = (key) => {
+  const p = buildPeople().find(x => x.key === key);
+  if (!p) { showToast('الشخص ده مش موجود', 'error'); return; }
+  const state = {}, locked = {};
+  rhClassesList().forEach(c => { state[c.id] = p.sup.has(c.id) ? 'classSupervisor' : (p.classes.includes(c.id) ? 'classServant' : 'none'); });
+  const sv = p.kind === 'reg' ? cachedServants.find(x => x.id === p.id) : null;
+  allRoles.filter(r => !r.isAdmin && Array.isArray(r.classes) && r.classes.length > 1 &&
+    (p.kind === 'reg' ? (sv && servantInRole(sv, r.id)) : nameVariantsIn(r, p.name).length))
+    .forEach(r => r.classes.forEach(c => { locked[c] = r.name || 'دور متعدد الفصول'; }));
+  rhChange = { key, kind: p.kind, id: p.id || '', name: p.name, state, locked };
+  document.getElementById('rh-change-title').textContent = '🔄 تغيير الدور — ' + p.name;
+  renderRhChange();
+  document.getElementById('rh-change-modal').style.display = 'flex';
+};
+window.closeRhChange = () => { document.getElementById('rh-change-modal').style.display = 'none'; rhChange = null; };
+window.rhSetState = (cid, t) => { if (!rhChange) return; rhChange.state[cid] = rhChange.state[cid] === t ? 'none' : t; renderRhChange(); };
+function renderRhChange() {
+  if (!rhChange) return;
+  document.getElementById('rh-change-rows').innerHTML = rhClassesList().map(c => {
+    const st = rhChange.state[c.id];
+    if (rhChange.locked[c.id]) {
+      return `<div class="servant-item" style="padding:10px 12px;flex-direction:column;align-items:stretch;gap:4px"><div class="s-name" style="font-size:14px">${dEsc(c.label)} <span style="font-size:11px;color:var(--text-dim)">(${st === 'classSupervisor' ? 'مسؤول' : 'خادم'})</span></div>
+        <div style="font-size:11px;color:var(--text-dim)">🔒 جاي من دور "${dEsc(rhChange.locked[c.id])}" (متعدد الفصول) — عدّله من الإدارة المتقدمة</div></div>`;
+    }
+    const types = c.id === SERVANTS_CLASS_ID ? ['classSupervisor'] : ['classServant', 'classSupervisor'];
+    return `<div class="servant-item" style="padding:10px 12px;flex-direction:column;align-items:stretch;gap:8px">
+      <div class="s-name" style="font-size:14px">${dEsc(c.label)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <button type="button" class="filter-chip ${st === 'none' ? 'active' : ''}" onclick="rhSetState('${c.id}','none')">مفيش</button>
+        ${types.map(t => `<button type="button" class="filter-chip ${st === t ? 'active' : ''}" onclick="rhSetState('${c.id}','${t}')">${RH_TYPES[t]}</button>`).join('')}
+      </div></div>`;
+  }).join('');
+}
+window.rhSaveChange = async () => {
+  if (!rhChange) return;
+  const desired = {};
+  Object.entries(rhChange.state).forEach(([cid, t]) => { if (t !== 'none' && !rhChange.locked[cid]) desired[cid] = t; });
+  if (!Object.keys(desired).length && !Object.keys(rhChange.locked).length &&
+      !confirm(`${rhChange.name} هيفضل من غير أي فصل. متأكد؟`)) return;
+  if (Object.values(desired).includes('classSupervisor') &&
+      !confirm(`هتديله صلاحية مسؤول فصل — متأكد؟`)) return;
+  const btn = document.getElementById('rh-change-save'); btn.disabled = true;
+  try {
+    await rhApplyPerson({ kind: rhChange.kind, id: rhChange.id, name: rhChange.name }, desired);
+    closeRhChange();
+    showToast('تم تغيير الدور ✓', 'success');
+  } catch (e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
+  finally { btn.disabled = false; }
+};
+// بتطبّق الأدوار المطلوبة (فصل → نوع) على شخص واحد بس: الأدوار المتعددة الفصول والأدمن بتفضل زي ما هي، وكل فصل بياخد دور لوحده
+async function rhApplyPerson(person, desired) {
+  const targetIds = [];
+  for (const [cid, type] of Object.entries(desired)) targetIds.push((await ensureClassRole(type, cid)).id);
+  const isSingle = r => !r.isAdmin && Array.isArray(r.classes) && r.classes.length === 1;
+  if (person.kind === 'reg') {
+    const sv = cachedServants.find(x => x.id === person.id);
+    if (!sv) throw new Error('الخادم مش موجود');
+    const kept = liveRoleIds(servantRoleIds(sv)).filter(id => { const r = allRoles.find(x => x.id === id); return r && !isSingle(r); });
+    const ids = [...new Set([...kept, ...targetIds])];
+    const list = ids.map(i => allRoles.find(r => r.id === i)).filter(Boolean);
+    const perms = list.length ? derivePermsFromRoles(list) : { role: 'servant', assignedClass: '', supervisorClass: '' };
+    const patch = { roleIds: ids, roleId: ids[0] || '', ...perms };
+    await updateDoc(doc(db, 'servants', sv.id), patch);
+    patchServantLocal(sv.id, patch);
+  } else {
+    const name = person.name, ops = [];
+    const keep = allRoles.filter(r => !r.isAdmin && nameVariantsIn(r, name).length && !isSingle(r)).map(r => r.id);
+    const targets = [...new Set([...keep, ...targetIds])];
+    for (const r of allRoles.filter(x => !x.isAdmin && nameVariantsIn(x, name).length && !targets.includes(x.id)))
+      ops.push(updateDoc(doc(db, 'roles', r.id), { pendingNames: arrayRemove(...nameVariantsIn(r, name)) }));
+    for (const id of targets) {
+      const r = allRoles.find(x => x.id === id);
+      if (r && !nameVariantsIn(r, name).length) ops.push(updateDoc(doc(db, 'roles', id), { pendingNames: arrayUnion(name) }));
+    }
+    await Promise.all(ops);
+  }
+  await loadRolesOnce(true);
+}
+
 // ---------- محرر الدور ----------
 window.openRoleEditor = (roleId) => {
   editingRoleId = roleId || '';
@@ -8224,6 +8476,8 @@ window.openRoleEditor = (roleId) => {
   renderRoleClassChips();
   renderRoleMembersChips();
   updateRoleEffectHint();
+  rolesMode = 'adv';
+  document.getElementById('roles-home-view').style.display = 'none';
   document.getElementById('roles-list-view').style.display = 'none';
   document.getElementById('role-editor-view').style.display = 'block';
 };
