@@ -2570,7 +2570,8 @@ function renderClassesAdminList() {
   if (!allClasses.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لا يوجد فصول بعد</div>`; return; }
   cont.innerHTML = allClasses.map(c => `
     <div class="tpl-chip">
-      <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name} <small style="opacity:.6">(${classServiceDay(c.id) === 5 ? 'جمعة' : 'خميس'})</small></span>
+      <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name} <small style="opacity:.6">(${attendanceDayRule(c.id) ? (attendanceDayRule(c.id) === 5 ? 'جمعة' : 'خميس') : 'اليوم مش محدد'})</small></span>
+      <button class="tpl-chip-del" onclick="toggleClassDay('${c.id}')" title="تغيير يوم الحضور" style="margin-left:4px">🔁</button>
       <button class="tpl-chip-del" onclick="editClassPrompt('${c.id}')" title="تعديل" style="margin-left:4px">✏️</button>
       <button class="tpl-chip-del" onclick="deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">✕</button>
     </div>`).join('');
@@ -2586,12 +2587,19 @@ window.addClassPrompt = async () => {
     showToast(`تم إضافة "${name}" ✓`, 'success');
   } catch(e) { console.error(e); showToast('حصل خطأ أثناء الإضافة', 'error'); }
 };
+window.toggleClassDay = async (id) => {
+  const c = classById(id); if (!c) return;
+  const cur = attendanceDayRule(id), nxt = cur === 5 ? 4 : 5;
+  if (!confirm(`حضور "${c.name}" يبقى يوم ${dayNameAr(nxt)} بس؟\nمحدش هيقدر يسجل حضور للفصل ده غير يوم ${dayNameAr(nxt)}، والتسميع بيتسجل في أي يوم على آخر يوم حضور.`)) return;
+  try { await updateDoc(doc(db,'classes',id), { serviceDay: nxt }); showToast(`تم — حضور "${c.name}" يوم ${dayNameAr(nxt)} ✓`, 'success'); }
+  catch(e) { console.error(e); showToast('حصل خطأ أثناء التعديل', 'error'); }
+};
 window.editClassPrompt = async (id) => {
   const c = classById(id); if (!c) return;
   const name = (prompt('اسم الفصل:', c.name) || '').trim();
   if (!name) return;
   const emoji = (prompt('إيموجي الفصل:', c.emoji||'') || '').trim();
-  const dayIn = (prompt('يوم حضور الفصل؟ اكتب 4 للخميس أو 5 للجمعة', String(classServiceDay(id))) || String(classServiceDay(id))).trim();
+  const dayIn = (prompt('يوم حضور الفصل؟ اكتب 4 للخميس أو 5 للجمعة (الحضور هيتسجل في اليوم ده بس)', String(classServiceDay(id))) || String(classServiceDay(id))).trim();
   const serviceDay = (dayIn === '5' || dayIn === '٥') ? 5 : 4;
   try {
     await updateDoc(doc(db,'classes',id), { name, emoji, serviceDay });
@@ -2762,13 +2770,24 @@ const todayKey = () => toLocalDateKey(new Date());
 // التسجيل مفتوح طول الأسبوع.
 // كل فصل ليه يوم حضور (serviceDay: 4 = خميس، 5 = جمعة). التسميع بيتسجل على يوم حضور الفصل بتاع الأسبوع اللي قبله:
 // خميس → الخميس اللي قبل السبت، جمعة → الجمعة اللي قبل السبت.
-const verseKeyFor = (sd) => {
-  const d = new Date();
-  d.setDate(d.getDate() - ((d.getDay() + 1) % 7) - (6 - (sd === 5 ? 5 : 4))); // رجوع لأقرب سبت، وبعدين لورا لحد يوم حضور الفصل
-  return toLocalDateKey(d);
+// التسميع بيتسجل في أي يوم، وبيتحط على آخر يوم حضور للفصل (يوم حضور الفصل = خميس أو جمعة) قبل النهارده.
+// لو الحضور المحمّل بيقول إن الفصل ماتسجلش فيه حضور اليوم ده (إجازة مثلًا) بنرجع للأسبوع اللي قبله لحد ما نلاقي يوم فيه حضور فعلًا.
+const lastClassDayBefore = (sd) => { const d = new Date(); do { d.setDate(d.getDate() - 1); } while (d.getDay() !== (sd === 5 ? 5 : 4)); return d; };
+const verseKeyFor = (sd) => toLocalDateKey(lastClassDayBefore(sd));
+const verseKey = (classId) => {
+  const d = lastClassDayBefore(classServiceDay(classId));
+  const first = toLocalDateKey(d);
+  try {
+    if (!(recentAttWeeks > 0)) return first;
+    for (let i = 0; i < 8; i++) {
+      const k = toLocalDateKey(d), day = allAttendance[k];
+      if (day && Object.keys(day).some(id => clsOf(id) === classId)) return k;
+      d.setDate(d.getDate() - 7);
+    }
+  } catch (e) {}
+  return first;
 };
-const verseKey = (classId) => verseKeyFor(classServiceDay(classId));
-const verseNowKey = () => verseKeyFor(4); // أبكر مفتاح من الاتنين (الخميس) — أي مفتاح >= ده تابع للأسبوع الجاري
+const verseNowKey = () => [verseKeyFor(4), verseKeyFor(5)].sort()[0]; // أبكر مفتاح من الاتنين — أي مفتاح >= ده تابع للفترة الجارية
 const verseOpen = () => true;
 const VERSE_CLOSED_MSG = 'تسجيل الآية مقفول';
 
@@ -5013,6 +5032,7 @@ window.profAddAtt = async (date) => {
   const id = currentProfileId; if (!id || currentRole !== 'admin') return;
   if (date === todayKey()) { await markPresent(id); if (studentHist[id]) { studentHist[id].att[date] = todayAttendance[id]; } openProfile(id); onManualSearch(); return; }
   const H = studentHist[id]; if (!H || H.att[date]) return;
+  { const rule = attendanceDayRule(clsOf(id)); if (rule && keyWeekday(date) !== rule) { showToast(`حضور الفصل ده بيتسجل يوم ${dayNameAr(rule)} بس`, 'error'); return; } }
   const s = allStudents.find(x => x.id === id);
   const ref = doc(collection(db,'attendance'));
   setDoc(ref, { studentId:id, date, classSection: clsOf(id), timestamp: serverTimestamp() }).catch(e => {
@@ -5142,9 +5162,9 @@ let verseListenKey = null;
 function liveVerseKeys() {
   const sc = readScopeClasses();
   const ids = sc.length ? sc : allClasses.map(c => c.id);
-  const days = new Set(ids.map(classServiceDay));
-  if (!days.size) days.add(4);
-  return [...days].sort().map(verseKeyFor);
+  const keys = new Set(ids.map(verseKey));
+  if (!keys.size) keys.add(verseKeyFor(4));
+  return [...keys].sort();
 }
 function listenTodayVerses() {
   if (todayVersesUnsub) { todayVersesUnsub(); todayVersesUnsub = null; }
@@ -5285,8 +5305,12 @@ async function loadAllVerses() {
   });
 }
 
+// يوم حضور الفصل (4 خميس / 5 جمعة): بيتطبّق بس لو اليوم متحدد فعلًا في إعدادات الفصل
+const attendanceDayRule = (classId) => { const c = classId && classId !== SERVANTS_CLASS_ID ? classById(classId) : null; const sd = c ? Number(c.serviceDay) : 0; return (sd === 4 || sd === 5) ? sd : 0; };
+const dayNameAr = (sd) => sd === 5 ? 'الجمعة' : 'الخميس';
 async function markPresent(studentId) {
   if (todayAttendance[studentId]) return false;
+  { const rule = attendanceDayRule(clsOf(studentId)); if (rule && new Date().getDay() !== rule) { showToast(`حضور الفصل ده بيتسجل يوم ${dayNameAr(rule)} بس`, 'error'); return false; } }
   const ref = doc(collection(db,'attendance'));
   const day = todayKey();
   // الكتابة بتتسجّل محليًا فورًا وبتتبعت لما النت يرجع — مش بنستنى رد السيرفر عشان التسجيل يشتغل أوفلاين
@@ -5552,8 +5576,8 @@ window.assignClassSection = async (id, section) => {
     if (idx !== -1) allStudents[idx].classSection = section;
     const s = allStudents[idx];
     const already = !!todayAttendance[id];
-    if (!already) await markPresent(id);
-    showToast(`✅ ${s?.name || ''} — ${classLabel(section)} وتم تسجيل الحضور`, 'success');
+    const okMark = already || await markPresent(id);
+    showToast(okMark ? `✅ ${s?.name || ''} — ${classLabel(section)} وتم تسجيل الحضور` : `✅ ${s?.name || ''} — ${classLabel(section)}`, 'success');
     navigator.vibrate?.([60,30,60]);
     renderStudentsList();
     updateStats();
@@ -6246,10 +6270,11 @@ async function processVoiceName(altTexts) {
     if (isVerseMode) {
       await registerVerseVoice(s.id);
     } else {
-      await markPresent(s.id);
+      if (await markPresent(s.id)) {
       showToast(`✅ ${s.name} — تم التسجيل بالصوت`, 'success');
       navigator.vibrate?.([60,30,60]);
       logActivity('تسجيل حضور (صوت)', s.name);
+      }
     }
     candWrap.innerHTML = '';
     return;
