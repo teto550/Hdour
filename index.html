@@ -660,6 +660,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         <button class="admin-mode-btn del" id="admin-mode-del" onclick="setAdminClassMode('del')">🗑️ حذف</button>
       </div>
       <div class="admin-mode-hint" id="admin-mode-hint"></div>
+      <div id="admin-day-panel"></div>
       <div class="admin-grid" id="admin-classes-grid"></div>
       <button class="export-btn" style="width:100%" onclick="forceRefreshStudents()">🔄 تحديث بيانات المخدومين</button>
     </div>
@@ -6753,9 +6754,39 @@ function hideRolesScreen() {
   document.getElementById('servant-profile-modal') && (document.getElementById('servant-profile-modal').style.display = 'none');
 }
 let adminClassMode = null; // null | 'edit' | 'del'
+let pendingClassDays = {}; // classId -> 4 (خميس) | 5 (جمعة) | 0 (مش محدد) — اختيارات شاشة التعديل قبل الحفظ
 window.setAdminClassMode = (m) => {
   adminClassMode = (adminClassMode === m) ? null : m;
+  if (adminClassMode === 'edit') { pendingClassDays = {}; allClasses.forEach(c => { pendingClassDays[c.id] = attendanceDayRule(c.id); }); }
   renderAdminClassCards();
+};
+window.setPendingClassDay = (id, d) => { pendingClassDays[id] = d; renderClassDayPanel(); };
+function renderClassDayPanel() {
+  const box = document.getElementById('admin-day-panel');
+  if (!box) return;
+  if (adminClassMode !== 'edit') { box.innerHTML = ''; return; }
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const dirty = allClasses.some(c => (pendingClassDays[c.id] || 0) !== attendanceDayRule(c.id));
+  const btn = (c, d, label) => { const on = pendingClassDays[c.id] === d; return `<button onclick="setPendingClassDay('${esc(c.id)}',${d})" style="font-family:'Cairo',sans-serif;cursor:pointer;font-size:13px;font-weight:700;padding:7px 16px;border-radius:9px;border:1px solid ${on ? 'var(--success)' : 'var(--border)'};background:${on ? 'rgba(46,204,113,0.15)' : 'transparent'};color:${on ? 'var(--success)' : 'var(--text-dim)'}">${label}</button>`; };
+  box.innerHTML = `<div style="border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px">
+    <div style="font-size:14px;font-weight:800;margin-bottom:4px">📅 يوم حضور كل فصل</div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.7">اختار لكل فصل خميس ولا جمعة، وبعدين دوس حفظ. بعد الحفظ محدش يقدر يسجل حضور للفصل غير في يومه، والتسميع بيتسجل في أي يوم على آخر يوم حضور.</div>
+    ${allClasses.map(c => `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border);flex-wrap:wrap">
+      <span style="flex:1;min-width:110px;font-size:14px;font-weight:700">${esc(c.emoji||'📘')} ${esc(c.name)}</span>
+      ${btn(c, 4, 'الخميس')}${btn(c, 5, 'الجمعة')}
+    </div>`).join('')}
+    <button onclick="saveClassDays()" ${dirty ? '' : 'disabled'} style="margin-top:12px;width:100%;font-family:'Cairo',sans-serif;cursor:${dirty ? 'pointer' : 'default'};font-size:14px;font-weight:800;padding:10px;border-radius:10px;border:none;background:var(--success);color:#fff;opacity:${dirty ? 1 : .45}">💾 حفظ</button>
+  </div>`;
+}
+window.saveClassDays = async () => {
+  const changed = allClasses.filter(c => (pendingClassDays[c.id] || 0) !== attendanceDayRule(c.id) && (pendingClassDays[c.id] === 4 || pendingClassDays[c.id] === 5));
+  if (!changed.length) return;
+  try {
+    await Promise.all(changed.map(c => updateDoc(doc(db,'classes',c.id), { serviceDay: pendingClassDays[c.id] })));
+    showToast(`تم حفظ يوم حضور ${changed.length} فصل ✓`, 'success');
+    logActivity('تحديد يوم حضور الفصول', changed.map(c => `${c.name}: ${dayNameAr(pendingClassDays[c.id])}`).join(' · '));
+    adminClassMode = null; renderAdminClassCards();
+  } catch(e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
 };
 window.adminClassCardClick = async (id, name) => {
   const mode = adminClassMode;
@@ -6770,7 +6801,8 @@ function renderAdminClassCards() {
   const eb = document.getElementById('admin-mode-edit'), db_ = document.getElementById('admin-mode-del'), hint = document.getElementById('admin-mode-hint');
   if (eb) eb.classList.toggle('active', adminClassMode === 'edit');
   if (db_) db_.classList.toggle('active', adminClassMode === 'del');
-  if (hint) hint.textContent = adminClassMode === 'edit' ? 'اختار الفصل اللي عايز تعدّله' : adminClassMode === 'del' ? 'اختار الفصل اللي عايز تحذفه' : '';
+  renderClassDayPanel();
+  if (hint) hint.textContent = adminClassMode === 'edit' ? 'حدد يوم حضور الفصول من فوق، أو دوس على فصل تعدّل اسمه' : adminClassMode === 'del' ? 'اختار الفصل اللي عايز تحذفه' : '';
   const cls = adminClassMode === 'edit' ? ' mode-edit' : adminClassMode === 'del' ? ' mode-del' : '';
   grid.innerHTML = allClasses.map(c => `
     <button class="admin-card${cls}" data-cid="${esc(c.id)}">
