@@ -4943,17 +4943,19 @@ let recentAttScope = null;
 // نافذة تحميل ثابتة (بتغطي أكبر فلتر: حضر آخر 5 مرات = 7 أسابيع) عشان تغيير الفلتر من 1 لـ 5 مثلًا ميعملش قراءة جديدة من فايرستور كل مرة
 // (الكاش المحلي كان بيبقى "ناقص" لما النافذة تكبر، فكان بيقرا كل الأسابيع تاني)
 const RECENT_WINDOW_WEEKS = 8;
+// الأدمن بيقرا حضور كل الفصول بالتاريخ بس (من غير ما نقيّد بـ classSection المكتوب في سجل الحضور): الولد لما بيتنقل لفصل تاني سجلاته القديمة بتفضل بفصله القديم فكانت بتختفي من الفلاتر
+const attScope = () => currentRole === 'admin' ? [] : readScopeClasses();
 async function _ensureRecentAttendance(weeks) {
   weeks = Math.max(weeks || 4, RECENT_WINDOW_WEEKS);
-  { const k = readScopeClasses().join(','); if (recentAttScope !== null && recentAttScope !== k) recentAttWeeks = 0; recentAttScope = k; }
+  { const k = attScope().join(','); if (recentAttScope !== null && recentAttScope !== k) recentAttWeeks = 0; recentAttScope = k; }
   if (recentAttWeeks >= weeks) { await refreshTodayAttendanceIfStale(); return; }
   const d = new Date(); d.setDate(d.getDate() - weeks*7);
   const fromKey = toLocalDateKey(d), nowKey = todayKey();
   // الأسابيع اللي فاتت مبتتغيّرش، فبنخزّنها على الجهاز ونقرا من آخر جلسة اتزامنت بس (جلسة النهارده تقريبًا)
   // بدل ما نقرا كل الأسابيع من فايرستور في كل فتحة. وبنعمل تحميل كامل تاني كل 7 أيام للأمان.
-  const scopeKey0 = readScopeClasses().join(',');
+  const scopeKey0 = attScope().join(',');
   let c = null; try { c = JSON.parse((await idbGet(ATT_CACHE_KEY + '@' + scopeKey0)) || 'null'); } catch(e) {}
-  const scope = readScopeClasses(), scopeKey = scope.join(',');
+  const scope = attScope(), scopeKey = scope.join(',');
   const fresh = !!(c && c.data && c.from && c.from <= fromKey && c.through && (c.scope || '') === scopeKey && (Date.now() - (c.fullTs || 0)) < 7*24*3600*1000);
   const data = fresh ? c.data : {};
   const qFrom = fresh ? c.through : fromKey;
