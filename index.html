@@ -858,11 +858,6 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
               <button class="filter-chip" onclick="setAbsenceFilter(2,this)">غاب آخر مرتين</button>
               <button class="filter-chip" onclick="setAbsenceFilter(3,this)">غاب آخر 3 مرات</button>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-              <span style="font-size:12px;color:var(--text-dim)">أو اكتب أي عدد:</span>
-              <input type="number" id="absence-custom" min="1" max="200" inputmode="numeric" placeholder="مثلاً 8" onkeydown="if(event.key==='Enter')setCustomFilter('absence')" style="width:90px;font-family:'Cairo',sans-serif;background:var(--surface2,rgba(255,255,255,0.05));border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px">
-              <button class="filter-chip" onclick="setCustomFilter('absence')">تطبيق ✓</button>
-            </div>
           </div>
         </details>
       </div>
@@ -881,11 +876,6 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
               <button class="filter-chip" onclick="setAttendanceFilter(3,this)">حضر آخر 3 مرات</button>
               <button class="filter-chip" onclick="setAttendanceFilter(4,this)">حضر آخر 4 مرات</button>
               <button class="filter-chip" onclick="setAttendanceFilter(5,this)">حضر آخر 5 مرات</button>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-              <span style="font-size:12px;color:var(--text-dim)">أو اكتب أي عدد:</span>
-              <input type="number" id="attendance-custom" min="1" max="200" inputmode="numeric" placeholder="مثلاً 8" onkeydown="if(event.key==='Enter')setCustomFilter('attendance')" style="width:90px;font-family:'Cairo',sans-serif;background:var(--surface2,rgba(255,255,255,0.05));border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px">
-              <button class="filter-chip" onclick="setCustomFilter('attendance')">تطبيق ✓</button>
             </div>
           </div>
         </details>
@@ -4940,8 +4930,7 @@ async function refreshTodayAttendanceIfStale() {
   if (Object.keys(fresh).length) allAttendance[today] = fresh; else delete allAttendance[today];
   todayAttSyncAt = Date.now();
 }
-let attExtendWeeks = 0; // لو فصل جلساته المحمّلة أقل من الرقم المطلوب بنوسّع الفترة (لحد 20 سنة) عشان الحضور القديم مايتقطعش
-const filterWeeks = () => Math.max(Math.max(parseInt(absenceFilter)||0, parseInt(attendanceFilter)||0, parseInt(waAbsenceFilter)||0, parseInt(waAttendanceFilter)||0) + 2, attExtendWeeks);
+const filterWeeks = () => Math.max(parseInt(absenceFilter)||0, parseInt(attendanceFilter)||0, parseInt(waAbsenceFilter)||0, parseInt(waAttendanceFilter)||0) + 2;
 const ATT_CACHE_KEY = 'att_recent_cache_v1';
 // الاستدعاءات بتتنفذ ورا بعض (مش بالتوازي) عشان تبويب الافتقاد والرسائل ميتخانقوش على allAttendance
 let attLoadP = Promise.resolve();
@@ -5687,20 +5676,6 @@ window.setAttendanceFilter = (v, btn) => {
   renderFilterList();
 };
 
-// أي عدد مرات (مش بس 1-5): آخر N جلسة للفصل
-window.setCustomFilter = (kind) => {
-  const n = parseInt(document.getElementById(kind + '-custom')?.value, 10);
-  if (!(n >= 1)) { showToast('اكتب رقم من 1 فوق', 'error'); return; }
-  const v = Math.min(n, 200);
-  const cnt = v === 1 ? 'مرة' : v === 2 ? 'مرتين' : v + ' مرات';
-  const chips = document.getElementById(kind + '-chips');
-  chips.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
-  if (kind === 'absence') absenceFilter = v; else attendanceFilter = v;
-  document.getElementById(kind + '-value').textContent = (kind === 'absence' ? 'غاب آخر ' : 'حضر آخر ') + cnt;
-  chips.closest('details')?.removeAttribute('open');
-  renderFilterList();
-};
-
 window.setVerseFilter = (v, btn) => {
   verseFilter = v;
   verseRetriedFull = false;
@@ -5788,18 +5763,6 @@ function renderFilterList() {
     return;
   }
   if (verseFilter !== 'all' && verseRefreshBusy) return;
-  if ((absenceFilter !== 'all' || attendanceFilter !== 'all') && attExtendWeeks < 1040) {
-    const needN = Math.max(parseInt(absenceFilter)||0, parseInt(attendanceFilter)||0);
-    const so = classSessionLookup(), al0 = getAllowedAssignedClasses();
-    const vis = classScope(allStudents.filter(s => currentRole === 'admin' || !al0.length || al0.includes(s.classSection)));
-    const short = [...new Set(vis.map(s => s.classSection || ''))].some(c => c && c !== SERVANTS_CLASS_ID && so(c).length < needN);
-    if (short) {
-      attExtendWeeks = Math.min(1040, Math.max(filterWeeks(), 16) * 2);
-      cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري تحميل الحضور القديم…</div>`;
-      ensureRecentAttendance(filterWeeks()).then(renderFilterList).catch(()=>{ attExtendWeeks = 0; cont.innerHTML = '<div class="empty-state">تعذّر التحميل<br><button class="action-btn" style="margin-top:10px" onclick="renderFilterList()">🔄 حاول تاني</button></div>'; });
-      return;
-    }
-  }
   const dates = attSessionDates();
   let list = [...allStudents];
   const allowed = getAllowedAssignedClasses();
