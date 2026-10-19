@@ -616,6 +616,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
           <button type="button" class="pal-dot" data-pal="lavender" aria-pressed="false" title="لافندر" aria-label="لافندر" onclick="setLightPalette('lavender')" style="background:linear-gradient(135deg,#ebe6f6 50%,#6a4fd0 50%)"></button>
         </span></div>
         <button class="settings-dropdown-item" onclick="openExportModal()">📥 تصدير Excel</button>
+        <button class="settings-dropdown-item" id="settings-dropdown-activity" style="display:none" onclick="openActivityModal()">📋 سجل الأنشطة</button>
         <button class="settings-dropdown-item" id="settings-dropdown-notif" style="display:none" onclick="toggleNotifications()"><span>🔔 الإشعارات</span><span id="notif-state" style="font-size:12px;font-weight:800"></span></button>
         <div class="settings-dropdown-divider"></div>
         <button class="settings-dropdown-item danger" onclick="closeSettingsMenu();doLogout()">🚪 تسجيل الخروج</button>
@@ -1198,12 +1199,6 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         <div id="srv-reg-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
         <div class="list-header"><span class="section-title">👥 الخدام المعتمدين (<span id="servants-count">0</span>)</span></div>
         <div id="servants-list" style="margin-bottom:22px"></div>
-
-        <div class="list-header">
-          <span class="section-title">سجل الأنشطة</span>
-          <span style="display:flex;gap:6px"><input type="date" id="activity-date" class="field-input" style="padding:4px 8px"><button class="export-btn" onclick="renderActivityList()">عرض</button></span>
-        </div>
-        <div id="activity-list"></div>
       </div>
     </div>
 
@@ -1721,6 +1716,27 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
 <!-- SERVANT PROFILE MODAL -->
 
 <!-- DASHBOARD الخدام: SETTINGS MODAL -->
+<div id="activity-modal" class="modal-overlay" style="display:none;z-index:340" onclick="closeActivityOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:18px;font-weight:900">📋 سجل الأنشطة</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">اختار اليوم والفصل وهتشوف أنشطة الخدام اللي فيه</div>
+      </div>
+      <button class="modal-close" onclick="closeActivityModal()">✕</button>
+    </div>
+    <div style="padding:16px">
+      <label class="field-label">اليوم</label>
+      <input type="date" id="act-date" class="field-input" dir="ltr" onchange="renderActivityList()">
+      <label class="field-label">الفصل</label>
+      <select id="act-class" class="field-select" onchange="renderActivityList()"></select>
+      <button class="btn-primary" onclick="renderActivityList(true)" style="margin-bottom:12px">🔄 عرض</button>
+      <div id="act-summary" style="display:none;font-size:12px;font-weight:700;color:var(--text-dim);margin-bottom:8px"></div>
+      <div id="act-results"></div>
+    </div>
+  </div>
+</div>
+
 <div id="dash-modal" class="modal-overlay" style="display:none;z-index:340" onclick="closeDashModalOutside(event)">
   <div class="modal-box">
     <div class="modal-header">
@@ -2596,6 +2612,7 @@ window.toggleSettingsMenu = (e) => {
   const dd = document.getElementById('settings-dropdown');
   const opening = dd.style.display === 'none';
   document.getElementById('settings-dropdown-notif').style.display = opening ? 'flex' : 'none';
+  document.getElementById('settings-dropdown-activity').style.display = opening && canManageServants() ? 'flex' : 'none';
   updateNotifBtn();
   dd.style.display = opening ? 'block' : 'none';
   if (opening) document.addEventListener('click', closeSettingsMenuOutside);
@@ -6894,8 +6911,6 @@ window.loadMonitorTab = async () => {
   if (!canManageServants()) return;
   renderMonitorClassChips();
   // القسم اللي الأدمن اختاره من كروت الخدام (الحضور / الخدام / الرسائل)
-  const di = document.getElementById('activity-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
-  document.getElementById('activity-list').innerHTML = `<div class="empty-state">اختار التاريخ واضغط "عرض"</div>`;
   const sd = document.getElementById('serv-att-date'); if (sd && !sd.value) sd.value = toLocalDateKey(new Date());
   switchMonitorSubTab(monitorEntrySub);
   await loadServantsFresh();
@@ -7193,7 +7208,7 @@ function enhanceDateInput(inp) {
   inp.addEventListener('click', () => { try { inp.showPicker && inp.showPicker(); } catch(e) {} });
   upd();
 }
-['class-serv-att-date','serv-att-date','activity-date'].forEach(id => enhanceDateInput(document.getElementById(id)));
+['class-serv-att-date','serv-att-date','act-date'].forEach(id => enhanceDateInput(document.getElementById(id)));
 
 let classServAttActivity = 'mass';
 window.setClassServAttActivity = (activity, btn) => {
@@ -8000,21 +8015,51 @@ window.printDashboard = () => {
 };
 
 
-window.renderActivityList = async function() {
-  const cont = document.getElementById('activity-list');
-  const v = document.getElementById('activity-date').value;
-  if (!v) { cont.innerHTML = `<div class="empty-state">اختار تاريخ الأول</div>`; return; }
+// ===== سجل الأنشطة (من ⚙️): اختار اليوم والفصل → أنشطة الخدام اللي في الفصل ده =====
+// السجل نفسه مش بيتخزّن فيه فصل، فبنجيب أنشطة اليوم مرة واحدة (متخزّنة 5 دقايق) وبنفلتر بفصول كل خادم من قايمة الخدام
+const ACT_LIMIT = 500;
+let actCache = {}; // dateKey -> { at, docs, hitLimit }
+window.openActivityModal = async () => {
+  closeSettingsMenu();
+  if (!canManageServants()) return;
+  const di = document.getElementById('act-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
+  const sel = document.getElementById('act-class'), keep = sel.value || 'all';
+  sel.innerHTML = `<option value="all">🌐 كل الفصول</option>` + allClasses.map(c => `<option value="${impEsc(c.id)}">${impEsc(classLabel(c.id))}</option>`).join('');
+  sel.value = [...sel.options].some(o => o.value === keep) ? keep : 'all';
+  document.getElementById('activity-modal').style.display = 'flex';
+  renderActivityList();
+};
+window.closeActivityModal = () => { document.getElementById('activity-modal').style.display = 'none'; };
+window.closeActivityOutside = (e) => { if (e.target.id === 'activity-modal') closeActivityModal(); };
+window.renderActivityList = async function(force) {
+  const cont = document.getElementById('act-results'), sum = document.getElementById('act-summary');
+  const v = document.getElementById('act-date').value, cls = document.getElementById('act-class').value || 'all';
+  sum.style.display = 'none';
+  if (!v) { cont.innerHTML = `<div class="empty-state">اختار التاريخ الأول</div>`; return; }
   cont.innerHTML = `<div class="loading"><div class="spinner"></div>جاري التحميل…</div>`;
   try {
-    const start = new Date(v + 'T00:00:00'), end = new Date(start.getTime() + 86400000);
-    const snap = await countedGetDocs(query(collection(db,'activityLog'), where('timestamp','>=',start), where('timestamp','<',end), orderBy('timestamp','desc'), limit(100)), 'activityLog');
-    if (snap.empty) { cont.innerHTML = `<div class="empty-state">لا يوجد أنشطة في اليوم ده</div>`; return; }
-    cont.innerHTML = snap.docs.map(d => {
-      const a = d.data();
-      const t = a.timestamp?.toDate ? a.timestamp.toDate().toLocaleString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
-      return `<div class="activity-item"><b>${a.name||'؟'}</b> — ${a.action}${a.detail?': '+a.detail:''}<br>${t}</div>`;
+    await loadServantsFresh();
+    let c = actCache[v];
+    if (force === true || !c || Date.now() - c.at > 5 * 60 * 1000) {
+      const start = new Date(v + 'T00:00:00'), end = new Date(start.getTime() + 86400000);
+      const snap = await countedGetDocs(query(collection(db,'activityLog'), where('timestamp','>=',start), where('timestamp','<',end), orderBy('timestamp','desc'), limit(ACT_LIMIT)), 'activityLog');
+      c = actCache[v] = { at: Date.now(), docs: snap.docs.map(d => d.data()), hitLimit: snap.size >= ACT_LIMIT };
+    }
+    if (document.getElementById('act-date').value !== v || (document.getElementById('act-class').value || 'all') !== cls) return; // المستخدم غيّر الاختيار وإحنا بنحمّل
+    const byId = new Map(cachedServants.map(x => [x.id, x]));
+    const classesOf = uid => { const sv = byId.get(uid); return sv && sv.role !== 'admin' ? normalizeAssignedClasses(sv.assignedClass) : []; };
+    const rows = c.docs.filter(a => cls === 'all' || classesOf(a.uid).includes(cls));
+    const people = new Set(rows.map(a => a.uid)).size;
+    sum.style.display = 'block';
+    sum.textContent = `${rows.length} نشاط · ${people} خادم` + (cls === 'all' ? '' : ' — ' + classLabel(cls)) + (c.hitLimit ? ` (أحدث ${ACT_LIMIT} نشاط في اليوم)` : '');
+    if (!rows.length) { cont.innerHTML = `<div class="empty-state">${cls === 'all' ? 'لا يوجد أنشطة في اليوم ده' : 'لا يوجد أنشطة لخدام الفصل ده في اليوم ده'}</div>`; return; }
+    cont.innerHTML = rows.map(a => {
+      const t = a.timestamp?.toDate ? a.timestamp.toDate().toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' }) : '';
+      const cl = cls === 'all' ? classesOf(a.uid).map(x => classLabel(x)).join(' + ') : '';
+      return `<div class="activity-item"><b>${dEsc(a.name || '؟')}</b> — ${dEsc(a.action)}${a.detail ? ': ' + dEsc(a.detail) : ''}<br>${t}${cl ? ' · ' + dEsc(cl) : ''}</div>`;
     }).join('');
   } catch(e) {
+    console.error(e);
     cont.innerHTML = `<div class="empty-state">تعذّر تحميل الأنشطة</div>`;
   }
 };
