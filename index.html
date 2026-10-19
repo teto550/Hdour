@@ -5957,7 +5957,18 @@ window.openProfile = (id) => {
   const isAdm = currentRole === 'admin'; // تسجيل الحضور القديم للأدمن بس
   const CS = isAdm ? classSessCache[cls0] : null;
   if (isAdm && (!CS || Date.now() - CS.ts > CLASS_SESS_TTL)) loadClassSessionDates(cls0).then(() => { if (currentProfileId === id) openProfile(id); }).catch(()=>{});
-  const relevantAll = [...new Set([...(isAdm ? classSessionLookup()(cls0) : []), ...(CS ? CS.dates : []), ...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse();
+  // الحضور مرة في الأسبوع: يوم حضور الولد = اليوم (خميس/جمعة) اللي حضر فيه أكتر، فمبنعرضش أيام حضور الفصل اللي في يوم تاني
+  // والتسميع اللي متسجل على تاريخ مش في يوم حضور الولد (زي خميس لولد بيحضر الجمعة) بيظهر على يوم الحضور بتاعه في نفس الأسبوع
+  const wCnt = {}; Object.keys(H?.att||{}).forEach(d => { const w = keyWeekday(d); wCnt[w] = (wCnt[w] || 0) + 1; });
+  const W = Object.keys(wCnt).length ? +Object.keys(wCnt).sort((a, b) => wCnt[b] - wCnt[a])[0] : null;
+  const verRows = {};
+  Object.keys(H?.ver||{}).forEach(v => {
+    let row = v;
+    if (W !== null && keyWeekday(v) !== W) { const [yy, mm, dd] = v.split('-').map(Number); const dt = new Date(yy, mm - 1, dd); dt.setDate(dt.getDate() + ((W - dt.getDay() + 7) % 7)); row = toLocalDateKey(dt); }
+    verRows[row] = H.ver[v];
+  });
+  const sessRows = [...(isAdm ? classSessionLookup()(cls0) : []), ...(CS ? CS.dates : [])].filter(d => W === null || keyWeekday(d) === W);
+  const relevantAll = [...new Set([...sessRows, ...Object.keys(H?.att||{}), ...Object.keys(verRows)])].sort().reverse();
   const HLIM = isAdm ? 8 : 5;
   const relevantDates = (isAdm && profHistAll) ? relevantAll : relevantAll.slice(0, HLIM);
   const histHTML = relevantAll.length ? `
@@ -5966,8 +5977,8 @@ window.openProfile = (id) => {
       ${relevantDates.map(d => {
         const p = d.split('-');
         const att   = !!H?.att[d];
-        const heard = !!H?.ver[d];
-        const verse = H?.ver[d]?.verse || '';
+        const heard = !!verRows[d];
+        const verse = verRows[d]?.verse || '';
         return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
           <span style="font-size:13px;font-weight:600;color:var(--text-dim)">${p[2]}/${p[1]}/${p[0]}</span>
           ${att
