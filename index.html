@@ -4653,7 +4653,7 @@ function waRecipientsSource() {
     }
     if (waAttendanceFilter !== 'all') {
       const n = parseInt(waAttendanceFilter);
-      list = list.filter(s => { const last = sessOf(s.classSection).slice(-n); return last.length === n && last.every(d => !!allAttendance[d]?.[s.id]); });
+      list = list.filter(s => { const last = sessOf(s.classSection).slice(-n); return last.length > 0 && last.every(d => !!allAttendance[d]?.[s.id]); });
     }
   }
   const siblingInfo = computeSiblingInfo(classScope(ownClassStudents()));
@@ -5784,7 +5784,7 @@ function renderFilterList() {
     }
     if (attendanceFilter !== 'all') {
       const n = parseInt(attendanceFilter);
-      list = list.filter(s => { const last = sessOf(s.classSection).slice(-n); return last.length === n && last.every(d => !!allAttendance[d]?.[s.id]); });
+      list = list.filter(s => { const last = sessOf(s.classSection).slice(-n); return last.length > 0 && last.every(d => !!allAttendance[d]?.[s.id]); });
     }
   }
   if (verseFilter !== 'all') {
