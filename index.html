@@ -5008,7 +5008,7 @@ let profHistFor = '', profHistAll = false;
 window.toggleProfHistAll = () => { profHistAll = !profHistAll; if (currentProfileId) openProfile(currentProfileId); };
 // تسجيل حضور في يوم قديم من ملف المخدوم
 window.profAddAtt = async (date) => {
-  const id = currentProfileId; if (!id) return;
+  const id = currentProfileId; if (!id || currentRole !== 'admin') return;
   if (date === todayKey()) { await markPresent(id); if (studentHist[id]) { studentHist[id].att[date] = todayAttendance[id]; } openProfile(id); onManualSearch(); return; }
   const H = studentHist[id]; if (!H || H.att[date]) return;
   const s = allStudents.find(x => x.id === id);
@@ -5028,7 +5028,7 @@ window.profAddAtt = async (date) => {
   logActivity('تسجيل حضور في يوم قديم', `${s?.name || ''} — ${date}`);
 };
 window.profRemoveAtt = async (date) => {
-  const id = currentProfileId; if (!id) return;
+  const id = currentProfileId; if (!id || currentRole !== 'admin') return;
   if (date === todayKey()) { await removeAttendance(id); if (!todayAttendance[id] && studentHist[id]) delete studentHist[id].att[date]; openProfile(id); return; }
   const H = studentHist[id]; const docId = H?.att[date]; if (!docId) return;
   const s = allStudents.find(x => x.id === id);
@@ -5940,10 +5940,12 @@ window.openProfile = (id) => {
   // سجل الحضور: كل أيام حضور الفصل اللي اتسجلت قبل كده (حتى لو الولد ماحضرش) عشان نقدر نسجله في يوم قديم
   if (profHistFor !== id) { profHistFor = id; profHistAll = false; }
   const cls0 = s.classSection || '';
-  const CS = classSessCache[cls0];
-  if (!CS || Date.now() - CS.ts > CLASS_SESS_TTL) loadClassSessionDates(cls0).then(() => { if (currentProfileId === id) openProfile(id); }).catch(()=>{});
-  const relevantAll = [...new Set([...classSessionLookup()(cls0), ...(CS ? CS.dates : []), ...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse();
-  const relevantDates = profHistAll ? relevantAll : relevantAll.slice(0, 8);
+  const isAdm = currentRole === 'admin'; // تسجيل الحضور القديم للأدمن بس
+  const CS = isAdm ? classSessCache[cls0] : null;
+  if (isAdm && (!CS || Date.now() - CS.ts > CLASS_SESS_TTL)) loadClassSessionDates(cls0).then(() => { if (currentProfileId === id) openProfile(id); }).catch(()=>{});
+  const relevantAll = [...new Set([...(isAdm ? classSessionLookup()(cls0) : []), ...(CS ? CS.dates : []), ...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse();
+  const HLIM = isAdm ? 8 : 5;
+  const relevantDates = (isAdm && profHistAll) ? relevantAll : relevantAll.slice(0, HLIM);
   const histHTML = relevantAll.length ? `
     <div style="padding:0 16px 16px">
       <div class="section-title" style="margin-bottom:10px">📅 سجل الحضور والتسميع</div>
@@ -5955,14 +5957,14 @@ window.openProfile = (id) => {
         return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
           <span style="font-size:13px;font-weight:600;color:var(--text-dim)">${p[2]}/${p[1]}/${p[0]}</span>
           ${att
-            ? `<button onclick="profRemoveAtt('${d}')" title="اضغط لإلغاء الحضور" style="font-family:'Cairo',sans-serif;cursor:pointer;font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</button>`
-            : (H ? `<button onclick="profAddAtt('${d}')" style="font-family:'Cairo',sans-serif;cursor:pointer;font-size:11px;font-weight:700;background:transparent;border:1px dashed var(--success);color:var(--success);border-radius:5px;padding:2px 8px">＋ سجّل حضور</button>` : `<span style="font-size:11px;color:var(--text-dim);opacity:.4">…</span>`)}
+            ? (isAdm ? `<button onclick="profRemoveAtt('${d}')" title="اضغط لإلغاء الحضور" style="font-family:'Cairo',sans-serif;cursor:pointer;font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</button>` : `<span style="font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</span>`)
+            : (isAdm ? (H ? `<button onclick="profAddAtt('${d}')" style="font-family:'Cairo',sans-serif;cursor:pointer;font-size:11px;font-weight:700;background:transparent;border:1px dashed var(--success);color:var(--success);border-radius:5px;padding:2px 8px">＋ سجّل حضور</button>` : `<span style="font-size:11px;color:var(--text-dim);opacity:.4">…</span>`) : `<span style="font-size:11px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-dim);opacity:.4;border-radius:5px;padding:2px 7px">حاضر</span>`)}
           ${heard
             ? `<span style="font-size:11px;color:#a07de0;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);border-radius:5px;padding:2px 7px">📖 سماع${verse ? ' · ' + verse : ''}</span>`
             : `<span style="font-size:11px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-dim);opacity:.4;border-radius:5px;padding:2px 7px">سماع</span>`}
         </div>`;
       }).join('')}
-      ${relevantAll.length > 8 ? `<button onclick="toggleProfHistAll()" style="margin-top:10px;width:100%;font-family:'Cairo',sans-serif;cursor:pointer;font-size:12px;font-weight:700;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:8px">${profHistAll ? 'عرض أقل ▲' : `عرض كل الأيام (${relevantAll.length}) ▼`}</button>` : ''}
+      ${isAdm && relevantAll.length > 8 ? `<button onclick="toggleProfHistAll()" style="margin-top:10px;width:100%;font-family:'Cairo',sans-serif;cursor:pointer;font-size:12px;font-weight:700;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:8px">${profHistAll ? 'عرض أقل ▲' : `عرض كل الأيام (${relevantAll.length}) ▼`}</button>` : ''}
     </div>` : '';
 
   document.getElementById('prof-details').innerHTML = (fields.length
