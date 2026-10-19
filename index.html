@@ -4988,6 +4988,59 @@ async function loadStudentHist(id) {
   v.docs.forEach(x => { const y = x.data(); H.ver[y.date] = { id:x.id, verse:y.verse||'' }; });
   studentHist[id] = H;
 }
+
+// أيام حضور الفصل اللي اتسجلت قبل كده (بتتحمّل مرة واحدة لكل فصل وتتخزن 30 دقيقة) — بتظهر في ملف المخدوم حتى لو الولد ماحضرش فيها
+const classSessCache = {}, classSessLoading = {};
+const CLASS_SESS_TTL = 30 * 60 * 1000;
+function loadClassSessionDates(cls) {
+  if (classSessLoading[cls]) return classSessLoading[cls];
+  classSessLoading[cls] = (async () => {
+    const dates = new Set();
+    try {
+      const snap = await countedGetDocs(query(collection(db,'attendance'), where('classSection','==', cls)), 'attendance (أيام حضور الفصل - ملف المخدوم)');
+      snap.docs.forEach(x => { const d = x.data().date; if (d) dates.add(d); });
+    } catch (e) { console.warn('تعذّر تحميل أيام حضور الفصل:', e && e.message); }
+    classSessCache[cls] = { ts: Date.now(), dates: [...dates] };
+  })().finally(() => { delete classSessLoading[cls]; });
+  return classSessLoading[cls];
+}
+let profHistFor = '', profHistAll = false;
+window.toggleProfHistAll = () => { profHistAll = !profHistAll; if (currentProfileId) openProfile(currentProfileId); };
+// تسجيل حضور في يوم قديم من ملف المخدوم
+window.profAddAtt = async (date) => {
+  const id = currentProfileId; if (!id) return;
+  if (date === todayKey()) { await markPresent(id); if (studentHist[id]) { studentHist[id].att[date] = todayAttendance[id]; } openProfile(id); onManualSearch(); return; }
+  const H = studentHist[id]; if (!H || H.att[date]) return;
+  const s = allStudents.find(x => x.id === id);
+  const ref = doc(collection(db,'attendance'));
+  setDoc(ref, { studentId:id, date, classSection: clsOf(id), timestamp: serverTimestamp() }).catch(e => {
+    console.error('past attendance write failed:', e);
+    if (H.att[date] === ref.id) delete H.att[date];
+    if (allAttendance[date]?.[id] === ref.id) delete allAttendance[date][id];
+    if (currentProfileId === id) openProfile(id);
+    showToast('الحضور ماتسجلش على السيرفر — مفيش صلاحية', 'error');
+  });
+  H.att[date] = ref.id;
+  (allAttendance[date] ||= {})[id] = ref.id;
+  openProfile(id);
+  const p = date.split('-');
+  showToast(`✅ اتسجل حضور ${s?.name || ''} يوم ${p[2]}/${p[1]}/${p[0]}`, 'success');
+  logActivity('تسجيل حضور في يوم قديم', `${s?.name || ''} — ${date}`);
+};
+window.profRemoveAtt = async (date) => {
+  const id = currentProfileId; if (!id) return;
+  if (date === todayKey()) { await removeAttendance(id); if (!todayAttendance[id] && studentHist[id]) delete studentHist[id].att[date]; openProfile(id); return; }
+  const H = studentHist[id]; const docId = H?.att[date]; if (!docId) return;
+  const s = allStudents.find(x => x.id === id);
+  const p = date.split('-');
+  if (!confirm(`هتشيل حضور "${s?.name}" يوم ${p[2]}/${p[1]}/${p[0]}؟`)) return;
+  deleteDoc(doc(db,'attendance',docId)).catch(e => console.error('attendance delete failed:', e));
+  delete H.att[date];
+  if (allAttendance[date]) delete allAttendance[date][id];
+  openProfile(id);
+  showToast('تم حذف الحضور', 'success');
+  logActivity('حذف حضور يوم قديم', `${s?.name || ''} — ${date}`);
+};
 async function loadAllAttendance() {
   const snap = await countedGetDocs(collection(db,'attendance'), 'attendance (الكل - غير مستخدمة)');
   allAttendance = {}; todayAttendance = {}; todayAttendanceTime = {};
@@ -5884,9 +5937,14 @@ window.openProfile = (id) => {
     ? s.visitNotes.map(n => NOTE_LABELS[n] ? `${noteLabelOf(s,n).emoji} ${noteEsc(noteLabelOf(s,n).text)}` : n).join('، ')
     : `${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}` });
   studentPhoneEntries(s).forEach(e => fields.push({ icon:'📞', key: e.label, val: e.val, phone: true, idx: e.idx }));
-  // attendance + verse history combined
-  const relevantDates = [...new Set([...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse().slice(0,5);
-  const histHTML = relevantDates.length ? `
+  // سجل الحضور: كل أيام حضور الفصل اللي اتسجلت قبل كده (حتى لو الولد ماحضرش) عشان نقدر نسجله في يوم قديم
+  if (profHistFor !== id) { profHistFor = id; profHistAll = false; }
+  const cls0 = s.classSection || '';
+  const CS = classSessCache[cls0];
+  if (!CS || Date.now() - CS.ts > CLASS_SESS_TTL) loadClassSessionDates(cls0).then(() => { if (currentProfileId === id) openProfile(id); }).catch(()=>{});
+  const relevantAll = [...new Set([...classSessionLookup()(cls0), ...(CS ? CS.dates : []), ...Object.keys(H?.att||{}), ...Object.keys(H?.ver||{})])].sort().reverse();
+  const relevantDates = profHistAll ? relevantAll : relevantAll.slice(0, 8);
+  const histHTML = relevantAll.length ? `
     <div style="padding:0 16px 16px">
       <div class="section-title" style="margin-bottom:10px">📅 سجل الحضور والتسميع</div>
       ${relevantDates.map(d => {
@@ -5897,13 +5955,14 @@ window.openProfile = (id) => {
         return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
           <span style="font-size:13px;font-weight:600;color:var(--text-dim)">${p[2]}/${p[1]}/${p[0]}</span>
           ${att
-            ? `<span style="font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</span>`
-            : `<span style="font-size:11px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-dim);opacity:.4;border-radius:5px;padding:2px 7px">حاضر</span>`}
+            ? `<button onclick="profRemoveAtt('${d}')" title="اضغط لإلغاء الحضور" style="font-family:'Cairo',sans-serif;cursor:pointer;font-size:11px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);color:var(--success);border-radius:5px;padding:2px 7px">✓ حاضر</button>`
+            : (H ? `<button onclick="profAddAtt('${d}')" style="font-family:'Cairo',sans-serif;cursor:pointer;font-size:11px;font-weight:700;background:transparent;border:1px dashed var(--success);color:var(--success);border-radius:5px;padding:2px 8px">＋ سجّل حضور</button>` : `<span style="font-size:11px;color:var(--text-dim);opacity:.4">…</span>`)}
           ${heard
             ? `<span style="font-size:11px;color:#a07de0;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);border-radius:5px;padding:2px 7px">📖 سماع${verse ? ' · ' + verse : ''}</span>`
             : `<span style="font-size:11px;background:rgba(255,255,255,0.03);border:1px solid var(--border);color:var(--text-dim);opacity:.4;border-radius:5px;padding:2px 7px">سماع</span>`}
         </div>`;
       }).join('')}
+      ${relevantAll.length > 8 ? `<button onclick="toggleProfHistAll()" style="margin-top:10px;width:100%;font-family:'Cairo',sans-serif;cursor:pointer;font-size:12px;font-weight:700;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:8px">${profHistAll ? 'عرض أقل ▲' : `عرض كل الأيام (${relevantAll.length}) ▼`}</button>` : ''}
     </div>` : '';
 
   document.getElementById('prof-details').innerHTML = (fields.length
