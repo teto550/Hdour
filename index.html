@@ -5827,6 +5827,18 @@ function renderFilterList() {
       const vd = verseSessionDates();
       dbg = `<div style="margin-top:12px;font-size:11px;opacity:.7;direction:ltr;line-height:1.8">[تشخيص] جلسات التسميع: ${vd.length ? vd.map(d => d + ' (' + Object.keys(allVerses[d]).length + ')').join(' · ') : 'مفيش'}<br>مطابقة مع المخدومين الحاليين (من غير الأسبوع الجاري): ${window._verseMatchDbg || '-'}<br>الفصول: ${readScopeClasses().join(',') || 'الكل'} · مخدومين قبل الفلتر: ${classScope(allStudents.filter(s => { const al = getAllowedAssignedClasses(); return currentRole === 'admin' || !al.length || al.includes(s.classSection); })).length}</div>`;
     }
+    if (absenceFilter !== 'all' || attendanceFilter !== 'all') {
+      // تشخيص فلتر الحضور/الغياب: بيوري الجلسات اللي الفلتر شايفها لكل فصل وكام واحد حضر في كل جلسة
+      const n = Math.max(parseInt(absenceFilter)||0, parseInt(attendanceFilter)||0), so = classSessionLookup(), al0 = getAllowedAssignedClasses();
+      const vis = classScope(allStudents.filter(s => currentRole === 'admin' || !al0.length || al0.includes(s.classSection)));
+      const byC = {}; vis.forEach(s => (byC[s.classSection || ''] ||= []).push(s));
+      const fm = d => { const q = d.split('-'); return q[2] + '/' + q[1]; };
+      const rowsD = Object.keys(byC).filter(c => c !== SERVANTS_CLASS_ID).map(c => {
+        const ss = so(c);
+        return `${classLabel(c)}: ${ss.length ? ss.slice(-n).map(d => fm(d) + ' (' + byC[c].filter(s => allAttendance[d]?.[s.id]).length + '/' + byC[c].length + ')').join(' · ') : 'مفيش جلسات محمّلة'} — إجمالي الجلسات المحمّلة ${ss.length}`;
+      });
+      dbg += `<div style="margin-top:12px;font-size:11px;opacity:.7;line-height:1.9">[تشخيص الحضور] الفلتر بيبص على آخر ${n} جلسة لكل فصل (الجلسة = يوم اتسجل فيه حضور لحد من الفصل، واليوم الحالي بيتحسب لو فيه حد اتسجل). الأرقام: كام حضر / كام مخدوم.<br>${rowsD.join('<br>')}<br>فترة التحميل: آخر ${recentAttWeeks} أسبوع</div>`;
+    }
     cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>لا يوجد نتائج${dbg}</div>`;
     return;
   }
