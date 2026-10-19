@@ -6815,7 +6815,7 @@ function renderAdminClassCards() {
 }
 window.showAdminClasses = () => {
   if (currentRole !== 'admin') return;
-  hideAdminScreens();
+  hideAllScreens(); // كان بيخبّي شاشات الأدمن بس، فكروت الفصل اللي كنت فاتحه (tab-home) كانت بتفضل ظاهرة تحت
   document.getElementById('tab-admin-classes').style.display = 'block';
   adminClassMode = null;
   renderAdminClassCards();
@@ -6932,6 +6932,21 @@ window.goBack = () => {
   else if (lvl === 'picker' && hasSupHome()) goHome();
   else if (lvl === 'adminClasses' || lvl === 'servantsHome') goHome();
 };
+// شبكة أمان: أي شاشة رئيسية تتفتح (display:block) بتقفل باقي الشاشات الرئيسية تلقائيًا، عشان أي شاشة جديدة تتنسى في قوايم الإخفاء ماتفضلش ظاهرة تحت
+{
+  const MAIN_SCREENS = ['tab-admin-home','tab-servants-home','tab-sup-home','tab-admin-classes','tab-pick-class','tab-home','tab-roles','tab-attendance','tab-students','tab-filters','tab-messages','tab-parents','tab-monitor','tab-classservants'];
+  const hostEl = document.querySelector('.app-content');
+  if (hostEl) new MutationObserver(muts => {
+    let winner = null;
+    for (const m of muts) {
+      const t = m.target;
+      if (!MAIN_SCREENS.includes(t.id)) continue;
+      if (t.style.display === 'block' && !/display:\s*block/.test(m.oldValue || '')) winner = t;
+    }
+    if (!winner) return;
+    MAIN_SCREENS.forEach(id => { const e = document.getElementById(id); if (e && e !== winner && e.style.display === 'block') e.style.display = 'none'; });
+  }).observe(hostEl, { subtree: true, attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+}
 {
   let backRaf = 0;
   const schedule = () => { cancelAnimationFrame(backRaf); backRaf = requestAnimationFrame(updateBackBtn); };
