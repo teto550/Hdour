@@ -4,6 +4,7 @@
 //   POST /servant-decision → الأدمن/المشرف قبل أو رفض طلب انضمام (إشعار للخادم نفسه)
 //   POST /offline-pending  → بيانات اتسجلت أوفلاين ومترفعتش في الخلفية (إشعار للأدمن/المشرف باسم الفصل)
 //   POST /servant-open → خادم معتمد فتح التطبيق (مرة كل 30 دقيقة للخادم الواحد)
+//   POST /set-password → الأدمن بس: بيعيّن باسورد جديد لخادم نسي الباسورد (Firebase مبيسمحش حد يشوف الباسورد القديم)
 //   POST /delete-servant → الأدمن بس: بيمسح إيميل الخادم من Firebase Authentication وحسابه من فايرستور (Admin API من غير Cloud Functions ولا Blaze)
 //
 // الإعدادات (Workers → Settings → Variables and Secrets):
@@ -153,7 +154,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
     const url = new URL(request.url);
-    if (request.method !== 'POST' || (url.pathname !== '/new-request' && url.pathname !== '/servant-open' && url.pathname !== '/servant-decision' && url.pathname !== '/offline-pending' && url.pathname !== '/delete-servant')) {
+    if (request.method !== 'POST' || (url.pathname !== '/new-request' && url.pathname !== '/servant-open' && url.pathname !== '/servant-decision' && url.pathname !== '/offline-pending' && url.pathname !== '/delete-servant' && url.pathname !== '/set-password')) {
       return json({ error: 'not found' }, 404, cors);
     }
     if (allowed && request.headers.get('Origin') !== allowed) return json({ error: 'forbidden' }, 403, cors);
@@ -246,6 +247,26 @@ export default {
           url: env.APP_URL || '', tag: `offline-${uid}`,
         });
         return json({ ok: true, ...out }, 200, cors);
+      }
+
+      // ===== تعيين باسورد جديد لخادم نسي الباسورد (الأدمن بس) =====
+      if (url.pathname === '/set-password') {
+        if (me.status !== 'approved' || me.role !== 'admin') return json({ error: 'not allowed' }, 403, cors);
+        let body = {}; try { body = await request.json(); } catch (e) {}
+        const targetUid = String(body.targetUid || '');
+        const newPassword = String(body.password || '');
+        if (!/^[A-Za-z0-9]{10,64}$/.test(targetUid) || targetUid === uid) return json({ error: 'bad target' }, 400, cors);
+        if (newPassword.length < 6 || newPassword.length > 100) return json({ error: 'weak password' }, 400, cors);
+        const tr = await fetch(`${fsBase(pid)}/servants/${targetUid}`, { headers: authH });
+        const target = tr.ok ? fvFields((await tr.json()).fields) : null;
+        const protectedList = ['devidemele@gmail.com', ...String(env.PROTECTED_EMAILS || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean)];
+        const targetEmail = target && target.email ? String(target.email).toLowerCase() : '';
+        if (targetEmail && protectedList.includes(targetEmail)) return json({ error: 'protected' }, 403, cors);
+        const ur = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${pid}/accounts:update`, {
+          method: 'POST', headers: jsonH, body: JSON.stringify({ localId: targetUid, password: newPassword }),
+        });
+        if (!ur.ok) return json({ error: 'update failed', status: ur.status, detail: (await ur.text()).slice(0, 300) }, 502, cors);
+        return json({ ok: true }, 200, cors);
       }
 
       // ===== حذف خادم نهائيًا: إيميله من Firebase Authentication + مستنده من فايرستور (الأدمن بس) =====
