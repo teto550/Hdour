@@ -7828,12 +7828,10 @@ function renderServantProfileActions(s) {
   let html = '';
   if (s.role === 'admin') {
     if (sIsPrimary) html = `<span class="s-sub" style="white-space:nowrap">👑 الأدمن الأساسي</span>`;
-    else if (viewerIsPrimary) html = `<button class="action-btn" onclick="resetServantPassword('${s.id}','${nameEsc}')">🔑 باسورد جديد</button>
-      <button class="action-btn" onclick="demoteServant('${s.id}','${nameEsc}');closeServantProfile()">🔻 شيله من الأدمن</button>
+    else if (viewerIsPrimary) html = `<button class="action-btn" onclick="demoteServant('${s.id}','${nameEsc}');closeServantProfile()">🔻 شيله من الأدمن</button>
       <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}','${servantRoleIds(s).join(',')}');closeServantProfile()">🗑 حذف</button>`;
   } else {
-    html = `<button class="action-btn" onclick="resetServantPassword('${s.id}','${nameEsc}')">🔑 باسورد جديد</button>
-      <button class="action-btn" onclick="promoteServant('${s.id}','${nameEsc}');closeServantProfile()">👑 خليه أدمن</button>
+    html = `<button class="action-btn" onclick="promoteServant('${s.id}','${nameEsc}');closeServantProfile()">👑 خليه أدمن</button>
       <button class="del-btn" onclick="deleteServant('${s.id}','${nameEsc}','${servantRoleIds(s).join(',')}');closeServantProfile()">🗑 حذف</button>`;
   }
   document.getElementById('sprof-actions').innerHTML = html;
@@ -8253,25 +8251,6 @@ window.rejectServant = async (id, name, roleIds) => {
     try { for (const rid of String(roleIds).split(',').filter(Boolean)) await updateDoc(doc(db,'roles',rid), { pendingNames: arrayUnion(name) }); loadRolesOnce(true); } catch(e) { console.error(e); }
   }
   showToast('تم رفض الطلب', 'info');
-};
-window.resetServantPassword = async (id, name) => {
-  if (currentRole !== 'admin') return;
-  if (isPrimaryAdmin(cachedServants.find(x => x.id === id)?.email)) { showToast('الأدمن الأساسي محمي', 'error'); return; }
-  // Firebase بيخزّن الباسورد متشفّر ومحدش يقدر يشوفه — فبنعيّن باسورد جديد مؤقت والخادم يغيّره بعد ما يدخل
-  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const rnd = crypto.getRandomValues(new Uint32Array(8));
-  const suggested = Array.from(rnd, n => chars[n % chars.length]).join('');
-  const pw = prompt(`باسورد جديد للخادم "${name}" (6 حروف على الأقل). تقدر تعدّل المقترح:`, suggested);
-  if (pw === null) return;
-  if (pw.length < 6) { showToast('الباسورد لازم يكون 6 حروف على الأقل', 'error'); return; }
-  const r = await callWorkerJson('/set-password', { targetUid: id, password: pw });
-  if (r && r.ok) {
-    try { await navigator.clipboard.writeText(pw); } catch (e) {}
-    alert(`تم تغيير الباسورد ✓\n\nالباسورد الجديد لـ "${name}":\n${pw}\n\n(اتنسخ للكليبورد) ابعته للخادم وخليه يدخل بيه.`);
-  } else {
-    console.warn('set-password worker:', r);
-    showToast(r && r.status === 403 ? 'مش مسموح تغيّر باسورد الحساب ده' : 'فشل التغيير — لازم تحدّث الـ Worker (workers/push-worker.js) وتعمله deploy', 'error');
-  }
 };
 window.deleteServant = async (id, name, roleIds) => {
   if (isPrimaryAdmin(cachedServants.find(x => x.id === id)?.email)) { showToast('الأدمن الأساسي محمي — مينفعش يتحذف', 'error'); return; }
