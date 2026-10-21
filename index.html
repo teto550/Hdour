@@ -447,6 +447,12 @@ html.light{
   --border:rgba(var(--tint),0.22);
   --tint:63,91,140; --ink:31,42,61; --acc-rgb:63,123,224; --acc2-rgb:115,87,184;
 }
+/* ===== لمسة بناتي خفيفة (زي E3taty): هيدر بنفسجي ناعم متدرج + حواف مدورة. الخلفية والكروت زي ما هي ===== */
+:root{--section-rgb:150,110,235;--section-tint:0.22;}
+html.light{--section-rgb:var(--acc2-rgb);--section-tint:0.16;}
+.top-bar{background:linear-gradient(180deg,rgba(var(--section-rgb),var(--section-tint)),rgba(var(--section-rgb),0) 75%),var(--surface)!important;border-bottom:1px solid rgba(var(--section-rgb),.35)!important;border-radius:0 0 18px 18px!important;}
+.class-tab,.action-btn{border-radius:999px;}
+.icon-btn{border-radius:50%!important;}
 html.light .settings-dropdown{box-shadow:0 10px 28px rgba(var(--ink),0.14);}
 html.light .modal-overlay,html.light [style*="background:rgba(0,0,0,.7)"]{background:rgba(var(--ink),0.42)!important;}
 html.light .install-inner{box-shadow:0 8px 28px rgba(var(--ink),0.16);}
