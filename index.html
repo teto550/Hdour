@@ -7055,6 +7055,45 @@ window.crumbGo = (i) => { closeSettingsMenu(); const f = crumbActions[i]; if (f)
   if (host) new MutationObserver(schedule).observe(host, { subtree: true, attributes: true, attributeFilter: ['style'] });
   schedule();
 }
+// ===== زرار الرجوع بتاع الموبايل: يرجّع خطوة جوه البرنامج (نفس زرار → فوق) بدل ما يطلع من البرنامج كله =====
+// كل ما تدخل أي خطوة جوه (فصل / تاب / نافذة) بنحط خطوة واحدة في history المتصفح، وزرار الرجوع بتاع الموبايل بيشيلها وبننفّذ بدلها رجوع البرنامج.
+// ولما توصل للرئيسية مبنحطش حاجة، فالرجوع من هناك بيطلع من البرنامج عادي.
+{
+  let guard = false, ignorePop = false, histRaf = 0;
+  const shownEl = el => !!el && getComputedStyle(el).display !== 'none';
+  const topModal = () => { const all = [...document.querySelectorAll('.modal-overlay')].filter(e => e.id !== 'bio-offer-modal' && shownEl(e)); return all.length ? all[all.length - 1] : null; };
+  const menuOpen = () => shownEl(document.getElementById('settings-dropdown'));
+  const rolesOpen = () => document.getElementById('tab-roles')?.style.display === 'block';
+  function inAppDeep() {
+    if (topModal() || menuOpen() || rolesOpen()) return true;
+    const lvl = navLevel();
+    const canGoBack = currentRole === 'admin' || needsClassPick() || hasSupHome();
+    return lvl === 'tab' || lvl === 'adminClasses' || lvl === 'servantsHome' || (lvl === 'picker' && hasSupHome()) || (lvl === 'classHome' && canGoBack);
+  }
+  function syncHistory() {
+    let deep = false;
+    try { deep = inAppDeep(); } catch (e) { deep = false; }
+    if (deep && !guard) { try { history.pushState({ hdourBack: 1 }, ''); guard = true; } catch (e) {} }
+    else if (!deep && guard) { guard = false; ignorePop = true; try { history.back(); } catch (e) { ignorePop = false; } }
+  }
+  const scheduleHistory = () => { cancelAnimationFrame(histRaf); histRaf = requestAnimationFrame(syncHistory); };
+  window.addEventListener('popstate', () => {
+    if (ignorePop) { ignorePop = false; return; }
+    if (!guard) return;
+    guard = false;                                  // زرار الرجوع شال الخطوة بتاعتنا
+    const ov = topModal();
+    if (ov) ov.click();                             // نافذة مفتوحة: تتقفل الأول (نفس الضغط برّا النافذة)
+    else if (menuOpen()) closeSettingsMenu();
+    else if (rolesOpen()) closeRolesModal();
+    else goBack();
+    scheduleHistory();                              // لو لسه جوه خطوة تانية بنحط خطوة جديدة للرجوع اللي بعده
+  });
+  const hit = t => t && ((t.classList && t.classList.contains('modal-overlay')) || (t.id && (t.id.startsWith('tab-') || t.id === 'settings-dropdown' || t.id === 'app-screen')));
+  new MutationObserver(muts => { for (const m of muts) { if (hit(m.target)) { scheduleHistory(); break; } } })
+    .observe(document.body, { subtree: true, attributes: true, attributeFilter: ['style'] });
+  new MutationObserver(scheduleHistory).observe(document.body, { childList: true });
+  scheduleHistory();
+}
 // زرار 🏠 في شريط التابات: الأدمن يرجع لكروت الفصل اللي فيه، والباقي للرئيسية
 window.tabsHome = () => {
   if (currentRole === 'admin' && currentClassTab && document.getElementById('tab-monitor').style.display !== 'block') showClassHome();
