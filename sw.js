@@ -29,6 +29,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  // فحص "فيه تحديث؟" بيروح للسيرفر على طول (مش من الكاش ولا ليه يتخزن) — بيستخدمه شريط التحديث في الصفحة
+  if (new URL(req.url).searchParams.has('_vc')) return;
   if (isStatic(req.url)) { e.respondWith(cacheFirst(req)); return; }
   if (inScope(req.url)) e.respondWith(networkFirst(req));
   // أي حاجة تانية (طلبات Firestore / Auth وغيرها) بتعدّي عادي
@@ -46,7 +48,8 @@ async function networkFirst(req) {
   const nav = req.mode === 'navigate';
   const hit = (await cache.match(req, { ignoreSearch: true }))
     || (nav ? ((await cache.match('./index.html')) || (await cache.match('./'))) : undefined);
-  const net = fetch(req).then(res => { if (res && res.ok) cache.put(req, res.clone()).catch(() => {}); return res; });
+  // الصفحة نفسها: no-store عشان كاش المتصفح (GitHub Pages بيحتفظ بالملف ~10 دقايق) ماينفعش يرجّع نسخة قديمة بعد "تحديث الآن"
+  const net = (nav ? fetch(req, { cache: 'no-store' }) : fetch(req)).then(res => { if (res && res.ok) cache.put(req, res.clone()).catch(() => {}); return res; });
   net.catch(() => {});
   if (!hit) return net;                                   // أول مرة: مفيش كاش، نستنى النت
   const slow = new Promise(r => setTimeout(() => r(null), 4000));

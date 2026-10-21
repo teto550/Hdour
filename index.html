@@ -9658,5 +9658,55 @@ checkShowBanner();
   new MutationObserver(scan).observe(document.body,{childList:true,subtree:true});
 })();
 </script>
+<div id="update-banner" role="status" style="display:none;position:fixed;inset-inline:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:2147482000;margin:0 auto;max-width:480px;align-items:center;gap:12px;padding:12px;background:var(--surface);border:1px solid var(--accent);border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.35);font-family:'Cairo',sans-serif;color:var(--text)">
+  <span style="flex:1;font-size:14px;font-weight:700">🆕 فيه تحديث جديد للتطبيق</span>
+  <button type="button" id="update-banner-go" style="background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#fff;font-family:'Cairo',sans-serif;font-size:13px;font-weight:800;padding:8px 14px;cursor:pointer">تحديث الآن</button>
+  <button type="button" id="update-banner-x" aria-label="إخفاء" style="background:none;border:none;color:var(--text-dim);font-size:18px;width:32px;height:32px;cursor:pointer">✕</button>
+</div>
+<script>
+// ===== "فيه تحديث جديد" (زي STMina): بيتفحص لما التطبيق يفتح، لما يرجع للواجهة، لما النت يرجع، وكل نص ساعة =====
+// مفيش build هنا، فالبرنامج بيقارن بصمة index.html اللي شغّال بيها ببصمة النسخة اللي على السيرفر. مبيعملش reload لوحده (ممكن تكون بتسجل حضور)؛
+// "✕" بيخفيه للنسخة دي، و"تحديث الآن" بيحمّل النسخة الجديدة.
+(function () {
+  const bar = document.getElementById('update-banner');
+  if (!bar) return;
+  let baseline = '', dismissed = '', lastCheck = 0, busy = false;
+  async function fingerprint() {
+    const res = await fetch(location.pathname + '?_vc=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('bad');
+    const text = await res.text();
+    if (window.crypto && crypto.subtle) {
+      const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    let h = 0; for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+    return text.length + ':' + h;
+  }
+  async function check(force) {
+    if (busy || (!force && Date.now() - lastCheck < 60000)) return;
+    busy = true;
+    try {
+      const fp = await fingerprint();
+      lastCheck = Date.now();
+      if (!baseline) baseline = fp;                       // أول فحص = النسخة اللي شغّالة دلوقتي
+      else if (fp !== baseline && fp !== dismissed) bar.style.display = 'flex';
+    } catch (e) { /* أوفلاين أو السيرفر مردّش: نحاول المرة الجاية */ }
+    busy = false;
+  }
+  document.getElementById('update-banner-go').onclick = async () => {
+    try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) {}
+    location.reload();
+  };
+  document.getElementById('update-banner-x').onclick = async () => {
+    bar.style.display = 'none';
+    try { dismissed = await fingerprint(); } catch (e) { dismissed = '__hidden__'; }
+  };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+  window.addEventListener('online', () => check());
+  window.addEventListener('focus', () => check());
+  setInterval(() => check(true), 30 * 60 * 1000);
+  check(true);
+})();
+</script>
 </body>
 </html>
