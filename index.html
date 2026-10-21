@@ -9701,17 +9701,27 @@ checkShowBanner();
   <button type="button" id="update-banner-x" aria-label="إخفاء" style="background:none;border:none;color:var(--text-dim);font-size:18px;width:32px;height:32px;cursor:pointer">✕</button>
 </div>
 <script>
-// ===== "فيه تحديث جديد" (زي STMina): بيتفحص لما التطبيق يفتح، لما يرجع للواجهة، لما النت يرجع، وكل نص ساعة =====
-// مفيش build هنا، فالبرنامج بيقارن بصمة index.html اللي شغّال بيها ببصمة النسخة اللي على السيرفر. مبيعملش reload لوحده (ممكن تكون بتسجل حضور)؛
-// "✕" بيخفيه للنسخة دي، و"تحديث الآن" بيحمّل النسخة الجديدة.
+// ===== "فيه تحديث جديد" (زي STMina) — لحظي: بيفحص كل 15 ثانية وهو ظاهر، وفورًا لما ترجع للتطبيق أو النت يرجع =====
+// مفيش build هنا، فالبرنامج بيقارن index.html اللي شغّال بيه بنسخة السيرفر. الفحص العادي طلب HEAD صغير جدًا (بصمة الملف: ETag/Last-Modified)؛
+// ولو البصمة اتغيرت بيجيب الملف مرة واحدة ويتأكد إن المحتوى اتغير فعلًا قبل ما يظهر الشريط. أي طلب بينتهي بعد 8 ثواني (مبيعلقش).
+// مبيعملش reload لوحده (ممكن تكون بتسجل حضور)؛ "✕" بيخفيه للنسخة دي، و"تحديث الآن" بيحمّل النسخة الجديدة.
 (function () {
   const bar = document.getElementById('update-banner');
   if (!bar) return;
-  let baseline = '', dismissed = '', lastCheck = 0, busy = false;
-  async function fingerprint() {
-    const res = await fetch(location.pathname + '?_vc=' + Date.now(), { cache: 'no-store' });
-    if (!res.ok) throw new Error('bad');
-    const text = await res.text();
+  if (/[?&]_u=/.test(location.search)) { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {} }
+  const POLL = 15000;
+  let baseHash = '', seenSig = '', dismissed = '', busy = false, last = 0, lastFull = 0, timer = 0;
+  async function req(method) {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const res = await fetch(location.pathname + '?_vc=' + Date.now(), { method, cache: 'no-store', signal: ctl.signal });
+      if (!res.ok) throw new Error('bad');
+      return res;
+    } finally { clearTimeout(t); }
+  }
+  const sigOf = res => [res.headers.get('etag'), res.headers.get('last-modified'), res.headers.get('content-length')].join('|');
+  const hasSig = sig => sig.replace(/\|/g, '') !== '';
+  async function hashText(text) {
     if (window.crypto && crypto.subtle) {
       const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
       return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -9719,29 +9729,38 @@ checkShowBanner();
     let h = 0; for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
     return text.length + ':' + h;
   }
-  async function check(force) {
-    if (busy || (!force && Date.now() - lastCheck < 60000)) return;
-    busy = true;
-    try {
-      const fp = await fingerprint();
-      lastCheck = Date.now();
-      if (!baseline) baseline = fp;                       // أول فحص = النسخة اللي شغّالة دلوقتي
-      else if (fp !== baseline && fp !== dismissed) bar.style.display = 'flex';
-    } catch (e) { /* أوفلاين أو السيرفر مردّش: نحاول المرة الجاية */ }
-    busy = false;
+  async function readFull() {
+    const res = await req('GET');
+    const sig = sigOf(res);
+    return { hash: await hashText(await res.text()), sig };
   }
+  async function check(force) {
+    if (busy || (!force && Date.now() - last < 3000)) return;
+    busy = true; last = Date.now();
+    try {
+      if (!baseHash) { const f = await readFull(); baseHash = f.hash; seenSig = f.sig; lastFull = Date.now(); return; }   // أول فحص = النسخة اللي شغّالة دلوقتي
+      let changed = true;
+      if (hasSig(seenSig)) { changed = sigOf(await req('HEAD')) !== seenSig; }
+      else if (Date.now() - lastFull < 60000) { changed = false; }                                                  // السيرفر مش بيبعت بصمة: فحص كامل كل دقيقة
+      if (changed) {
+        const f = await readFull(); lastFull = Date.now(); seenSig = f.sig;
+        if (f.hash !== baseHash && f.hash !== dismissed) { bar.dataset.hash = f.hash; bar.style.display = 'flex'; }
+      }
+    } catch (e) { /* أوفلاين أو السيرفر مردّش: نحاول تاني بعد شوية */ }
+    finally { busy = false; }
+  }
+  function startPolling() { clearInterval(timer); timer = setInterval(() => { if (document.visibilityState === 'visible') check(true); }, POLL); }
   document.getElementById('update-banner-go').onclick = async () => {
-    try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) {}
-    location.reload();
+    try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) reg.update(); } catch (e) {}
+    // رابط جديد بـ ?_u عشان الـ CDN بتاع GitHub Pages مايرجّعش نسخة قديمة من الكاش بتاعه (والرابط بيتنضّف أول ما الصفحة تفتح)
+    location.replace(location.pathname + '?_u=' + Date.now() + location.hash);
   };
-  document.getElementById('update-banner-x').onclick = async () => {
-    bar.style.display = 'none';
-    try { dismissed = await fingerprint(); } catch (e) { dismissed = '__hidden__'; }
-  };
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
-  window.addEventListener('online', () => check());
+  document.getElementById('update-banner-x').onclick = () => { dismissed = bar.dataset.hash || '__hidden__'; bar.style.display = 'none'; };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(true); });
+  window.addEventListener('online', () => check(true));
   window.addEventListener('focus', () => check());
-  setInterval(() => check(true), 30 * 60 * 1000);
+  window.addEventListener('pageshow', e => { if (e.persisted) check(true); });
+  startPolling();
   check(true);
 })();
 </script>
