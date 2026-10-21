@@ -10,20 +10,27 @@
 <link rel="manifest" href="manifest.json">
 <script>
 // الوضع الفاتح/المظلم: الاختيار محفوظ على الجهاز (localStorage 'appTheme'). المظلم هو الافتراضي.
-// ولون الوضع الفاتح كمان محفوظ على الجهاز ('appLightPalette'): blue | sand | mint | lavender | rose | peach | candy.
+// ولون الوضع الفاتح كمان محفوظ على الجهاز ('appLightPalette'): blue | sand | mint | lavender.
 (function () {
-  var PALS = ['blue', 'sand', 'mint', 'lavender', 'rose', 'peach', 'candy'];
-  var BAR = { dark: '#1a1f2e', blue: '#e5ebf5', sand: '#f0e8da', mint: '#e3f0e9', lavender: '#ebe6f6', rose: '#f6dde5', peach: '#f9e5d4', candy: '#efdff2' };
+  var PALS = ['blue', 'sand', 'mint', 'lavender'];
+  var BAR = { dark: '#1a1f2e', blue: '#e5ebf5', sand: '#f0e8da', mint: '#e3f0e9', lavender: '#ebe6f6' };
+  // ألوان الوضع المظلم ('appDarkPalette'): '' (العادي) | plum (برقوقي) | e3taty (زي برنامج E3taty: هيدر بنفسجي ناعم وحواف مدورة)
+  var GPS = ['plum', 'e3taty'];
+  var GBAR = { plum: '#44304f', e3taty: '#1a2035' };
+  function dpal() { try { var p = localStorage.getItem('appDarkPalette'); return GPS.indexOf(p) > -1 ? p : ''; } catch (e) { return ''; } }
   function current() { try { return localStorage.getItem('appTheme') === 'light' ? 'light' : 'dark'; } catch (e) { return 'dark'; } }
   function pal() { try { var p = localStorage.getItem('appLightPalette'); return PALS.indexOf(p) > -1 ? p : 'blue'; } catch (e) { return 'blue'; } }
   function apply(t) {
     var root = document.documentElement, p = pal();
     root.classList.toggle('light', t === 'light');
     PALS.forEach(function (x) { root.classList.toggle('pal-' + x, x === p && x !== 'blue'); });
-    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t === 'light' ? BAR[p] : BAR.dark);
+    var g = dpal();
+    GPS.forEach(function (x) { root.classList.toggle('gp-' + x, t !== 'light' && x === g); });
+    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t === 'light' ? BAR[p] : (g ? GBAR[g] : BAR.dark));
+    var ddots = document.querySelectorAll('.dpal-dot'); for (var j = 0; j < ddots.length; j++) ddots[j].setAttribute('aria-pressed', (t !== 'light' && ddots[j].getAttribute('data-dpal') === g) ? 'true' : 'false');
     var ios = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]'); if (ios) ios.setAttribute('content', t === 'light' ? 'default' : 'black-translucent');
     var sw = document.getElementById('theme-toggle-btn'); if (sw) sw.setAttribute('aria-checked', t === 'light' ? 'false' : 'true');
-    var dots = document.querySelectorAll('.pal-dot'); for (var i = 0; i < dots.length; i++) dots[i].setAttribute('aria-pressed', dots[i].getAttribute('data-pal') === p ? 'true' : 'false');
+    var dots = document.querySelectorAll('.pal-dot:not(.dpal-dot)'); for (var i = 0; i < dots.length; i++) dots[i].setAttribute('aria-pressed', (t === 'light' && dots[i].getAttribute('data-pal') === p) ? 'true' : 'false');
   }
   window.toggleTheme = function () {
     var next = current() === 'light' ? 'dark' : 'light';
@@ -35,6 +42,13 @@
     if (PALS.indexOf(p) < 0) return;
     try { localStorage.setItem('appLightPalette', p); localStorage.setItem('appTheme', 'light'); } catch (e) {}
     apply('light');
+  };
+  // اختيار لون للوضع المظلم ('' = العادي): بيحفظه وبيحوّل للوضع المظلم لو كان فاتح
+  window.setDarkPalette = function (p) {
+    p = p || '';
+    if (p && GPS.indexOf(p) < 0) return;
+    try { localStorage.setItem('appDarkPalette', p); localStorage.setItem('appTheme', 'dark'); } catch (e) {}
+    apply('dark');
   };
   apply(current());
   document.addEventListener('DOMContentLoaded', function () { apply(current()); });
@@ -447,12 +461,24 @@ html.light{
   --border:rgba(var(--tint),0.22);
   --tint:63,91,140; --ink:31,42,61; --acc-rgb:63,123,224; --acc2-rgb:115,87,184;
 }
-/* ===== لمسة بناتي خفيفة (زي E3taty): هيدر بنفسجي ناعم متدرج + حواف مدورة. الخلفية والكروت زي ما هي ===== */
-:root{--section-rgb:150,110,235;--section-tint:0.22;}
-html.light{--section-rgb:var(--acc2-rgb);--section-tint:0.16;}
-.top-bar{background:linear-gradient(180deg,rgba(var(--section-rgb),var(--section-tint)),rgba(var(--section-rgb),0) 75%),var(--surface)!important;border-bottom:1px solid rgba(var(--section-rgb),.35)!important;border-radius:0 0 18px 18px!important;}
-.class-tab,.action-btn{border-radius:999px;}
-.icon-btn{border-radius:50%!important;}
+/* ===== ألوان الوضع المظلم الاختيارية (class على <html> بيحطه apply() فوق): برقوقي، وستايل E3taty ===== */
+html.gp-plum{--bg:#2e1f3a; --surface:#44304f; --surface2:#523a60; --accent:#ff8fc0; --accent2:#c58cf0; --text:#fbeaf3; --text-dim:#c9aac1; --acc-rgb:255,143,192; --acc2-rgb:197,140,240; --tint:255,143,192;}
+html.gp-plum{--border:rgba(var(--acc-rgb),0.24);--neon:var(--accent);}
+html.gp-plum .tab.active,html.gp-plum .class-tab.active,html.gp-plum #monitor-class-chips .tab.active{background:rgba(var(--acc-rgb),.18);color:var(--accent);border:1px solid rgba(var(--acc-rgb),.4);}
+html.gp-plum .filter-chip.active,html.gp-plum .admin-mode-btn.active.edit,html.gp-plum .mon-role.sup,html.gp-plum .crumb-chip.active{background:rgba(var(--acc-rgb),.2);border-color:var(--accent);color:var(--accent);}
+html.gp-plum .class-badge.class-a,html.gp-plum .class-pick-btn.pick-a,html.gp-plum #toast.info{background:rgba(var(--acc-rgb),.14);border-color:rgba(var(--acc-rgb),.4);color:var(--accent);}
+html.gp-plum .action-btn,html.gp-plum .add-phone-btn,html.gp-plum [style*="rgba(79,142,247,0.12)"]{background:rgba(var(--acc-rgb),.14)!important;border-color:rgba(var(--acc-rgb),.32)!important;}
+html.gp-plum .modal-header{background:linear-gradient(135deg,rgba(var(--acc-rgb),0.2),rgba(var(--acc2-rgb),0.2));}
+html.gp-plum .mon-hero{border-color:rgba(var(--acc-rgb),0.34);background:linear-gradient(135deg,rgba(var(--acc-rgb),0.24),rgba(var(--acc2-rgb),0.2));}
+html.gp-plum .btn-primary,html.gp-plum .btn-voice{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#3a1f2e;}
+html.gp-plum #splash-screen,html.gp-plum #auth-screen,html.gp-plum #pending-screen,html.gp-plum #complete-screen{background:radial-gradient(ellipse at 50% 0%,rgba(var(--acc-rgb),0.2),transparent 65%);}
+html.gp-plum .top-bar{box-shadow:0 1px 8px rgba(0,0,0,0.25);}
+html.gp-plum .admin-card,html.gp-plum .stat-card{box-shadow:0 2px 10px rgba(0,0,0,0.18);}
+/* ستايل E3taty (للوضع المظلم بس): هيدر بنفسجي ناعم متدرج + حواف مدورة. الخلفية والكروت زي ما هي */
+html.gp-e3taty{--section-rgb:150,110,235;--section-tint:0.22;}
+html.gp-e3taty .top-bar{background:linear-gradient(180deg,rgba(var(--section-rgb),var(--section-tint)),rgba(var(--section-rgb),0) 75%),var(--surface)!important;border-bottom:1px solid rgba(var(--section-rgb),.35)!important;border-radius:0 0 18px 18px!important;}
+html.gp-e3taty .class-tab,html.gp-e3taty .action-btn{border-radius:999px;}
+html.gp-e3taty .icon-btn{border-radius:50%!important;}
 html.light .settings-dropdown{box-shadow:0 10px 28px rgba(var(--ink),0.14);}
 html.light .modal-overlay,html.light [style*="background:rgba(0,0,0,.7)"]{background:rgba(var(--ink),0.42)!important;}
 html.light .install-inner{box-shadow:0 8px 28px rgba(var(--ink),0.16);}
@@ -509,17 +535,13 @@ html.light [style*="color:#f39c12"],html.light [style*="color: #f39c12"]{color:#
 html.light.pal-sand{--bg:#e6dccb; --surface:#f0e8da; --surface2:#e1d6c2; --accent:#b5651d; --accent2:#8c4a2f; --text:#3a2e1f; --text-dim:#6b5c45; --tint:120,92,50; --ink:58,46,31; --acc-rgb:181,101,29; --acc2-rgb:140,74,47;}
 html.light.pal-mint{--bg:#d5e6dd; --surface:#e3f0e9; --surface2:#cfe2d7; --accent:#1f8a6b; --accent2:#2f6f8f; --text:#1b3a2d; --text-dim:#4a6a5a; --tint:40,110,85; --ink:27,58,45; --acc-rgb:31,138,107; --acc2-rgb:47,111,143;}
 html.light.pal-lavender{--bg:#e0daf0; --surface:#ebe6f6; --surface2:#d9d1ec; --accent:#6a4fd0; --accent2:#9a4fb8; --text:#2a2347; --text-dim:#5f567c; --tint:100,80,160; --ink:42,35,71; --acc-rgb:106,79,208; --acc2-rgb:154,79,184;}
-/* ألوان بناتي هادية: درجة وسط (مش غامقة ولا فاتحة أوي) — وردي / خوخي / كاندي (وردي-لافندر) */
-html.light.pal-rose{--bg:#ecc9d4; --surface:#f6dde5; --surface2:#e6bfcc; --accent:#d6457a; --accent2:#a65bb5; --text:#4a2433; --text-dim:#7d5566; --tint:150,70,100; --ink:74,36,51; --acc-rgb:214,69,122; --acc2-rgb:166,91,181;}
-html.light.pal-peach{--bg:#f2d6c0; --surface:#f9e5d4; --surface2:#ecc9ae; --accent:#d9583b; --accent2:#c94b7d; --text:#4a2d1f; --text-dim:#7d5a47; --tint:150,90,50; --ink:74,45,31; --acc-rgb:217,88,59; --acc2-rgb:201,75,125;}
-html.light.pal-candy{--bg:#e4cfe8; --surface:#efdff2; --surface2:#dcc3e2; --accent:#b350c0; --accent2:#e0589a; --text:#3d2547; --text-dim:#6f5879; --tint:120,70,140; --ink:61,37,71; --acc-rgb:179,80,192; --acc2-rgb:224,88,154;}
 html.light .modal-header{background:linear-gradient(135deg,rgba(var(--acc-rgb),0.14),rgba(var(--acc2-rgb),0.14));}
 html.light #splash-screen,html.light #auth-screen{background:radial-gradient(ellipse at 50% 0%,rgba(var(--acc-rgb),0.14),transparent 65%);}
 html.light .action-btn,html.light .add-phone-btn{background:rgba(var(--acc-rgb),0.12);border-color:rgba(var(--acc-rgb),0.3);}
 html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--acc-rgb),0.14);border-color:rgba(var(--acc-rgb),0.4);}
 /* اختيار لون الوضع الفاتح (جوه ⚙️) */
 .pal-row{display:flex;flex-direction:column;align-items:stretch;gap:9px;padding:10px 16px 13px;font-size:13px;font-weight:700;}
-.pal-dots{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-start;padding:2px 3px;}
+.pal-dots{display:flex;gap:12px;justify-content:flex-start;padding:2px 3px;}
 .pal-dot{width:26px;height:26px;border-radius:50%;border:2px solid var(--border);cursor:pointer;padding:0;}
 .pal-dot[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:2px;}
 /* سويتش On/Off (ON = مظلم) */
@@ -632,9 +654,11 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
           <button type="button" class="pal-dot" data-pal="sand" aria-pressed="false" title="رملي" aria-label="رملي" onclick="setLightPalette('sand')" style="background:linear-gradient(135deg,#f0e8da 50%,#b5651d 50%)"></button>
           <button type="button" class="pal-dot" data-pal="mint" aria-pressed="false" title="نعناعي" aria-label="نعناعي" onclick="setLightPalette('mint')" style="background:linear-gradient(135deg,#e3f0e9 50%,#1f8a6b 50%)"></button>
           <button type="button" class="pal-dot" data-pal="lavender" aria-pressed="false" title="لافندر" aria-label="لافندر" onclick="setLightPalette('lavender')" style="background:linear-gradient(135deg,#ebe6f6 50%,#6a4fd0 50%)"></button>
-          <button type="button" class="pal-dot" data-pal="rose" aria-pressed="false" title="وردي" aria-label="وردي" onclick="setLightPalette('rose')" style="background:linear-gradient(135deg,#f6dde5 50%,#d6457a 50%)"></button>
-          <button type="button" class="pal-dot" data-pal="peach" aria-pressed="false" title="خوخي" aria-label="خوخي" onclick="setLightPalette('peach')" style="background:linear-gradient(135deg,#f9e5d4 50%,#d9583b 50%)"></button>
-          <button type="button" class="pal-dot" data-pal="candy" aria-pressed="false" title="كاندي" aria-label="كاندي" onclick="setLightPalette('candy')" style="background:linear-gradient(135deg,#efdff2 50%,#b350c0 50%)"></button>
+        </span></div>
+        <div class="pal-row"><span>🌙 لون الوضع المظلم</span><span class="pal-dots">
+          <button type="button" class="pal-dot dpal-dot" data-dpal="" aria-pressed="true" title="عادي" aria-label="عادي" onclick="setDarkPalette('')" style="background:linear-gradient(135deg,#1a2035 50%,#4f8ef7 50%)"></button>
+          <button type="button" class="pal-dot dpal-dot" data-dpal="plum" aria-pressed="false" title="برقوقي" aria-label="برقوقي" onclick="setDarkPalette('plum')" style="background:linear-gradient(135deg,#44304f 50%,#ff8fc0 50%)"></button>
+          <button type="button" class="pal-dot dpal-dot" data-dpal="e3taty" aria-pressed="false" title="ستايل E3taty" aria-label="ستايل E3taty" onclick="setDarkPalette('e3taty')" style="background:linear-gradient(135deg,#1a2035 50%,#966eeb 50%)"></button>
         </span></div>
         <button class="settings-dropdown-item" onclick="openExportModal()">📥 تصدير Excel</button>
         <button class="settings-dropdown-item" id="settings-dropdown-activity" style="display:none" onclick="openActivityModal()">📋 سجل الأنشطة</button>
