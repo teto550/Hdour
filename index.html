@@ -400,6 +400,14 @@ details.filter-acc[open] .filter-acc-chevron{transform:rotate(180deg);}
 .admin-card.mode-edit{border-color:var(--accent);border-style:dashed}
 .admin-card.mode-del{border-color:#e74c3c;border-style:dashed}
 .admin-back{background:none;border:none;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;cursor:pointer;padding:4px 2px;margin-bottom:6px}
+/* شريط المسار (breadcrumb) فوق: 🏠 الرئيسية ‹ 🏫 الفصول ‹ الفصل ‹ الحضور — أي خطوة تدوس عليها ترجع لها على طول (زي STMina) */
+.crumb-bar{display:none;flex:0 0 auto;align-items:center;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);}
+.crumb-bar::-webkit-scrollbar{display:none;}
+.crumb-chip{flex:0 0 auto;white-space:nowrap;background:var(--surface);border:1px solid var(--border);border-radius:20px;color:var(--text-dim);font-family:'Cairo',sans-serif;font-size:12px;font-weight:600;padding:6px 14px;cursor:pointer;transition:all .2s;}
+.crumb-chip.active{background:rgba(var(--acc-rgb,79,142,247),.15);border-color:var(--accent);color:var(--accent);cursor:default;}
+.crumb-chip:not(.active):active{transform:scale(.97);}
+.crumb-sep{flex:0 0 auto;color:var(--text-dim);font-size:16px;line-height:1;}
+html.light .crumb-chip.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:800;box-shadow:0 2px 8px rgba(var(--acc-rgb),0.3);}
 .creator-credit{margin:28px 0 12px;text-align:center;font-size:10px;line-height:1.4;color:var(--text-dim);opacity:.7;direction:ltr;letter-spacing:.2px;user-select:text}
 .date-pick{position:relative;display:flex;align-items:center;gap:8px;width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;margin-bottom:14px;cursor:pointer;color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;}
 .date-pick .dp-txt.empty{color:var(--text-dim);font-weight:600;}
@@ -624,6 +632,8 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
     </div>
     </div>
   </div>
+
+  <div class="crumb-bar" id="crumb-bar" aria-label="المسار"></div>
 
   <div class="app-content">
     <!-- GLOBAL CLASS TABS — فوق كل التابات التانية، وبيتحكم في الفصل المعروض في كل الشاشة -->
@@ -6947,9 +6957,63 @@ window.goBack = () => {
     MAIN_SCREENS.forEach(id => { const e = document.getElementById(id); if (e && e !== winner && e.style.display === 'block') e.style.display = 'none'; });
   }).observe(hostEl, { subtree: true, attributes: true, attributeFilter: ['style'], attributeOldValue: true });
 }
+// ===== شريط المسار (breadcrumb): كل خطوة دخلتها بتتكتب فوق، وتدوس على أي واحدة ترجع لها على طول =====
+let crumbActions = [];
+function crumbTrail() {
+  const home = { label: '🏠 الرئيسية', go: () => goHome() };
+  const classChip = { label: classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab), go: () => showClassHome() };
+  const lvl = navLevel();
+  const rolesShown = document.getElementById('tab-roles')?.style.display === 'block';
+  // الخطوات اللي قبل الفصل: الأدمن (الرئيسية ‹ الفصول)، المسؤول (الرئيسية ‹ [الفصول])، الخادم المتوزع (الفصول)، الخادم بفصل واحد (مفيش)
+  let prefix;
+  if (currentRole === 'admin') prefix = [home, { label: '🏫 الفصول', go: () => showAdminClasses() }];
+  else if (hasSupHome()) prefix = needsClassPick() ? [home, { label: '🏫 الفصول', go: () => showClassPicker() }] : [home];
+  else if (needsClassPick()) prefix = [{ label: '🏫 الفصول', go: () => showClassPicker() }];
+  else prefix = [];
+  if (rolesShown) {
+    return rolesReturnTab === '__servantsHome__'
+      ? [home, { label: '👥 الخدام', go: () => showServantsHome() }, { label: '🗂 الأدوار' }]
+      : [home, { label: '🗂 الأدوار' }];
+  }
+  if (lvl === 'adminClasses') return [home, { label: '🏫 الفصول' }];
+  if (lvl === 'servantsHome') return [home, { label: '👥 الخدام' }];
+  if (lvl === 'picker') return hasSupHome() ? [home, { label: '🏫 الفصول' }] : [];
+  if (lvl === 'classHome') return prefix.length ? [...prefix, { label: classChip.label }] : [];
+  if (lvl === 'tab') {
+    const shown = t => document.getElementById('tab-' + t)?.style.display === 'block';
+    if (shown('monitor')) {
+      const subs = { attendance: '✅ الحضور', servants: '👥 الخدام', messages: '📨 الرسائل' };
+      return [home, { label: '👥 الخدام', go: () => showServantsHome() }, { label: subs[monitorEntrySub] || '👥 الخدام' }];
+    }
+    if (shown('classservants')) return [home, { label: classServScope === 'all' ? '🏫 خدام الفصول' : '👥 خدام الفصل' }];
+    const titles = { attendance: '✅ الحضور', students: '🧒 المخدومين', filters: '📞 الافتقاد', messages: '📨 الرسائل', parents: '👨‍👩‍👧 أولياء الأمور' };
+    const cur = Object.keys(titles).find(shown);
+    return [...prefix, classChip, { label: titles[cur] || '' }];
+  }
+  return [];
+}
+function updateCrumbs() {
+  const bar = document.getElementById('crumb-bar'); if (!bar) return;
+  let trail = [];
+  try { trail = crumbTrail(); } catch (e) { trail = []; } // لو لسه حاجة ما اتعرّفتش وقت أول تشغيل
+  if (!trail.length) { bar.style.display = 'none'; bar.innerHTML = ''; crumbActions = []; return; }
+  const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  crumbActions = trail.map(c => c.go || null);
+  const html = trail.map((c, i) => {
+    const last = i === trail.length - 1;
+    const chip = last || !c.go
+      ? `<button type="button" class="crumb-chip active" aria-current="page">${esc(c.label)}</button>`
+      : `<button type="button" class="crumb-chip" onclick="crumbGo(${i})">${esc(c.label)}</button>`;
+    return (i ? '<span class="crumb-sep" aria-hidden="true">‹</span>' : '') + chip;
+  }).join('');
+  if (bar.dataset.sig !== html) { bar.innerHTML = html; bar.dataset.sig = html; }
+  bar.style.display = 'flex';
+}
+window.crumbGo = (i) => { closeSettingsMenu(); const f = crumbActions[i]; if (f) f(); };
 {
   let backRaf = 0;
-  const schedule = () => { cancelAnimationFrame(backRaf); backRaf = requestAnimationFrame(updateBackBtn); };
+  const schedule = () => { cancelAnimationFrame(backRaf); backRaf = requestAnimationFrame(() => { updateBackBtn(); updateCrumbs(); }); };
+  window.refreshCrumbs = schedule;
   const host = document.querySelector('.app-content');
   if (host) new MutationObserver(schedule).observe(host, { subtree: true, attributes: true, attributeFilter: ['style'] });
   schedule();
@@ -7019,6 +7083,7 @@ window.switchClassTab = (cls, btn) => {
   adminClassChanged();
   applyParentsMode();
   renderClassChips();
+  if (window.refreshCrumbs) window.refreshCrumbs();
   if (document.getElementById('tab-students')?.style.display === 'block') renderStudentsList();
   if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
   if (document.getElementById('tab-messages')?.style.display === 'block') renderWaTab();
