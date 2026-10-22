@@ -803,6 +803,8 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
           <input type="url" id="new-map" class="field-input" placeholder="الصق رابط جوجل ماب" dir="ltr" style="margin-bottom:0;flex:1;min-width:0">
           <button type="button" onclick="fillMapFromGPS('new')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:0 12px;cursor:pointer;white-space:nowrap">📍 موقعي</button>
         </div>
+        <label class="field-label">اسم المدرسة <span style="font-weight:400">(اختياري)</span></label>
+        <input type="text" id="new-school" class="field-input" placeholder="اسم المدرسة" style="margin-bottom:14px">
         <label class="field-label">أب الاعتراف <span style="font-weight:400">(اختياري)</span></label>
         <input type="text" id="new-confessor" class="field-input" placeholder="اسم أب الاعتراف" style="margin-bottom:14px">
         <label class="field-label">النوع</label>
@@ -1518,6 +1520,8 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         <input type="url" id="edit-map" class="field-input" placeholder="الصق رابط جوجل ماب" dir="ltr" style="margin-bottom:0;flex:1;min-width:0">
         <button type="button" onclick="fillMapFromGPS('edit')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:0 12px;cursor:pointer;white-space:nowrap">📍 موقعي</button>
       </div>
+      <label class="field-label">اسم المدرسة <span style="font-weight:400">(اختياري)</span></label>
+      <input type="text" id="edit-school" class="field-input" placeholder="اسم المدرسة" style="margin-bottom:14px">
       <label class="field-label">أب الاعتراف <span style="font-weight:400">(اختياري)</span></label>
       <input type="text" id="edit-confessor" class="field-input" placeholder="اسم أب الاعتراف" style="margin-bottom:14px">
       <label class="field-label">النوع</label>
@@ -3779,6 +3783,7 @@ window.addStudent = async () => {
   const address = document.getElementById('new-address').value.trim();
   const addressMap = document.getElementById('new-map').value.trim();
   const confessor = document.getElementById('new-confessor').value.trim();
+  const school = document.getElementById('new-school').value.trim();
   const { father, mother, student } = readPhoneInputs('new');
   const err = validateStudentData({ name, dob, address, father, mother, student, map: addressMap });
   if (err) { showToast(err, 'error'); return; }
@@ -3794,6 +3799,7 @@ window.addStudent = async () => {
     address,
     addressMap,
     confessor,
+    school,
     gender:  document.getElementById('new-gender').value || '',
     ...buildPhoneFields(father, mother, student, [], null),
     createdAt: serverTimestamp(),
@@ -3803,7 +3809,7 @@ window.addStudent = async () => {
   // لو الخادم مقيد بفصول معينة، أي مخدوم جديد بيضيفه يتحط أوتوماتيك في الفصل الحالي اللى شافه في الواجهة عشان يبقى ضمن الفصول المسموح له
   if (currentRole !== 'admin' && allowed.length) data.classSection = targetClass;
   await addDoc(collection(db,'students'), data); bumpStudentsRev();
-  ['new-name','new-dob','new-address','new-map','new-confessor','new-gender','new-phone-father','new-phone-mother','new-phone-student']
+  ['new-name','new-dob','new-address','new-map','new-confessor','new-school','new-gender','new-phone-father','new-phone-mother','new-phone-student']
     .forEach(id => { document.getElementById(id).value = ''; });
   newGenderManuallySet = false;
   showToast('تمت الإضافة ✓', 'success');
@@ -3820,7 +3826,7 @@ const IMP_MONTHS = { 'يناير':1, 'فبراير':2, 'مارس':3, 'ابريل
 // بيحوّل رقم الإكسيل (اللي بيضيّع الصفر الأول) لرقم موبايل صحيح. بيرجّع { main, extra[] } والرقم الغلط بيتتجاهل
 function importPhones(v) {
   if (v == null || v === '') return { main: '', extra: [], bad: false };
-  let parts = (typeof v === 'number' ? [String(Math.round(v))] : String(v).split(/[\/,،؛;\n]+/)).map(cleanPhone).filter(Boolean);
+  let parts = (typeof v === 'number' ? [String(Math.round(v))] : String(v).split(/[\/,،؛;\n]+/)).map(x => cleanPhone(String(x).replace(/[^\d٠-٩+\s\-().]/g, ' '))).filter(Boolean);
   let bad = false;
   parts = parts.map(p => {
     if (/^1\d{9}$/.test(p)) p = '0' + p;          // 1xxxxxxxxx → 01xxxxxxxxx
@@ -3919,12 +3925,14 @@ function impAnalyzeSheet(aoa) {
     const h = normalizeArabic(c); if (!h) return;
     if (col.name == null && IMP_NAME_RE.test(h)) col.name = i;
     else if (/^(تاريخ الميلاد|تاريخ ميلاد|الميلاد)$/.test(h)) col.dob = i;
+    else if (/^((تليفون|رقم|موبايل) )?(الاب|ولي الامر) ?(او|و|\/|-) ?(الام|الوالده)$/.test(h)) col.parent = i;
     else if (/^(تليفون الاب|رقم الاب|موبايل الاب|تليفون ولي الامر|موبايل ولي الامر|رقم ولي الامر)$/.test(h)) col.father = i;
     else if (/^(تليفون الام|رقم الام|موبايل الام)$/.test(h)) col.mother = i;
-    else if (/^(رقم الموبايل|الموبايل|موبايل|رقم التليفون|تليفون|رقم المخدوم|تليفون المخدوم|موبايل المخدوم|الهاتف|رقم الهاتف)$/.test(h)) col.phone = i;
+    else if (/^(التليفون|التلفون|رقم الموبايل|الموبايل|موبايل|رقم التليفون|تليفون|رقم المخدوم|تليفون المخدوم|موبايل المخدوم|الهاتف|رقم الهاتف)$/.test(h)) col.phone = i;
     else if (/^(ارقام اخري|ارقام اضافيه|تليفون اضافي)$/.test(h)) col.others = i;
     else if (/^(النوع|الجنس)$/.test(h)) col.gender = i;
     else if (/^(العنوان|عنوان|السكن)$/.test(h)) col.address = i;
+    else if (/^(المدرسه|مدرسه|اسم المدرسه|مدرسة المخدوم)$/.test(h)) col.school = i;
     else if (/^(اب الاعتراف|ابو الاعتراف|اب اعتراف|ابونا الاعتراف|الاب الروحي|كاهن الاعتراف|اب الاعتراف الروحي)$/.test(h)) col.confessor = i;
     else if (/^(الفصل|فصل|الصف|السنه)$/.test(h)) col.cls = i;
   });
@@ -3947,12 +3955,14 @@ function impAnalyzeSheet(aoa) {
       (lab === 'verse' ? verseCols : attCols).push({ c, key: lab === 'verse' ? impWeekKey(dt.y, dt.m, dt.d) : toLocalDateKey(new Date(dt.y, dt.m - 1, dt.d, 12)) });
     } else last = null;
   }
-  const hasProfile = ['dob','phone','father','mother','others','gender','address','confessor','cls'].some(k => col[k] != null);
+  const hasProfile = ['dob','phone','father','mother','others','gender','address','confessor','school','parent','cls'].some(k => col[k] != null);
   const kind = attCols.length ? (hasProfile ? 'both' : 'att') : (verseCols.length && !hasProfile ? 'verseonly' : 'students');
   return { hi, col, attCols, verseCols, kind, shifted };
 }
 const impFmtKey = k => { const p = k.split('-'); return `${p[2]}/${p[1]}/${p[0]}`; };
 
+const impMergeP = (a, b) => a.main ? { main: a.main, extra: [...a.extra, ...(b.main ? [b.main] : []), ...b.extra], bad: a.bad || b.bad } : { main: b.main, extra: [...a.extra, ...b.extra], bad: a.bad || b.bad };
+const impIsMom = v => /(ماما|الام|والده|mother)/.test(normalizeArabic(v));
 // التعديلات اللي هتتكتب على مخدوم موجود عشان بياناته تبقى زي الشيت: القيمة اللي في الشيت بتحل محل القديمة،
 // والخلية الفاضية في الشيت مبتمسحش حاجة، واللي متطابق مبيتكتبش. بيرجّع {} لو مفيش أي تغيير
 function impUpdatePatch(u, defCls) {
@@ -3963,6 +3973,7 @@ function impUpdatePatch(u, defCls) {
   if (u.gender && u.gender !== (ex.gender || '')) up.gender = u.gender;
   if (u.address && u.address !== (ex.address || '')) up.address = u.address;
   if (u.confessor && u.confessor !== (ex.confessor || '')) up.confessor = u.confessor;
+  if (u.school && u.school !== (ex.school || '')) up.school = u.school;
   if (u.student || u.father || u.mother || (u.others || []).length) {
     const father = u.father || ex.fatherPhone || '', mother = u.mother || ex.motherPhone || '', student = u.student || ex.studentPhone || '';
     const old = hasRolePhones(ex) ? (ex.otherPhones || []) : (ex.phones || []);
@@ -4025,13 +4036,15 @@ window.handleImportFile = async (e) => {
         const name = nameOfRow(r, sh); if (!name) continue;
         const key = normalizeArabic(name);
         const g = k => (sh.col[k] == null ? null : r[sh.col[k]]);
-        const sp = importPhones(g('phone')), fp = importPhones(g('father')), mp = importPhones(g('mother')), op = importPhones(g('others'));
+        const sp = importPhones(g('phone')), fp0 = importPhones(g('father')), mp0 = importPhones(g('mother')), op = importPhones(g('others'));
+        const pv = g('parent'), pp = importPhones(pv), pMom = impIsMom(pv);
+        const fp = pMom ? fp0 : impMergeP(fp0, pp), mp = pMom ? impMergeP(mp0, pp) : mp0;
         const others = [...sp.extra, ...fp.extra, ...mp.extra, ...(op.main ? [op.main] : []), ...op.extra];
         const bad = sp.bad || fp.bad || mp.bad || op.bad;
         let rc = '';
         const cv = g('cls');
         if (cv != null && cv !== '') { const id = classMap.get(normalizeArabic(cv)); if (id && (!allowed.length || allowed.includes(id))) rc = id; }
-        const rec = { dob: importDob(g('dob')), gender: importGender(g('gender')), address: String(g('address') == null ? '' : g('address')).trim(), confessor: String(g('confessor') == null ? '' : g('confessor')).trim(), father: fp.main, mother: mp.main, student: sp.main, others, cls: rc };
+        const rec = { dob: importDob(g('dob')), gender: importGender(g('gender')), address: String(g('address') == null ? '' : g('address')).trim(), confessor: String(g('confessor') == null ? '' : g('confessor')).trim(), school: String(g('school') == null ? '' : g('school')).trim(), father: fp.main, mother: mp.main, student: sp.main, others, cls: rc };
         if (seen.has(key)) { skippedDup.push(name); continue; }
         seen.add(key);
         if (have.has(key)) {
@@ -4067,7 +4080,7 @@ window.handleImportFile = async (e) => {
         if (!id) { // اسم مش موجود في التطبيق ولا في شيتات البيانات
           const ref = doc(collection(db, 'students'));
           id = ref.id; keyToId.set(key, id); attOnlyIds.add(id); attOnlyNames.push(name);
-          rows.push({ key, name, dob: '', gender: '', address: '', confessor: '', father: '', mother: '', student: '', others: [], cls: '', ref, attOnly: true });
+          rows.push({ key, name, dob: '', gender: '', address: '', confessor: '', school: '', father: '', mother: '', student: '', others: [], cls: '', ref, attOnly: true });
         }
         people++;
         hits.forEach(a => { if (!recs.has(id + '|' + a.key)) { recs.set(id + '|' + a.key, { sid: id, date: a.key }); marks++; } });
@@ -4147,6 +4160,7 @@ window.confirmImport = async () => {
       address: r.address || '',
       addressMap: '',
       confessor: r.confessor || '',
+      school: r.school || '',
       gender: r.gender,
       ...buildPhoneFields(r.father, r.mother, r.student, r.others, null),
       classSection: r.cls || cls,
@@ -6066,6 +6080,7 @@ window.openProfile = (id) => {
   if (s.dob) fields.push({ icon:'🎂', key:'تاريخ الميلاد', val: new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) });
   if (s.address) fields.push({ icon:'📍', key:'العنوان', val: String(s.address).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>') });
   if (s.addressMap && /^https?:\/\//i.test(s.addressMap)) fields.push({ icon:'🗺️', key:'الموقع على الخريطة', link: s.addressMap });
+  if (s.school) fields.push({ icon:'🏫', key:'المدرسة', val: String(s.school).replace(/&/g,'&amp;').replace(/</g,'&lt;') });
   fields.push({ icon:'✝️', key:'أب الاعتراف', val: s.confessor ? String(s.confessor).replace(/&/g,'&amp;').replace(/</g,'&lt;') : 'لا يوجد' });
   fields.push({ icon:'📝', key:'ملحوظات الافتقاد', val: (s.visitNotes?.length)
     ? s.visitNotes.map(n => NOTE_LABELS[n] ? `${noteLabelOf(s,n).emoji} ${noteEsc(noteLabelOf(s,n).text)}` : n).join('، ')
@@ -6622,7 +6637,7 @@ function buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse) {
 // بيبني شيت بيانات المخدومين (بروفايل كامل: النوع، تاريخ الميلاد، العنوان، التليفونات، ملاحظات الافتقاد)
 function buildStudentsSheet() {
   const genderLabel = g => g === 'male' ? 'ولد' : (g === 'female' ? 'بنت' : '');
-  const row1 = ['الاسم','النوع','تاريخ الميلاد','الفصل','العنوان','أب الاعتراف','تليفون الأب','تليفون الأم','تليفون المخدوم','أرقام أخرى','ملاحظات الافتقاد'];
+  const row1 = ['الاسم','النوع','تاريخ الميلاد','الفصل','العنوان','المدرسة','أب الاعتراف','تليفون الأب','تليفون الأم','تليفون المخدوم','أرقام أخرى','ملاحظات الافتقاد'];
   const rows = [...exportTargetStudents()]
     .sort((a,b) => a.name.localeCompare(b.name,'ar'))
     .map(s => [
@@ -6631,6 +6646,7 @@ function buildStudentsSheet() {
       s.dob ? new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) : '',
       s.classSection ? classLabel(s.classSection) : '',
       s.address || '',
+      s.school || '',
       s.confessor || '',
       s.fatherPhone || '',
       s.motherPhone || '',
@@ -6639,7 +6655,7 @@ function buildStudentsSheet() {
       (s.visitNotes?.length) ? s.visitNotes.map(n => noteLabelOf(s,n)?.text || n).join('، ') : ''
     ]);
   const ws = XLSX.utils.aoa_to_sheet([row1, ...rows]);
-  ws['!cols'] = [{wch:26},{wch:8},{wch:18},{wch:14},{wch:26},{wch:20},{wch:16},{wch:16},{wch:16},{wch:22},{wch:26}];
+  ws['!cols'] = [{wch:26},{wch:8},{wch:18},{wch:14},{wch:26},{wch:22},{wch:20},{wch:16},{wch:16},{wch:16},{wch:22},{wch:26}];
   ws['!views'] = [{ rightToLeft: true }];
 
   const border = { top:{style:'thin',color:{rgb:'D9D9D9'}}, bottom:{style:'thin',color:{rgb:'D9D9D9'}}, left:{style:'thin',color:{rgb:'D9D9D9'}}, right:{style:'thin',color:{rgb:'D9D9D9'}} };
@@ -9336,6 +9352,7 @@ window.openEditModal = (id) => {
   document.getElementById('edit-address').value = s.address || '';
   document.getElementById('edit-map').value     = s.addressMap || '';
   document.getElementById('edit-confessor').value = s.confessor || '';
+  document.getElementById('edit-school').value = s.school || '';
   document.getElementById('edit-gender').value  = s.gender || '';
   document.getElementById('edit-class').innerHTML = classSelectOptionsHTML(true);
   document.getElementById('edit-class').value   = s.classSection || '';
@@ -9450,6 +9467,7 @@ window.saveEditStudent = async () => {
   const address = document.getElementById('edit-address').value.trim();
   const addressMap = document.getElementById('edit-map').value.trim();
   const confessor = document.getElementById('edit-confessor').value.trim();
+  const school = document.getElementById('edit-school').value.trim();
   const { father, mother, student } = readPhoneInputs('edit');
   const others = editOtherPhones.filter(o => o !== father && o !== mother && o !== student);
   const err = validateStudentData({ name, dob, address, father, mother, student, others, map: addressMap });
@@ -9477,6 +9495,7 @@ window.saveEditStudent = async () => {
     address,
     addressMap,
     confessor,
+    school,
     gender:  document.getElementById('edit-gender').value || '',
     classSection: document.getElementById('edit-class').value || '',
     ...buildPhoneFields(father, mother, student, others, prev),
