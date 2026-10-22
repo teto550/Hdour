@@ -766,7 +766,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
       <button class="stop-btn" id="voice-stop-btn" onclick="stopVoice()" style="display:none">⏹ إيقاف التسجيل بالصوت</button>
       <div class="manual-wrap" style="margin-top:14px">
         <div class="search-box">
-          <input type="text" id="manual-input" placeholder="🔍 أو اكتب اسم المخدوم…" oninput="onManualSearch()" autocomplete="off">
+          <input type="text" id="manual-input" placeholder="🔍 أو اكتب اسم المخدوم أو رقم تليفونه…" oninput="onManualSearch()" autocomplete="off">
         </div>
         <div id="manual-results"></div>
       </div>
@@ -825,7 +825,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         <span class="section-title">المخدومين (<span id="stu-count">0</span>)</span>
       </div>
       <div class="search-box" style="margin-bottom:12px">
-        <input type="text" id="students-search-input" placeholder="🔍 ابحث عن مخدوم بالاسم…" oninput="renderStudentsList()" autocomplete="off">
+        <input type="text" id="students-search-input" placeholder="🔍 ابحث عن مخدوم بالاسم أو رقم التليفون…" oninput="renderStudentsList()" autocomplete="off">
       </div>
       <div class="filter-row" id="siblings-chips" style="margin-bottom:12px">
         <button class="filter-chip active" onclick="setSiblingsFilter('all',this)">الكل</button>
@@ -2120,7 +2120,24 @@ function matchRank(name, normalizedQuery) {
   return 1;
 }
 
+// لو اللي اتكتب في البحث أرقام بس (٣ أرقام أو أكتر، عربي أو إنجليزي) بنرجّع الأرقام، غير كده فاضي (يعني بحث بالاسم)
+function phoneQueryDigits(q) {
+  const d = (typeof cleanPhone === 'function' ? cleanPhone(String(q || '')) : String(q || '')).replace(/^\+/, '');
+  return /^\d{3,}$/.test(d) ? d : '';
+}
+// كل أرقام المخدوم (أب/أم/مخدوم/إضافي/قديم) كأرقام بس
+function studentPhoneDigits(s) {
+  return [s.fatherPhone, s.motherPhone, s.studentPhone, ...(s.otherPhones || []), ...(s.phones || [])]
+    .map(p => (typeof cleanPhone === 'function' ? cleanPhone(String(p || '')) : String(p || '')).replace(/\D/g, ''))
+    .filter(Boolean);
+}
 function searchStudents(list, normalizedQuery) {
+  const pq = phoneQueryDigits(normalizedQuery);
+  if (pq) {
+    return list
+      .filter(s => studentPhoneDigits(s).some(p => p.includes(pq)))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  }
   return list
     .filter(s => matchesQuery(s.name, normalizedQuery))
     .sort((a, b) => {
