@@ -2121,32 +2121,32 @@ function matchRank(name, normalizedQuery) {
 }
 
 // زي STMina: أي أرقام في اللي اتكتب بتتقارن بأرقام التليفونات (أب/أم/مخدوم/إضافي/قديم)، والاسم بيتقارن زي الأول — النتيجة اللي يطابق أي واحد فيهم
-// البحث برقم التليفون: بيتجاهل الفرق في كتابة الرقم (٠١٠… / +20 10… / 0020… / من غير الصفر الأول) وبيدوّر في كل أرقام المخدوم (أب/أم/مخدوم/إضافي/قديم)
+// الرقم بيتقارن بشكليه: زي ما هو، ومن غير الصفر/+20 اللي في الأول (عشان أرقام الإكسل اللي الصفر بيضيع منها)
 function queryDigits(q) {
-  const raw = String(q || '');
-  if (/[^\d\s+\-().٠-٩]/.test(raw)) return ''; // فيه حروف = بحث بالاسم
-  const d = (typeof cleanPhone === 'function' ? cleanPhone(raw) : raw).replace(/[^0-9]/g, '');
-  return d.length >= 3 ? d : '';
+  return (typeof cleanPhone === 'function' ? cleanPhone(String(q || '')) : String(q || '')).replace(/[^0-9]/g, '');
 }
-function phoneCanon(d) {
-  let c = String(d || '');
-  if (c.startsWith('00')) c = c.slice(2);
-  if (c.startsWith('20') && c.length >= 11) c = c.slice(2);
-  if (c.startsWith('0')) c = c.slice(1);
-  return c;
+function phoneNational(d) {
+  d = String(d || '');
+  if (d.startsWith('0020')) return d.slice(4);
+  if (d.length >= 11 && d.startsWith('20')) return d.slice(2);
+  if (d.startsWith('0')) return d.slice(1);
+  return d;
 }
-function studentPhoneDigits(s) {
-  return [s.fatherPhone, s.motherPhone, s.studentPhone, ...(s.otherPhones || []), ...(s.phones || [])]
-    .map(p => (typeof cleanPhone === 'function' ? cleanPhone(String(p || '')) : String(p || '')).replace(/[^0-9]/g, ''))
-    .filter(Boolean);
+function studentPhoneList(s) {
+  return [s.fatherPhone, s.motherPhone, s.studentPhone, ...(s.otherPhones || []), ...(s.phones || [])].filter(Boolean);
 }
-function phoneMatches(s, qDigits) {
-  if (!qDigits) return false;
-  const qc = qDigits.length >= 9 ? phoneCanon(qDigits) : '';
-  return studentPhoneDigits(s).some(p => {
-    const c = phoneCanon(p);
-    return p.includes(qDigits) || c.includes(qDigits) || ('0' + c).includes(qDigits) || ('20' + c).includes(qDigits) || (qc && c.includes(qc));
-  });
+function phoneHit(s, qDigits) {
+  if (!qDigits) return '';
+  const qn = phoneNational(qDigits);
+  return studentPhoneList(s).find(p => {
+    const d = (typeof cleanPhone === 'function' ? cleanPhone(String(p)) : String(p)).replace(/[^0-9]/g, '');
+    return d.includes(qDigits) || (qn && phoneNational(d).includes(qn));
+  }) || '';
+}
+function phoneMatches(s, qDigits) { return !!phoneHit(s, qDigits); }
+function phoneHitHTML(s, qDigits) {
+  const p = phoneHit(s, qDigits);
+  return p ? `<div class="s-sub" dir="ltr" style="text-align:right;margin-top:3px">📞 ${String(p).replace(/[<>&"]/g, '')}</div>` : '';
 }
 function searchStudents(list, normalizedQuery) {
   const qd = queryDigits(normalizedQuery);
@@ -4474,6 +4474,7 @@ function renderStudentsList() {
         ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
         <div class="s-sub" style="margin-top:3px">${classBadge}</div>
         ${siblingBadge}
+        ${phoneHitHTML(s, queryDigits(q))}
       </div>
       <button class="action-btn" onclick="openProfile('${s.id}')">👤</button>
       <button class="action-btn" onclick="openEditModal('${s.id}')">✏️</button>
@@ -5699,7 +5700,7 @@ window.onManualSearch = () => {
     const classBadge = classBadgeHTML(s.classSection, otherClass);
     return `<div class="result-item" style="cursor:default">
       ${studentAvatarHTML(s,'result-avatar')}
-      <div style="flex:1;font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>
+      <div style="flex:1"><div style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>${phoneHitHTML(s, queryDigits(q))}</div>
       <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
       ${par ? '' : `<div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>`}
     </div>`;
