@@ -9429,7 +9429,12 @@ function renderEditAddClass(s) {
   if (!sel || !note) return;
   const linked = linkedClassIdsOf(s);
   note.style.display = linked.length ? '' : 'none';
-  note.textContent = linked.length ? 'موجود كمان في: ' + linked.map(classLabel).join('، ') : '';
+  if (!linked.length) note.textContent = '';
+  else {
+    const canRm = canDeleteStudent();
+    const row = cid => `<div style="display:flex;align-items:center;gap:8px;margin-top:4px"><span style="flex:1">${classLabel(cid)}${cid === s.classSection ? ' <span style="opacity:.6">(الفصل الحالي)</span>' : ''}</span>${canRm ? `<button type="button" onclick="removeStudentFromClass('${cid}')" style="background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.35);border-radius:8px;color:var(--danger,#e74c3c);font-family:Cairo,sans-serif;font-size:12px;font-weight:700;padding:4px 10px;cursor:pointer">✕ شيله من الفصل ده</button>` : ''}</div>`;
+    note.innerHTML = 'موجود في الفصول دي:' + [s.classSection, ...linked].filter(Boolean).map(row).join('');
+  }
   const opts = allClasses.filter(c => c.id !== s.classSection && !linked.includes(c.id));
   sel.innerHTML = `<option value="">— فصل تاني يتضاف —</option>` + opts.map(c => `<option value="${c.id}">${c.emoji||'📘'} ${c.name}</option>`).join('');
 }
@@ -9467,6 +9472,45 @@ window.addStudentSecondClass = async () => {
     console.error(e);
     showToast('معرفتش أضيفه — غالبًا مفيش صلاحية على الفصل ده', 'error');
   } finally { if (btn) btn.disabled = false; }
+};
+// شيل المخدوم من فصل واحد من فصوله (يتمسح نسخته في الفصل ده بس، ونسخ الفصول التانية تفضل زي ما هي)
+window.removeStudentFromClass = async (cid) => {
+  if (!canDeleteStudent()) { showToast('الحذف من فصل للأدمن بس', 'error'); return; }
+  const id = document.getElementById('edit-id').value;
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  const linkId = s.linkId || s.id;
+  // كل النسخ المربوطة (الأدمن بيجيبهم من السيرفر عشان لو مش متحملين على الشاشة)
+  const copies = new Map();
+  allStudents.forEach(x => { if (x.id === s.id || (x.linkId && x.linkId === linkId)) copies.set(x.id, { id: x.id, classSection: x.classSection || '', linkedClasses: x.linkedClasses || [] }); });
+  try {
+    (await countedGetDocs(query(collection(db,'students'), where('linkId','==', linkId)), 'students (النسخ المربوطة)')).docs.forEach(d => { const x = d.data(); copies.set(d.id, { id: d.id, classSection: x.classSection || '', linkedClasses: x.linkedClasses || [] }); });
+  } catch(e) { console.warn(e); }
+  const all = [...copies.values()];
+  const target = all.find(c => c.classSection === cid);
+  const rest = all.filter(c => c !== target);
+  if (!target) { showToast('مش لاقي نسخة المخدوم في الفصل ده', 'error'); return; }
+  if (!rest.length) { showToast('ده الفصل الوحيد للمخدوم — لو عايز تمسحه خالص استخدم زر الحذف', 'error'); return; }
+  if (!confirm(`هتشيل "${s.name}" من ${classLabel(cid)}؟\nهيفضل في: ${rest.map(c => classLabel(c.classSection)).join('، ')}`)) return;
+  try {
+    await deleteDoc(doc(db,'students',target.id));
+    for (const c of rest) {
+      const nl = [...new Set(c.linkedClasses)].filter(x => x !== cid && x !== c.classSection);
+      try { await updateDoc(doc(db,'students',c.id), { linkedClasses: nl, updatedAt: serverTimestamp() }); } catch(e) { console.warn('linked update skipped', c.id, e && e.code); }
+      const i = allStudents.findIndex(x => x.id === c.id); if (i !== -1) allStudents[i] = { ...allStudents[i], linkedClasses: nl };
+    }
+    bumpStudentsRev(true);
+    allStudents = allStudents.filter(x => x.id !== target.id);
+    delete todayAttendance[target.id];
+    logActivity('شيل مخدوم من فصل', `${s.name} — ${classLabel(cid)}`);
+    showToast(`✓ ${s.name} اتشال من ${classLabel(cid)}`, 'success');
+    if (target.id === id) { closeEditModal(); }
+    else { const cur = allStudents.find(x => x.id === id); if (cur) renderEditAddClass(cur); }
+    renderStudentsList(); renderTodayList(); updateStats();
+  } catch(e) {
+    console.error(e);
+    showToast('معرفتش أشيله — مفيش صلاحية', 'error');
+  }
 };
 // تعديل بيانات المخدوم بيتنسخ لباقي النسخ المربوطة (اللي عنده صلاحية عليها)
 async function syncLinkedCopies(id, linkId, shared) {
