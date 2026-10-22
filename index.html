@@ -7056,37 +7056,57 @@ window.crumbGo = (i) => { closeSettingsMenu(); const f = crumbActions[i]; if (f)
   schedule();
 }
 // ===== زرار الرجوع بتاع الموبايل: يرجّع خطوة جوه البرنامج (نفس زرار → فوق) بدل ما يطلع من البرنامج كله =====
-// كل ما تدخل أي خطوة جوه (فصل / تاب / نافذة) بنحط خطوة واحدة في history المتصفح، وزرار الرجوع بتاع الموبايل بيشيلها وبننفّذ بدلها رجوع البرنامج.
-// ولما توصل للرئيسية مبنحطش حاجة، فالرجوع من هناك بيطلع من البرنامج عادي.
+// كل مستوى بتدخله جوه (أدمن: الفصول ‹ الفصل ‹ التاب) بياخد خطوة في history المتصفح، بتتضاف وقت اللمس نفسه. زرار الرجوع بتاع الموبايل بيشيل خطوة
+// وبننفّذ بدلها رجوع البرنامج. مبنضيفش خطوات تاني بعد الرجوع (كروم على الموبايل بيتخطى الخطوات اللي بتتضاف من غير لمس). من الرئيسية بيطلع عادي.
 {
-  let guard = false, ignorePop = false, histRaf = 0;
+  let pushed = 0, ignorePops = 0, histRaf = 0;
   const shownEl = el => !!el && getComputedStyle(el).display !== 'none';
   const topModal = () => { const all = [...document.querySelectorAll('.modal-overlay')].filter(e => e.id !== 'bio-offer-modal' && shownEl(e)); return all.length ? all[all.length - 1] : null; };
   const menuOpen = () => shownEl(document.getElementById('settings-dropdown'));
   const rolesOpen = () => document.getElementById('tab-roles')?.style.display === 'block';
-  function inAppDeep() {
-    if (topModal() || menuOpen() || rolesOpen()) return true;
-    const lvl = navLevel();
-    const canGoBack = currentRole === 'admin' || needsClassPick() || hasSupHome();
-    return lvl === 'tab' || lvl === 'adminClasses' || lvl === 'servantsHome' || (lvl === 'picker' && hasSupHome()) || (lvl === 'classHome' && canGoBack);
+  // كام ضغطة رجوع محتاجها عشان أوصل للرئيسية من مكاني دلوقتي (بنفس ترتيب goBack)
+  function depthNow() {
+    let d = (topModal() || menuOpen()) ? 1 : 0;
+    if (rolesOpen()) { return d + (rolesReturnTab === '__servantsHome__' ? 2 : 1); }
+    const shown = id => document.getElementById(id)?.style.display === 'block';
+    let lvl = navLevel(), isMonitor = shown('tab-monitor'), isClassServ = shown('tab-classservants');
+    for (let i = 0; i < 6; i++) {
+      let parent = '';
+      if (lvl === 'tab') { parent = (canManageServants() && isMonitor) ? 'servantsHome' : (hasSupHome() && isClassServ) ? 'home' : 'classHome'; }
+      else if (lvl === 'classHome') {
+        if (currentRole === 'admin') { parent = 'adminClasses'; }
+        else if (hasSupHome() && !needsClassPick()) { parent = 'home'; }
+        else if (needsClassPick()) { parent = 'picker'; }
+      }
+      else if (lvl === 'adminClasses' || lvl === 'servantsHome') { parent = 'home'; }
+      else if (lvl === 'picker' && hasSupHome()) { parent = 'home'; }
+      if (!parent) { break; }
+      d++; lvl = parent; isMonitor = false; isClassServ = false;
+    }
+    return d;
   }
   function syncHistory() {
-    let deep = false;
-    try { deep = inAppDeep(); } catch (e) { deep = false; }
-    if (deep && !guard) { try { history.pushState({ hdourBack: 1 }, ''); guard = true; } catch (e) {} }
-    else if (!deep && guard) { guard = false; ignorePop = true; try { history.back(); } catch (e) { ignorePop = false; } }
+    let want = 0;
+    try { want = depthNow(); } catch (e) { want = 0; }
+    if (want > pushed) {
+      for (let k = pushed; k < want; k++) { try { history.pushState({ hdourBack: k + 1 }, ''); } catch (e) {} }
+      pushed = want;
+    } else if (want < pushed) {
+      const n = pushed - want; pushed = want; ignorePops++;      // رجعنا بزرار جوه البرنامج: نشيل الخطوات الزيادة من history
+      try { history.go(-n); } catch (e) { ignorePops--; }
+    }
   }
   const scheduleHistory = () => { cancelAnimationFrame(histRaf); histRaf = requestAnimationFrame(syncHistory); };
   window.addEventListener('popstate', () => {
-    if (ignorePop) { ignorePop = false; return; }
-    if (!guard) return;
-    guard = false;                                  // زرار الرجوع شال الخطوة بتاعتنا
+    if (ignorePops > 0) { ignorePops--; return; }
+    if (pushed <= 0) { return; }
+    pushed--;                                       // زرار الرجوع بتاع الموبايل شال خطوة من بتوعنا
     const ov = topModal();
-    if (ov) ov.click();                             // نافذة مفتوحة: تتقفل الأول (نفس الضغط برّا النافذة)
-    else if (menuOpen()) closeSettingsMenu();
-    else if (rolesOpen()) closeRolesModal();
-    else goBack();
-    scheduleHistory();                              // لو لسه جوه خطوة تانية بنحط خطوة جديدة للرجوع اللي بعده
+    if (ov) { ov.click(); }                         // نافذة مفتوحة: تتقفل الأول (نفس الضغط برّا النافذة)
+    else if (menuOpen()) { closeSettingsMenu(); }
+    else if (rolesOpen()) { closeRolesModal(); }
+    else { goBack(); }
+    scheduleHistory();
   });
   const hit = t => t && ((t.classList && t.classList.contains('modal-overlay')) || (t.id && (t.id.startsWith('tab-') || t.id === 'settings-dropdown' || t.id === 'app-screen')));
   new MutationObserver(muts => { for (const m of muts) { if (hit(m.target)) { scheduleHistory(); break; } } })
