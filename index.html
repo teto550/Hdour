@@ -2121,8 +2121,19 @@ function matchRank(name, normalizedQuery) {
 }
 
 // زي STMina: أي أرقام في اللي اتكتب بتتقارن بأرقام التليفونات (أب/أم/مخدوم/إضافي/قديم)، والاسم بيتقارن زي الأول — النتيجة اللي يطابق أي واحد فيهم
+// البحث برقم التليفون: بيتجاهل الفرق في كتابة الرقم (٠١٠… / +20 10… / 0020… / من غير الصفر الأول) وبيدوّر في كل أرقام المخدوم (أب/أم/مخدوم/إضافي/قديم)
 function queryDigits(q) {
-  return (typeof cleanPhone === 'function' ? cleanPhone(String(q || '')) : String(q || '')).replace(/[^0-9]/g, '');
+  const raw = String(q || '');
+  if (/[^\d\s+\-().٠-٩]/.test(raw)) return ''; // فيه حروف = بحث بالاسم
+  const d = (typeof cleanPhone === 'function' ? cleanPhone(raw) : raw).replace(/[^0-9]/g, '');
+  return d.length >= 3 ? d : '';
+}
+function phoneCanon(d) {
+  let c = String(d || '');
+  if (c.startsWith('00')) c = c.slice(2);
+  if (c.startsWith('20') && c.length >= 11) c = c.slice(2);
+  if (c.startsWith('0')) c = c.slice(1);
+  return c;
 }
 function studentPhoneDigits(s) {
   return [s.fatherPhone, s.motherPhone, s.studentPhone, ...(s.otherPhones || []), ...(s.phones || [])]
@@ -2130,7 +2141,12 @@ function studentPhoneDigits(s) {
     .filter(Boolean);
 }
 function phoneMatches(s, qDigits) {
-  return !!qDigits && studentPhoneDigits(s).some(p => p.includes(qDigits));
+  if (!qDigits) return false;
+  const qc = qDigits.length >= 9 ? phoneCanon(qDigits) : '';
+  return studentPhoneDigits(s).some(p => {
+    const c = phoneCanon(p);
+    return p.includes(qDigits) || c.includes(qDigits) || ('0' + c).includes(qDigits) || ('20' + c).includes(qDigits) || (qc && c.includes(qc));
+  });
 }
 function searchStudents(list, normalizedQuery) {
   const qd = queryDigits(normalizedQuery);
