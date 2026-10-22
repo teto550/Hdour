@@ -4878,6 +4878,42 @@ window.waSelectAll = (val) => {
   renderWaRecipientsList();
 };
 
+// ===== حماية من تقييد واتساب: عدّاد يومي بيحذّر + تأخير بين الرسائل (واتساب بيقيّد الحساب لو حس إرسال جماعي لأرقام جديدة) =====
+const WA_WARN_AT = 25, WA_WARN_STEP = 10, WA_GAP_MIN = 8, WA_GAP_MAX = 15;   // نحذّر عند 25 رسالة في اليوم وبعدها كل 10، وبين كل رسالة 8–15 ثانية
+let waGapUntil = 0;
+const waDayKey = () => new Date().toLocaleDateString('en-CA');
+function waTodayCount() {
+  try { const o = JSON.parse(localStorage.getItem('waSentToday') || '{}'); return o.d === waDayKey() ? (o.n || 0) : 0; } catch (e) { return 0; }
+}
+function waBumpCount() {
+  const n = waTodayCount() + 1;
+  try { localStorage.setItem('waSentToday', JSON.stringify({ d: waDayKey(), n })); } catch (e) {}
+  return n;
+}
+// true = تقدر تبعت دلوقتي
+function waBeforeSend() {
+  const wait = Math.ceil((waGapUntil - Date.now()) / 1000);
+  if (wait > 0) { showToast('استنى ' + wait + ' ثانية قبل الرسالة اللي بعدها (حماية من تقييد واتساب)', 'error'); return false; }
+  const n = waTodayCount();
+  if (n >= WA_WARN_AT && (n - WA_WARN_AT) % WA_WARN_STEP === 0) {
+    return confirm('اتبعت النهارده ' + n + ' رسالة من الجهاز ده.\nواتساب ممكن يقيّد الحساب لو الإرسال كتير لأرقام جديدة. الأفضل تكمّل بكرة أو تقلّل العدد.\n\nتكمّل برضه؟');
+  }
+  return true;
+}
+// بعد كل رسالة: زوّد العدّاد وابدأ فترة الانتظار على زرار الإرسال
+function waAfterSend(boxId) {
+  waBumpCount();
+  waGapUntil = Date.now() + (WA_GAP_MIN + Math.random() * (WA_GAP_MAX - WA_GAP_MIN)) * 1000;
+  const btn = document.querySelector('#' + boxId + ' button[onclick^="send"]');
+  if (!btn) return;
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+  const tick = () => {
+    const left = Math.ceil((waGapUntil - Date.now()) / 1000);
+    if (left > 0) { btn.disabled = true; btn.style.opacity = '.55'; btn.textContent = '⏳ استنى ' + left + ' ث'; setTimeout(tick, 500); }
+    else { btn.disabled = false; btn.style.opacity = ''; btn.textContent = btn.dataset.label; }
+  };
+  tick();
+}
 window.startWaQueue = () => {
   const msgTpl = document.getElementById('wa-message').value.trim();
   if (!msgTpl) { showToast('اكتب نص الرسالة الأول', 'error'); return; }
@@ -4907,7 +4943,7 @@ function renderWaQueueItem() {
   }
   const s = waQueue[waQueueIndex];
   const phone = getWaPhone(s);
-  document.getElementById('wa-queue-progress').textContent = `${waQueueIndex+1} من ${waQueue.length}`;
+  document.getElementById('wa-queue-progress').textContent = `${waQueueIndex+1} من ${waQueue.length} · اتبعت النهارده: ${waTodayCount()}`;
   document.getElementById('wa-queue-name').textContent = s.name;
   document.getElementById('wa-queue-phone').textContent = phone;
 }
@@ -4918,9 +4954,11 @@ window.sendCurrentWaQueueItem = () => {
   const phone = getWaPhone(s);
   const num   = normalizeEgyptPhone(phone);
   const msg   = encodeURIComponent(buildWaMessageFor(s));
+  if (!waBeforeSend()) return;
   openExternalLink(`https://api.whatsapp.com/send?phone=${num}&text=${msg}&type=phone_number&app_absent=0`);
   waQueueIndex++;
   renderWaQueueItem();
+  waAfterSend('wa-queue-box');
 };
 
 window.skipCurrentWaQueueItem = () => {
@@ -7385,15 +7423,17 @@ window.startSmQueue = () => {
 function renderSmQueueItem() {
   if (smQueueIndex >= smQueue.length) { document.getElementById('sm-queue-box').innerHTML = `<div style="font-size:16px;font-weight:800;color:var(--success)">✅ تم الانتهاء من كل الرسائل (${smQueue.length})</div>`; return; }
   const x = smQueue[smQueueIndex];
-  document.getElementById('sm-queue-progress').textContent = `${smQueueIndex + 1} من ${smQueue.length}`;
+  document.getElementById('sm-queue-progress').textContent = `${smQueueIndex + 1} من ${smQueue.length} · اتبعت النهارده: ${waTodayCount()}`;
   document.getElementById('sm-queue-name').textContent = x.name;
   document.getElementById('sm-queue-phone').textContent = x.phone;
 }
 window.sendSmQueueItem = () => {
   const x = smQueue[smQueueIndex]; if (!x) return;
   const msg = encodeURIComponent((document.getElementById('sm-message').value || '').split('{اسم_الخادم}').join(smFirstName(x)));
+  if (!waBeforeSend()) return;
   openExternalLink(`https://api.whatsapp.com/send?phone=${normalizeEgyptPhone(x.phone)}&text=${msg}&type=phone_number&app_absent=0`);
   smQueueIndex++; renderSmQueueItem();
+  waAfterSend('sm-queue-box');
 };
 window.skipSmQueueItem = () => { smQueueIndex++; renderSmQueueItem(); };
 // تاريخ ميلاد الخادم (الأدمن بيسجله من ملفه) — بيستخدمه فلتر أعياد الميلاد في رسائل الخدام
