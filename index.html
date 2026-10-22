@@ -1861,6 +1861,42 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
 
 <div id="toast"></div>
 
+<!-- PHOTO MODAL: عرض / تصوير / معرض / تعديل / حذف صورة المخدومة -->
+<div id="photo-modal" class="modal-overlay" style="display:none;z-index:260" onclick="if(event.target.id==='photo-modal')closePhotoModal()">
+  <div class="modal-box" style="padding:18px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <div id="photo-title" style="flex:1;font-size:16px;font-weight:900"></div>
+      <button class="modal-close" onclick="closePhotoModal()">✕</button>
+    </div>
+    <div style="display:flex;justify-content:center">
+      <canvas id="photo-canvas" width="280" height="280" style="width:280px;height:280px;max-width:100%;border-radius:18px;background:var(--surface2);touch-action:none"></canvas>
+    </div>
+    <div id="photo-edit-tools" style="display:none;margin-top:12px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:12px;color:var(--text-dim)">تصغير</span>
+        <input type="range" id="photo-zoom" min="100" max="400" value="100" style="flex:1" oninput="photoSetZoom(this.value)">
+        <span style="font-size:12px;color:var(--text-dim)">تكبير</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);text-align:center;margin-top:6px">اسحب الصورة بصباعك لتظبيط مكانها</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="action-btn" style="flex:1" onclick="photoRotate(-1)">⟲ لف يمين</button>
+        <button class="action-btn" style="flex:1" onclick="photoRotate(1)">⟳ لف شمال</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-primary" style="flex:2" id="photo-save-btn" onclick="photoSaveEdit()">💾 حفظ</button>
+        <button class="action-btn" style="flex:1" onclick="photoCancelEdit()">إلغاء</button>
+      </div>
+    </div>
+    <div id="photo-menu" style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+      <button class="action-btn" onclick="photoPick(true)">📷 تصوير صورة جديدة</button>
+      <button class="action-btn" onclick="photoPick(false)">🖼 اختيار من المعرض</button>
+      <button class="action-btn" id="photo-edit-btn" onclick="photoStartEdit()">✂️ تعديل الصورة (قص / تكبير / لف)</button>
+      <button class="action-btn" id="photo-del-btn" onclick="photoDelete()" style="color:var(--danger,#e74c3c)">🗑 حذف الصورة</button>
+    </div>
+    <input type="file" id="photo-file-cam" accept="image/*" capture="environment" style="display:none" onchange="photoFileChosen(event)">
+    <input type="file" id="photo-file-gal" accept="image/*" style="display:none" onchange="photoFileChosen(event)">
+  </div>
+</div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, EmailAuthProvider, reauthenticateWithCredential }
@@ -4469,6 +4505,7 @@ function renderStudentsList() {
     const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
     const classBadge = classBadgeHTML(s.classSection);
     return `<div class="student-item">
+      <div onclick="openPhotoSheet('${s.id}')" style="cursor:pointer;display:flex">${studentAvatarHTML(s,'s-avatar')}</div>
       <div class="s-info">
         <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}</div>
         ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
@@ -6037,7 +6074,217 @@ function renderProfAvatar(s) {
   el.style.backgroundImage = s.photo ? `url('${s.photo}')` : '';
   el.innerHTML = (s.photo ? '' : `<span>${(s.name||'؟').trim()[0]||'؟'}</span>`) + `<div class="avatar-cam-badge">📷</div>`;
 }
-window.triggerProfilePhotoPick = () => document.getElementById('prof-photo-input').click();
+window.triggerProfilePhotoPick = () => openPhotoSheet(currentProfileId);
+// ===== صورة المخدومة: عرض / تصوير / معرض / تعديل (قص-تكبير-لف) / حذف =====
+let photoSid = null, photoImg = null, photoRot = 0, photoZoom = 1, photoOffX = 0, photoOffY = 0, photoDrag = null, photoEditing = false;
+const PHOTO_VIEW = 280;
+function photoStudent() {
+  return allStudents.find((x) => x.id === photoSid);
+}
+function photoDrawPlaceholder(cv, s) {
+  const g = cv.getContext("2d");
+  g.clearRect(0, 0, cv.width, cv.height);
+  g.fillStyle = "#4f8ef7";
+  g.fillRect(0, 0, cv.width, cv.height);
+  g.fillStyle = "#fff";
+  g.font = "900 120px Cairo, sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(((s && s.name || "؟").trim()[0]) || "؟", cv.width / 2, cv.height / 2 + 6);
+}
+function photoRender() {
+  const cv = document.getElementById("photo-canvas");
+  if (!cv) return;
+  const g = cv.getContext("2d");
+  if (!photoImg) {
+    photoDrawPlaceholder(cv, photoStudent());
+    return;
+  }
+  const odd = photoRot % 2 !== 0;
+  const w = odd ? photoImg.height : photoImg.width, h = odd ? photoImg.width : photoImg.height;
+  const base = Math.max(cv.width / w, cv.height / h);
+  const sc = base * photoZoom;
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, cv.width, cv.height);
+  g.save();
+  g.translate(cv.width / 2 + photoOffX, cv.height / 2 + photoOffY);
+  g.rotate(photoRot * Math.PI / 2);
+  g.scale(sc, sc);
+  g.drawImage(photoImg, -photoImg.width / 2, -photoImg.height / 2);
+  g.restore();
+}
+function photoClampOffsets() {
+  const cv = document.getElementById("photo-canvas");
+  const odd = photoRot % 2 !== 0;
+  const w = odd ? photoImg.height : photoImg.width, h = odd ? photoImg.width : photoImg.height;
+  const sc = Math.max(cv.width / w, cv.height / h) * photoZoom;
+  const mx = Math.max(0, (w * sc - cv.width) / 2), my = Math.max(0, (h * sc - cv.height) / 2);
+  photoOffX = Math.min(mx, Math.max(-mx, photoOffX));
+  photoOffY = Math.min(my, Math.max(-my, photoOffY));
+}
+function photoSetMode(editing) {
+  photoEditing = editing;
+  document.getElementById("photo-edit-tools").style.display = editing ? "" : "none";
+  document.getElementById("photo-menu").style.display = editing ? "none" : "flex";
+  const s = photoStudent();
+  document.getElementById("photo-title").textContent = editing ? "تعديل الصورة" : "صورة " + (s ? s.name : "");
+  const has = !!(s && s.photo);
+  document.getElementById("photo-edit-btn").style.display = has ? "" : "none";
+  document.getElementById("photo-del-btn").style.display = has ? "" : "none";
+}
+function photoLoadSrc(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("img"));
+    img.src = src;
+  });
+}
+window.openPhotoSheet = async (id) => {
+  photoSid = id;
+  const s = photoStudent();
+  if (!s) return;
+  photoRot = 0;
+  photoZoom = 1;
+  photoOffX = photoOffY = 0;
+  photoImg = null;
+  document.getElementById("photo-zoom").value = 100;
+  document.getElementById("photo-modal").style.display = "block";
+  photoSetMode(false);
+  if (s.photo) {
+    try {
+      photoImg = await photoLoadSrc(s.photo);
+    } catch (e) {
+    }
+  }
+  photoRender();
+};
+window.closePhotoModal = () => {
+  document.getElementById("photo-modal").style.display = "none";
+  photoImg = null;
+  photoSid = null;
+};
+window.photoPick = (camera) => document.getElementById(camera ? "photo-file-cam" : "photo-file-gal").click();
+window.photoFileChosen = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const dataUrl = await resizeImageToDataURL(file, 1280, 0.9);
+    photoImg = await photoLoadSrc(dataUrl);
+    photoRot = 0;
+    photoZoom = 1;
+    photoOffX = photoOffY = 0;
+    document.getElementById("photo-zoom").value = 100;
+    photoSetMode(true);
+    photoRender();
+  } catch (err) {
+    showToast("مقدرتش أقرا الصورة", "error");
+  }
+};
+window.photoStartEdit = () => {
+  if (!photoImg) return;
+  photoSetMode(true);
+  photoRender();
+};
+window.photoCancelEdit = async () => {
+  const s = photoStudent();
+  photoRot = 0;
+  photoZoom = 1;
+  photoOffX = photoOffY = 0;
+  document.getElementById("photo-zoom").value = 100;
+  photoImg = null;
+  if (s && s.photo) {
+    try {
+      photoImg = await photoLoadSrc(s.photo);
+    } catch (e) {
+    }
+  }
+  photoSetMode(false);
+  photoRender();
+};
+window.photoSetZoom = (v) => {
+  photoZoom = Math.max(1, Number(v) / 100);
+  if (photoImg) photoClampOffsets();
+  photoRender();
+};
+window.photoRotate = (dir) => {
+  photoRot = (photoRot + dir + 4) % 4;
+  if (photoImg) photoClampOffsets();
+  photoRender();
+};
+(function() {
+  const cv = document.getElementById("photo-canvas");
+  if (!cv) return;
+  const pos = (e) => ({ x: e.clientX, y: e.clientY });
+  cv.addEventListener("pointerdown", (e) => {
+    if (!photoEditing || !photoImg) return;
+    photoDrag = { p: pos(e), ox: photoOffX, oy: photoOffY };
+    try {
+      cv.setPointerCapture(e.pointerId);
+    } catch (er) {
+    }
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (!photoDrag) return;
+    const k = cv.width / cv.getBoundingClientRect().width;
+    photoOffX = photoDrag.ox + (e.clientX - photoDrag.p.x) * k;
+    photoOffY = photoDrag.oy + (e.clientY - photoDrag.p.y) * k;
+    photoClampOffsets();
+    photoRender();
+  });
+  const end = () => {
+    photoDrag = null;
+  };
+  cv.addEventListener("pointerup", end);
+  cv.addEventListener("pointercancel", end);
+})();
+async function photoPersist(dataUrl, okMsg, logMsg) {
+  const id = photoSid;
+  await updateDoc(doc(db, "students", id), { photo: dataUrl, updatedAt: serverTimestamp() });
+  bumpStudentsRev();
+  const idx = allStudents.findIndex((x) => x.id === id);
+  if (idx !== -1) allStudents[idx] = { ...allStudents[idx], photo: dataUrl };
+  if (currentProfileId === id && idx !== -1) renderProfAvatar(allStudents[idx]);
+  renderStudentsList();
+  renderTodayList();
+  if (typeof renderFilterList === "function") renderFilterList();
+  const mi = document.getElementById("manual-input");
+  if (mi && mi.value) onManualSearch();
+  showToast(okMsg, "success");
+  logActivity(logMsg, idx !== -1 ? allStudents[idx].name || "" : "");
+}
+window.photoSaveEdit = async () => {
+  if (!photoImg) return;
+  const btn = document.getElementById("photo-save-btn");
+  btn.disabled = true;
+  try {
+    const out = document.createElement("canvas");
+    out.width = out.height = 320;
+    const cv = document.getElementById("photo-canvas");
+    out.getContext("2d").drawImage(cv, 0, 0, cv.width, cv.height, 0, 0, 320, 320);
+    await photoPersist(out.toDataURL("image/jpeg", 0.75), "تم حفظ الصورة ✓", "تحديث صورة مخدوم");
+    closePhotoModal();
+  } catch (err) {
+    console.error(err);
+    showToast("حصل خطأ أثناء حفظ الصورة", "error");
+  } finally {
+    btn.disabled = false;
+  }
+};
+window.photoDelete = async () => {
+  const s = photoStudent();
+  if (!s || !confirm("هتمسح صورة " + s.name + "؟")) return;
+  try {
+    await photoPersist("", "تم حذف الصورة ✓", "حذف صورة مخدوم");
+    closePhotoModal();
+  } catch (err) {
+    console.error(err);
+    showToast("حصل خطأ أثناء حذف الصورة", "error");
+  }
+};
+
+
 
 // بتصغّر الصورة وتحوّلها base64 عشان تتخزن في مستند الفايرستور من غير ما تتعدى حد الحجم بتاعه
 function resizeImageToDataURL(file, maxSize, quality) {
