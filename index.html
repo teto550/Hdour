@@ -1116,7 +1116,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
           <div class="mon-stat"><b id="mon-stat-total">0</b><span>خادم</span></div>
           <div class="mon-stat ok att"><b id="mon-stat-present">–</b><span>حضروا</span></div>
           <div class="mon-stat warn att"><b id="mon-stat-absent">–</b><span>لسه</span></div>
-          <div class="mon-stat warn srv"><b id="mon-stat-pending">0</b><span>طلبات انضمام</span></div>
+          <div class="mon-stat warn srv" onclick="openJoinRequests()" style="cursor:pointer"><b id="mon-stat-pending">0</b><span>طلبات انضمام ›</span></div>
         </div>
       </div>
       <div class="tabs" id="monitor-class-chips" style="overflow-x:auto;margin-bottom:12px"></div>
@@ -1793,6 +1793,15 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
   </div>
 </div>
 
+<div id="join-modal" class="modal-overlay" style="display:none;z-index:345" onclick="if(event.target===this)closeJoinRequests()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:900" id="join-modal-title">طلبات انضمام</div></div>
+      <button class="modal-close" onclick="closeJoinRequests()">✕</button>
+    </div>
+    <div style="padding:16px"><div id="join-modal-list" style="max-height:62vh;overflow-y:auto"></div></div>
+  </div>
+</div>
 <div id="dash-modal" class="modal-overlay" style="display:none;z-index:340" onclick="closeDashModalOutside(event)">
   <div class="modal-box">
     <div class="modal-header">
@@ -8092,7 +8101,37 @@ function renderSupPending() {
       <button class="del-btn" onclick="rejectServant('${s.id}','${q(s.name)}','${servantRoleIds(s).join(',')}')">✕ رفض</button>
     </div>`).join('');
 }
+// نافذة "طلبات انضمام" (زي STMina): دوس على كارت طلبات انضمام فتظهر الطلبات ببياناتها وأزرار قبول/رفض
+function joinRequestsMine() { return cachedServants.filter(x => x.status === 'pending' && canHandleRequest(x)); }
+function renderJoinModal() {
+  const modal = document.getElementById('join-modal');
+  if (!modal || modal.style.display === 'none') return;
+  const list = joinRequestsMine();
+  document.getElementById('join-modal-title').textContent = list.length ? `طلبات انضمام (${list.length})` : 'طلبات انضمام';
+  const cont = document.getElementById('join-modal-list');
+  if (!list.length) { cont.innerHTML = `<div class="empty-state">مفيش طلبات انضمام دلوقتي.</div>`; return; }
+  const row = (label, val, ltr) => val ? `<div style="display:flex;gap:8px;font-size:13px;margin-top:4px"><span style="color:var(--text-dim);flex-shrink:0">${label}</span><span style="min-width:0;word-break:break-word"${ltr ? ' dir="ltr"' : ''}>${dEsc(val)}</span></div>` : '';
+  cont.innerHTML = list.map(s => {
+    const sent = s.createdAt && s.createdAt.toDate ? s.createdAt.toDate().toLocaleDateString('ar-EG') : '';
+    const nm = String(s.name || '').replace(/'/g, "\\'");
+    return `<div style="background:var(--surface2);border:1px solid var(--warning);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><b style="font-size:15px">${dEsc(s.name || 'بدون اسم')}</b> ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
+      ${row('الإيميل', s.email, true)}${row('التليفون', s.phone, true)}${row('العنوان', s.address)}${row('تاريخ الميلاد', s.dob)}${row('تاريخ الطلب', sent)}
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="export-btn" style="flex:1" onclick="approveServant('${s.id}','${nm}','${servantRoleIds(s).join(',')}')">✓ قبول</button>
+        <button class="del-btn" style="flex:1" onclick="rejectServant('${s.id}','${nm}','${servantRoleIds(s).join(',')}')">✕ رفض</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+window.openJoinRequests = () => {
+  if (!canHandleRequests()) return;
+  document.getElementById('join-modal').style.display = 'flex';
+  renderJoinModal();
+};
+window.closeJoinRequests = () => { document.getElementById('join-modal').style.display = 'none'; };
 function renderPendingList(list) {
+  renderJoinModal();
   renderSupPending();
   renderClassServList();
   const ps = document.getElementById('pending-section'); if (ps) ps.style.display = (list.length && currentRole === 'admin') ? '' : 'none'; // قبول/رفض الطلبات الكاملة للأدمن بس — المسؤول بيشوف طلبات فصوله من قسمه
