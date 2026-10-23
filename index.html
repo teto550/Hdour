@@ -3276,7 +3276,7 @@ window.doRegister = async () => {
     for (const mr of matchedRoles) {
       try { await updateDoc(doc(db,'roles',mr.id), { pendingNames: arrayRemove(...nameVariantsIn(mr, name)) }); } catch(e) { console.error('تعذّر مسح الاسم من القايمة فورًا:', e); }
     }
-    if (!isAdmin) callPushWorker('/new-request');
+    if (!isAdmin) { callPushWorker('/new-request'); sendAdminJoinEmail(cred.user.uid, name, email, classLabel(matchedPerms.assignedClass)); }
     try { await sendEmailVerification(cred.user); } catch(_) {}
     // onAuthStateChanged هيتكفل بعرض الشاشة المناسبة (انتظار أو دخول مباشر لو أدمن)
   } catch(e) {
@@ -3427,6 +3427,7 @@ async function handleSignedInUser(user) {
           createdAt: serverTimestamp(), lastActive: serverTimestamp()
         });
         callPushWorker('/new-request');
+        sendAdminJoinEmail(user.uid, user.email.split('@')[0], user.email, '—');
         snap = await getDoc(ref);
       } else {
         // مجرد جلسة محمولة تلقائيًا من موقع تاني على نفس الدومين — مش طلب دخول مقصود، نتجاهله من غير ما نبعت طلب انضمام لحد
@@ -3479,6 +3480,7 @@ async function handleSignedInUser(user) {
     if (currentRole === 'admin') startOpenWatcher(); else announceOpen();
     setupPushOnLogin(user);
     initApp();
+    if (currentRole === 'admin') approveFromEmailLink();
     setTimeout(maybeOfferBio, 1200);
   } catch(e) {
     console.error(e);
@@ -9852,6 +9854,61 @@ const notifOn = () => localStorage.getItem(NOTIF_KEY) !== '0';
 const FCM_VAPID_KEY   = 'BPcX3KacJhyHgjhJFGpK6grhvyvkJWuMHtwxzD9FqvIM49_xTCc1640dnUdIt4X5H9j-ikcAWr1wgXzethS4ylo';
 const PUSH_WORKER_URL = 'https://hdour-push.devidemele.workers.dev';
 const isPushConfigured = () => !!FCM_VAPID_KEY && !!PUSH_WORKER_URL;
+// ===== إيميل للأدمن لما حد يسجل (زي برنامج STMina) — بيوصلك إيميل فيه لينك موافقة ?approve= =====
+// نفس بيانات EmailJS بتاعة STMina (service + template + public key). لحد ما تتملّى التلات قيم، الإيميل مش بيتبعت وباقي البرنامج شغال عادي.
+const EMAILJS_SERVICE_ID  = '';
+const EMAILJS_TEMPLATE_ID = '';
+const EMAILJS_PUBLIC_KEY  = '';
+const ADMIN_NOTIFY_EMAIL  = 'devidemele@gmail.com';
+async function sendAdminJoinEmail(uid, name, email, className) {
+  if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) return;
+  try {
+    await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id: EMAILJS_SERVICE_ID, template_id: EMAILJS_TEMPLATE_ID, user_id: EMAILJS_PUBLIC_KEY,
+        template_params: {
+          admin_email: ADMIN_NOTIFY_EMAIL,
+          deacon_name: name || '—',
+          deacon_email: email || '—',
+          deacon_grade: className || '—',
+          deacon_uid: uid,
+          approve_link: location.origin + location.pathname + '?approve=' + uid
+        }
+      })
+    });
+  } catch (e) { console.warn('الإيميل مااتبعتش:', e); }
+}
+// الأدمن بيفتح لينك ?approve=uid من الإيميل → الطلب يتقبل لوحده بعد ما يدخل (لو مش مسجل دخول، اللينك بيفضل مستني تسجيل الدخول)
+async function approveFromEmailLink() {
+  const uid = new URLSearchParams(location.search).get('approve');
+  if (!uid) return;
+  history.replaceState({}, '', location.pathname);
+  if (currentRole !== 'admin') return;
+  try {
+    const ref = doc(db, 'servants', uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) { showToast('الطلب ده مش موجود (اتقبل أو اتحذف قبل كده)', 'info'); return; }
+    const d = snap.data();
+    if (d.status === 'approved') { showToast('الطلب ده اتقبل قبل كده', 'info'); return; }
+    await updateDoc(ref, { status: 'approved' });
+    patchServantLocal(uid, { status: 'approved' });
+    callPushWorker('/servant-decision', { targetUid: uid, decision: 'approved' });
+    const rids = Array.isArray(d.roleIds) ? d.roleIds : [];
+    if (d.name && rids.length) {
+      try {
+        if (!rolesLoadedFlag) { try { await loadRolesOnce(); } catch (e) {} }
+        for (const rid of rids) { const v = nameVariantsIn(allRoles.find(x => x.id === rid), d.name); await updateDoc(doc(db, 'roles', rid), { pendingNames: arrayRemove(...(v.length ? v : [d.name])) }); }
+        loadRolesOnce(true);
+      } catch (e) { console.error(e); }
+    }
+    showToast('✅ تم قبول ' + (d.name || 'الطلب') + ' من لينك الإيميل', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('تعذّر قبول الطلب من اللينك — اقبله من تاب الطلبات', 'error');
+  }
+}
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const pushTokenKey = uid => 'hdour_fcm_saved:' + uid;
 async function savePushToken(user, askPermission) {
