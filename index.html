@@ -4078,7 +4078,14 @@ window.handleImportFile = async (e) => {
     const allowed = getAllowedAssignedClasses();
     const classMap = new Map();
     allClasses.forEach(c => { classMap.set(normalizeArabic(c.name), c.id); classMap.set(normalizeArabic(classLabel(c.id)), c.id); });
-    const have = new Map(allStudents.map(s => [normalizeArabic(s.name), s]));
+    // المقارنة بالاسم بتتم جوه نفس الفصل بس: نفس الاسم في فصل تاني مش بيتحسب تكرار ولا بيتلمس
+    const ck = (c, k) => (c || '') + '\u0001' + k;
+    const rowCls = (r, sh) => {
+      const cv = sh.col.cls == null ? null : r[sh.col.cls];
+      if (cv != null && cv !== '') { const id = classMap.get(normalizeArabic(cv)); if (id && (!allowed.length || allowed.includes(id))) return id; }
+      return cls || '';
+    };
+    const have = new Map(allStudents.map(s => [ck(s.classSection || '', normalizeArabic(s.name)), s]));
 
     // 1) قراءة كل الشيتات وتصنيف كل واحد
     const sheets = [], out = [];
@@ -4101,7 +4108,7 @@ window.handleImportFile = async (e) => {
       if (!name || /^\d+$/.test(name) || IMP_SKIP_RE.test(normalizeArabic(name))) return '';
       return name;
     };
-    const keyToId = new Map([...have].map(([k, s]) => [k, s.id]));
+    const keyToId = new Map([...have].map(([k, s]) => [k, s.id])); // المفتاح = فصل + اسم
     const seen = new Set(), skippedDup = [], rows = [];
     let badPhones = 0, noPhone = 0, noDob = 0;
 
@@ -4111,6 +4118,7 @@ window.handleImportFile = async (e) => {
       for (const r of sh.aoa.slice(sh.hi + 1)) {
         const name = nameOfRow(r, sh); if (!name) continue;
         const key = normalizeArabic(name);
+        const ec = rowCls(r, sh), ckey = ck(ec, key);
         const g = k => (sh.col[k] == null ? null : r[sh.col[k]]);
         const sp = importPhones(g('phone')), fp0 = importPhones(g('father')), mp0 = importPhones(g('mother')), op = importPhones(g('others'));
         const pv = g('parent'), pp = importPhones(pv), pMom = impIsMom(pv);
@@ -4121,10 +4129,10 @@ window.handleImportFile = async (e) => {
         const cv = g('cls');
         if (cv != null && cv !== '') { const id = classMap.get(normalizeArabic(cv)); if (id && (!allowed.length || allowed.includes(id))) rc = id; }
         const rec = { dob: importDob(g('dob')), gender: importGender(g('gender')), address: String(g('address') == null ? '' : g('address')).trim(), confessor: String(g('confessor') == null ? '' : g('confessor')).trim(), school: String(g('school') == null ? '' : g('school')).trim(), father: fp.main, mother: mp.main, student: sp.main, others, cls: rc };
-        if (seen.has(key)) { skippedDup.push(name); continue; }
-        seen.add(key);
-        if (have.has(key)) {
-          const ex = have.get(key);
+        if (seen.has(ckey)) { skippedDup.push(name); continue; }
+        seen.add(ckey);
+        if (have.has(ckey)) {
+          const ex = have.get(ckey);
           skippedDup.push(`${name} (${classLabel(ex.classSection || '')})`);
           importUpd.push({ id: ex.id, ex, ...rec });
           nOld++;
@@ -4134,7 +4142,7 @@ window.handleImportFile = async (e) => {
         if (!(rec.student || rec.father || rec.mother)) noPhone++;
         if (!rec.dob) noDob++;
         const ref = doc(collection(db, 'students'));
-        keyToId.set(key, ref.id);
+        keyToId.set(ckey, ref.id);
         rows.push({ key, name, ...rec, ref });
         nNew++;
       }
@@ -4152,11 +4160,12 @@ window.handleImportFile = async (e) => {
         const hits = sh.attCols.filter(a => impMark(r[a.c]));
         if (!hits.length) continue;
         const key = normalizeArabic(name);
-        let id = keyToId.get(key);
-        if (!id) { // اسم مش موجود في التطبيق ولا في شيتات البيانات
+        const ec = rowCls(r, sh), ckey = ck(ec, key);
+        let id = keyToId.get(ckey);
+        if (!id) { // اسم مش موجود في الفصل ده ولا في شيتات البيانات
           const ref = doc(collection(db, 'students'));
-          id = ref.id; keyToId.set(key, id); attOnlyIds.add(id); attOnlyNames.push(name);
-          rows.push({ key, name, dob: '', gender: '', address: '', confessor: '', school: '', father: '', mother: '', student: '', others: [], cls: '', ref, attOnly: true });
+          id = ref.id; keyToId.set(ckey, id); attOnlyIds.add(id); attOnlyNames.push(name);
+          rows.push({ key, name, dob: '', gender: '', address: '', confessor: '', school: '', father: '', mother: '', student: '', others: [], cls: ec, ref, attOnly: true });
         }
         people++;
         hits.forEach(a => { if (!recs.has(id + '|' + a.key)) { recs.set(id + '|' + a.key, { sid: id, date: a.key }); marks++; } });
