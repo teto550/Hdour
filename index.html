@@ -173,6 +173,11 @@ body.parents-mode [data-pc="hide"]{display:none!important;}
 .student-item.present{border-color:rgba(46,204,113,0.35);}
 /* بيانات خاطئة: highlight أحمر غامق على المخدوم */
 .student-item.bad-data,.result-item.bad-data{background:rgba(160,22,34,0.32);border-color:#b3202a;}
+/* تمييز المخدوم المسجل في أكثر من فصل */
+.student-item.multi-class,.result-item.multi-class{background:rgba(35,112,235,0.2);border-color:#3478e5;box-shadow:inset 0 0 0 1px rgba(52,120,229,.22);}
+.sib-row.multi-class{background:rgba(35,112,235,0.2);box-shadow:inset -3px 0 #3478e5;}
+.multi-class-tag{display:inline-block;font-size:10px;font-weight:700;color:#8ab8ff;background:rgba(35,112,235,.16);border:1px solid rgba(52,120,229,.45);border-radius:6px;padding:1px 6px;margin-inline-start:5px;}
+#prof-name.multi-class{color:#69a5ff!important;}
 .bad-data .s-name.bad-click,.bad-data .bad-click{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px;}
 .bad-tag{display:inline-block;font-size:11px;font-weight:700;color:#ff8a8a;margin-top:2px;}
 .prof-row.bad{background:rgba(160,22,34,0.28);border:1px solid #b3202a;border-radius:10px;padding:10px 8px;margin-bottom:4px;}
@@ -4555,8 +4560,9 @@ function renderStudentsList() {
     updateStuCount();
     cont.innerHTML = groups.map(g => {
       const rows = g.map(s => {
+        const multi = isMultiClassStudent(s);
         const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
-        return `<div class="sib-row">
+        return `<div class="sib-row${multi?' multi-class':''}">
           <div class="s-info">
             <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}</div>
             <div class="s-sub" style="margin-top:3px">${classBadgeHTML(s.classSection)}</div>
@@ -4566,7 +4572,7 @@ function renderStudentsList() {
           ${canDeleteStudent() ? `<button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>` : ''}
         </div>`;
       }).join('');
-      return `<div class="student-item sib-group"><div class="sib-head">👨‍👩‍👧‍👦 ${g.length} إخوات</div>${rows}</div>`;
+      return `<div class="student-item sib-group${g.some(isMultiClassStudent)?' multi-class':''}"><div class="sib-head">👨‍👩‍👧‍👦 ${g.length} إخوات</div>${rows}</div>`;
     }).join('');
     return;
   }
@@ -4577,10 +4583,11 @@ function renderStudentsList() {
     const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
     const classBadge = classBadgeHTML(s.classSection);
     const bad = badKeysOf(s).length > 0;
-    return `<div class="student-item${bad?' bad-data':''}">
+    const multi = isMultiClassStudent(s);
+    return `<div class="student-item${bad?' bad-data':''}${multi?' multi-class':''}">
       <div onclick="openPhotoSheet('${s.id}')" style="cursor:pointer;display:flex">${studentAvatarHTML(s,'s-avatar')}</div>
       <div class="s-info">
-        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}</div>
+        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}${multi?'<span class="multi-class-tag">🔵 أكتر من فصل</span>':''}</div>
         ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
         <div class="s-sub" style="margin-top:3px">${classBadge}</div>
@@ -5726,10 +5733,11 @@ function renderTodayList() {
     const hasVerse = !!verseEntry;
     const isBday = todayListFilter === 'birthday';
     const bad = badKeysOf(s).length > 0;
-    return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}${bad?' bad-data':''}">
+    const multi = isMultiClassStudent(s);
+    return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}${bad?' bad-data':''}${multi?' multi-class':''}">
       ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info"${isBday ? ' style="flex:0 1 auto"' : ''}>
-        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${s.name}</div>
+        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${s.name}${multi?'<span class="multi-class-tag">🔵 أكتر من فصل</span>':''}</div>
         ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${isBday ? `<div class="s-sub" style="color:#f1c40f">🎂 ${birthdayDay(s)}/${birthdayMonth(s)}${s.dob ? ' — ' + (new Date().getFullYear() - parseInt(String(s.dob).split('-')[0], 10)) + ' سنة' : ''}</div>` : ''}
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
@@ -5812,9 +5820,10 @@ window.onManualSearch = () => {
     const otherClass = !visibleClasses.includes(s.classSection);
     const classBadge = classBadgeHTML(s.classSection, otherClass);
     const bad = badKeysOf(s).length > 0;
-    return `<div class="result-item${bad?' bad-data':''}" style="cursor:default">
+    const multi = isMultiClassStudent(s);
+    return `<div class="result-item${bad?' bad-data':''}${multi?' multi-class':''}" style="cursor:default">
       ${studentAvatarHTML(s,'result-avatar')}
-      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
+      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}${multi?'<span class="multi-class-tag">🔵 أكتر من فصل</span>':''}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
       <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
       ${par ? '' : `<div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>`}
     </div>`;
@@ -6432,6 +6441,7 @@ window.openProfile = (id) => {
   }
   const bk = new Set(badKeysOf(s));
   document.getElementById('prof-name').classList.toggle('bad-name', bk.has('name'));
+  document.getElementById('prof-name').classList.toggle('multi-class', isMultiClassStudent(s));
   const fields = [];
   if (s.dob) fields.push({ icon:'🎂', key:'تاريخ الميلاد', val: new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}), bad: bk.has('dob') });
   if (s.address) fields.push({ icon:'📍', key:'العنوان', val: String(s.address).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>'), bad: bk.has('address') });
@@ -9781,6 +9791,19 @@ function linkedClassIdsOf(s) {
   if (s.linkId) allStudents.forEach(x => { if (x.linkId === s.linkId && x.id !== s.id && x.classSection) ids.add(x.classSection); });
   ids.delete(s.classSection || '');
   return [...ids];
+}
+// تطابق كامل لبيانات الملف بعد استبعاد اختلافات النسخة والفصل والحقول التقنية
+function profileDataKey(s) {
+  const skip = new Set(['id','classSection','createdAt','updatedAt','linkId','linkedClasses','waGroupAdded']);
+  const stable = v => Array.isArray(v) ? v.map(stable) : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o,k) => (o[k]=stable(v[k]),o),{}) : v);
+  const data = Object.keys(s || {}).filter(k => !skip.has(k)).sort().reduce((o,k) => (o[k]=stable(s[k]),o),{});
+  return JSON.stringify(data);
+}
+function isMultiClassStudent(s) {
+  if (!s || s.classSection === PARENTS_CLASS_ID) return false;
+  if (linkedClassIdsOf(s).length) return true;
+  const key = profileDataKey(s), cls = s.classSection || '';
+  return !!(s.name && allStudents.some(x => x.id !== s.id && x.classSection !== PARENTS_CLASS_ID && (x.classSection || '') !== cls && profileDataKey(x) === key));
 }
 function renderEditAddClass(s) {
   const sel = document.getElementById('edit-add-class'), note = document.getElementById('edit-linked-note');
