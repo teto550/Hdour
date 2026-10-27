@@ -175,6 +175,7 @@ body.parents-mode [data-pc="hide"]{display:none!important;}
 .student-item.bad-data,.result-item.bad-data{background:rgba(160,22,34,0.32);border-color:#b3202a;}
 /* تمييز المخدوم المسجل في أكثر من فصل */
 .student-item.multi-class,.result-item.multi-class{background:rgba(35,112,235,0.2);border-color:#3478e5;box-shadow:inset 0 0 0 1px rgba(52,120,229,.22);}
+.wa-recipient-row.multi-class{background:rgba(35,112,235,0.2);border-color:#3478e5;box-shadow:inset 0 0 0 1px rgba(52,120,229,.22);}
 .sib-row.multi-class{background:rgba(35,112,235,0.2);box-shadow:inset -3px 0 #3478e5;}
 .multi-class-tag{display:inline-block;font-size:10px;font-weight:700;color:#8ab8ff;background:rgba(35,112,235,.16);border:1px solid rgba(52,120,229,.45);border-radius:6px;padding:1px 6px;margin-inline-start:5px;}
 #prof-name.multi-class{color:#69a5ff!important;}
@@ -4993,10 +4994,11 @@ function renderWaRecipientsList() {
       const phone   = getWaPhone(s);
       const checked = waChecked.has(s.id);
       const added   = !!s.waGroupAdded;
-      return `<div class="wa-recipient-row ${!phone?'no-phone':''}">
+      const multi = isMultiClassStudent(s);
+      return `<div class="wa-recipient-row ${!phone?'no-phone':''}${multi?' multi-class':''}">
         <input type="checkbox" ${checked?'checked':''} ${!phone?'disabled':''} onchange="toggleWaRecipient('${s.id}', this.checked)">
         <div class="s-info">
-          <div class="s-name">${s.name}</div>
+          <div class="s-name">${s.name}${multi?multiClassTagHTML(s):''}</div>
           <div class="s-sub">${phone ? phone : 'لا يوجد رقم تليفون'}</div>
         </div>
         <button type="button" title="${added ? 'اتضاف للجروب — دوس تشيل العلامة' : 'اعلّمه كمتضاف للجروب'}"
@@ -6139,10 +6141,11 @@ function renderFilterList() {
           ? `<span style="font-size:10px;background:rgba(124,92,191,0.1);border:1px solid rgba(124,92,191,0.25);color:#a07de0;border-radius:5px;padding:2px 6px">${noteLabelOf(s,n).emoji} ${noteEsc(noteLabelOf(s,n).text)}</span>`
           : '').join('')}</div>`
       : `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px"><span style="font-size:10px;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text-dim);border-radius:5px;padding:2px 6px">${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}</span></div>`;
-    return `<div class="student-item">
+    const multi = isMultiClassStudent(s);
+    return `<div class="student-item${multi?' multi-class':''}">
       ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info">
-        <div class="s-name">${s.name}</div>
+        <div class="s-name">${s.name}${multi?multiClassTagHTML(s):''}</div>
         <div class="s-sub">${dob ? '🎂 '+dob+' · ' : ''}حضر ${attCount} مرة</div>
         ${notesHTML}
       </div>
