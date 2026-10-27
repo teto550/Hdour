@@ -4587,7 +4587,7 @@ function renderStudentsList() {
     return `<div class="student-item${bad?' bad-data':''}${multi?' multi-class':''}">
       <div onclick="openPhotoSheet('${s.id}')" style="cursor:pointer;display:flex">${studentAvatarHTML(s,'s-avatar')}</div>
       <div class="s-info">
-        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}${multi?'<span class="multi-class-tag">🔵 أكتر من فصل</span>':''}</div>
+        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}${multi?'${multiClassTagHTML(s)}':''}</div>
         ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
         <div class="s-sub" style="margin-top:3px">${classBadge}</div>
@@ -5737,7 +5737,7 @@ function renderTodayList() {
     return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}${bad?' bad-data':''}${multi?' multi-class':''}">
       ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info"${isBday ? ' style="flex:0 1 auto"' : ''}>
-        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${s.name}${multi?'<span class="multi-class-tag">🔵 أكتر من فصل</span>':''}</div>
+        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${s.name}${multi?'${multiClassTagHTML(s)}':''}</div>
         ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${isBday ? `<div class="s-sub" style="color:#f1c40f">🎂 ${birthdayDay(s)}/${birthdayMonth(s)}${s.dob ? ' — ' + (new Date().getFullYear() - parseInt(String(s.dob).split('-')[0], 10)) + ' سنة' : ''}</div>` : ''}
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
@@ -5823,7 +5823,7 @@ window.onManualSearch = () => {
     const multi = isMultiClassStudent(s);
     return `<div class="result-item${bad?' bad-data':''}${multi?' multi-class':''}" style="cursor:default">
       ${studentAvatarHTML(s,'result-avatar')}
-      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}${multi?'<span class="multi-class-tag">🔵 أكتر من فصل</span>':''}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
+      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}${multi?'${multiClassTagHTML(s)}':''}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
       <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
       ${par ? '' : `<div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>`}
     </div>`;
@@ -6423,7 +6423,9 @@ window.openProfile = (id) => {
   const s = allStudents.find(x => x.id === id);
   if (!s) return;
   renderProfAvatar(s);
-  document.getElementById('prof-name').textContent   = s.name;
+  const profNameEl = document.getElementById('prof-name');
+  profNameEl.textContent = s.name;
+  if (isMultiClassStudent(s)) profNameEl.insertAdjacentHTML('beforeend', ' ' + multiClassTagHTML(s));
   renderProfClassChips(s.classSection || '');
   const H = (studentHist[id] && Date.now() - studentHist[id].ts < 300000) ? studentHist[id] : null;
   const dates   = H ? Object.keys(H.att).sort() : [];
@@ -9804,6 +9806,21 @@ function isMultiClassStudent(s) {
   if (linkedClassIdsOf(s).length) return true;
   const key = profileDataKey(s), cls = s.classSection || '';
   return !!(s.name && allStudents.some(x => x.id !== s.id && x.classSection !== PARENTS_CLASS_ID && (x.classSection || '') !== cls && profileDataKey(x) === key));
+}
+function otherClassIdsOf(s) {
+  if (!s) return [];
+  const ids = new Set(linkedClassIdsOf(s));
+  const cls = s.classSection || '', key = profileDataKey(s);
+  allStudents.forEach(x => {
+    if (x.id !== s.id && x.classSection !== PARENTS_CLASS_ID && (x.classSection || '') !== cls && profileDataKey(x) === key && x.classSection) ids.add(x.classSection);
+  });
+  ids.delete(cls);
+  return [...ids];
+}
+function multiClassTagHTML(s) {
+  if (!isMultiClassStudent(s)) return '';
+  const names = otherClassIdsOf(s).map(id => classLabel(id).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
+  return '<span class="multi-class-tag">🔵 أكتر من فصل' + (names.length ? ' (' + names.join('، ') + ')' : '') + '</span>';
 }
 function renderEditAddClass(s) {
   const sel = document.getElementById('edit-add-class'), note = document.getElementById('edit-linked-note');
