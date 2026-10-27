@@ -4587,7 +4587,7 @@ function renderStudentsList() {
     return `<div class="student-item${bad?' bad-data':''}${multi?' multi-class':''}">
       <div onclick="openPhotoSheet('${s.id}')" style="cursor:pointer;display:flex">${studentAvatarHTML(s,'s-avatar')}</div>
       <div class="s-info">
-        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}${multi?'${multiClassTagHTML(s)}':''}</div>
+        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}${multi?multiClassTagHTML(s):''}</div>
         ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
         <div class="s-sub" style="margin-top:3px">${classBadge}</div>
@@ -5737,7 +5737,7 @@ function renderTodayList() {
     return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}${bad?' bad-data':''}${multi?' multi-class':''}">
       ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info"${isBday ? ' style="flex:0 1 auto"' : ''}>
-        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${s.name}${multi?'${multiClassTagHTML(s)}':''}</div>
+        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${s.name}${multi?multiClassTagHTML(s):''}</div>
         ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${isBday ? `<div class="s-sub" style="color:#f1c40f">🎂 ${birthdayDay(s)}/${birthdayMonth(s)}${s.dob ? ' — ' + (new Date().getFullYear() - parseInt(String(s.dob).split('-')[0], 10)) + ' سنة' : ''}</div>` : ''}
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
@@ -5823,7 +5823,7 @@ window.onManualSearch = () => {
     const multi = isMultiClassStudent(s);
     return `<div class="result-item${bad?' bad-data':''}${multi?' multi-class':''}" style="cursor:default">
       ${studentAvatarHTML(s,'result-avatar')}
-      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}${multi?'${multiClassTagHTML(s)}':''}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
+      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}${multi?multiClassTagHTML(s):''}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
       <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
       ${par ? '' : `<div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>`}
     </div>`;
