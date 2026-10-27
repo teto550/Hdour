@@ -171,6 +171,15 @@ body.parents-mode [data-pc="hide"]{display:none!important;}
 .tpl-save-btn{background:rgba(124,92,191,0.12);border:1px solid rgba(124,92,191,0.3);border-radius:8px;color:var(--accent2);font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer;white-space:nowrap;}
 .tpl-empty{font-size:12px;color:var(--text-dim);}
 .student-item.present{border-color:rgba(46,204,113,0.35);}
+/* بيانات خاطئة: highlight أحمر غامق على المخدوم */
+.student-item.bad-data,.result-item.bad-data{background:rgba(160,22,34,0.32);border-color:#b3202a;}
+.bad-data .s-name.bad-click,.bad-data .bad-click{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px;}
+.bad-tag{display:inline-block;font-size:11px;font-weight:700;color:#ff8a8a;margin-top:2px;}
+.prof-row.bad{background:rgba(160,22,34,0.28);border:1px solid #b3202a;border-radius:10px;padding:10px 8px;margin-bottom:4px;}
+.bad-banner{background:rgba(160,22,34,0.28);border:1px solid #b3202a;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13px;font-weight:700;line-height:1.7;}
+.bad-opt{display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;}
+.bad-opt input{width:18px;height:18px;accent-color:#b3202a;}
+#prof-name.bad-name{color:#ff6b6b;}
 .s-avatar{width:40px;height:40px;border-radius:11px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:var(--accent);flex-shrink:0;}
 .student-item.present .s-avatar{background:rgba(46,204,113,0.12);color:var(--success);}
 .serv-att-check{width:26px;height:26px;border-radius:7px;border:2px solid var(--border);flex-shrink:0;position:relative;}
@@ -1484,6 +1493,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         <div id="prof-name" style="font-size:18px;font-weight:900"></div>
         <div id="prof-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
       </div>
+      <button class="modal-close" onclick="openBadFlag()" title="بيانات خاطئة">🚩</button>
       <button class="modal-close" onclick="editFromProfile()" style="color:var(--accent)">✏️</button>
       <button class="modal-close" onclick="closeProfile()">✕</button>
     </div>
@@ -1572,6 +1582,48 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         <button class="btn-primary" onclick="saveEditStudent()" style="flex:1">💾 حفظ التعديلات</button>
         <button onclick="closeEditModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:15px;font-weight:700;padding:13px 18px;cursor:pointer">إلغاء</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- BAD DATA: اختيار الخانات الغلط -->
+<div id="bad-flag-modal" class="modal-overlay" style="display:none" onclick="if(event.target.id==='bad-flag-modal')closeBadFlag()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:900">🚩 بيانات خاطئة</div>
+        <div id="bad-flag-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px"></div>
+      </div>
+      <button class="modal-close" onclick="closeBadFlag()">✕</button>
+    </div>
+    <div style="padding:18px">
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;line-height:1.7">اختار البيانات اللي غلط عند المخدوم ده. هيظهر باللون الأحمر في الحضور، وأي خادم يدوس على اسمه يصلّح الخانات دي بس.</div>
+      <div id="bad-flag-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn-primary" onclick="saveBadFlag()" style="flex:1">💾 حفظ</button>
+        <button onclick="clearBadFlag()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:14px;font-weight:700;padding:13px 14px;cursor:pointer">شيل العلامة</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BAD DATA: تصحيح الخانات الغلط بس (بيتفتح من اسم المخدوم في الحضور) -->
+<div id="bad-fix-modal" class="modal-overlay" style="display:none" onclick="if(event.target.id==='bad-fix-modal')closeBadFix()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div id="bad-fix-name" style="font-size:16px;font-weight:900"></div>
+        <div style="font-size:12px;color:#ff8a8a;margin-top:2px;font-weight:700">🚩 بيانات خاطئة — صلّح الخانات دي بس</div>
+      </div>
+      <button class="modal-close" onclick="closeBadFix()">✕</button>
+    </div>
+    <div style="padding:18px">
+      <div id="bad-fix-list"></div>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="btn-primary" onclick="saveBadFix()" style="flex:1">💾 حفظ التصحيح</button>
+        <button onclick="clearBadFix()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:14px;font-weight:700;padding:13px 14px;cursor:pointer">✓ سليمة</button>
+      </div>
+      <button onclick="openBadFixProfile()" style="width:100%;margin-top:10px;background:transparent;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:10px;cursor:pointer">👤 افتح الملف كامل</button>
     </div>
   </div>
 </div>
@@ -4524,10 +4576,12 @@ function renderStudentsList() {
     const siblingBadge = sib ? `<div class="s-sub">👨‍👩‍👧‍👦 ${sib.count} إخوات مسجلين</div>` : '';
     const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
     const classBadge = classBadgeHTML(s.classSection);
-    return `<div class="student-item">
+    const bad = badKeysOf(s).length > 0;
+    return `<div class="student-item${bad?' bad-data':''}">
       <div onclick="openPhotoSheet('${s.id}')" style="cursor:pointer;display:flex">${studentAvatarHTML(s,'s-avatar')}</div>
       <div class="s-info">
         <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}</div>
+        ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
         <div class="s-sub" style="margin-top:3px">${classBadge}</div>
         ${siblingBadge}
@@ -5671,10 +5725,12 @@ function renderTodayList() {
     const verseEntry = par ? null : todayVerses[s.id];
     const hasVerse = !!verseEntry;
     const isBday = todayListFilter === 'birthday';
-    return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}">
+    const bad = badKeysOf(s).length > 0;
+    return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}${bad?' bad-data':''}">
       ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info"${isBday ? ' style="flex:0 1 auto"' : ''}>
-        <div class="s-name">${s.name}</div>
+        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${s.name}</div>
+        ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${isBday ? `<div class="s-sub" style="color:#f1c40f">🎂 ${birthdayDay(s)}/${birthdayMonth(s)}${s.dob ? ' — ' + (new Date().getFullYear() - parseInt(String(s.dob).split('-')[0], 10)) + ' سنة' : ''}</div>` : ''}
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
       </div>
@@ -5755,9 +5811,10 @@ window.onManualSearch = () => {
     const verseText = todayVerses[s.id]?.verse || '';
     const otherClass = !visibleClasses.includes(s.classSection);
     const classBadge = classBadgeHTML(s.classSection, otherClass);
-    return `<div class="result-item" style="cursor:default">
+    const bad = badKeysOf(s).length > 0;
+    return `<div class="result-item${bad?' bad-data':''}" style="cursor:default">
       ${studentAvatarHTML(s,'result-avatar')}
-      <div style="flex:1"><div style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>${phoneHitHTML(s, queryDigits(q))}</div>
+      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
       <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
       ${par ? '' : `<div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>`}
     </div>`;
@@ -6373,16 +6430,19 @@ window.openProfile = (id) => {
     document.getElementById('prof-last').textContent = 'لم يحضر بعد';
     document.getElementById('prof-sub').textContent  = '';
   }
+  const bk = new Set(badKeysOf(s));
+  document.getElementById('prof-name').classList.toggle('bad-name', bk.has('name'));
   const fields = [];
-  if (s.dob) fields.push({ icon:'🎂', key:'تاريخ الميلاد', val: new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}) });
-  if (s.address) fields.push({ icon:'📍', key:'العنوان', val: String(s.address).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>') });
+  if (s.dob) fields.push({ icon:'🎂', key:'تاريخ الميلاد', val: new Date(s.dob).toLocaleDateString('ar-EG',{day:'numeric',month:'long',year:'numeric'}), bad: bk.has('dob') });
+  if (s.address) fields.push({ icon:'📍', key:'العنوان', val: String(s.address).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>'), bad: bk.has('address') });
   if (s.addressMap && /^https?:\/\//i.test(s.addressMap)) fields.push({ icon:'🗺️', key:'الموقع على الخريطة', link: s.addressMap });
   if (s.school) fields.push({ icon:'🏫', key:'المدرسة', val: String(s.school).replace(/&/g,'&amp;').replace(/</g,'&lt;') });
-  fields.push({ icon:'✝️', key:'أب الاعتراف', val: s.confessor ? String(s.confessor).replace(/&/g,'&amp;').replace(/</g,'&lt;') : 'لا يوجد' });
+  fields.push({ icon:'✝️', key:'أب الاعتراف', val: s.confessor ? String(s.confessor).replace(/&/g,'&amp;').replace(/</g,'&lt;') : 'لا يوجد', bad: bk.has('confessor') });
   fields.push({ icon:'📝', key:'ملحوظات الافتقاد', val: (s.visitNotes?.length)
     ? s.visitNotes.map(n => NOTE_LABELS[n] ? `${noteLabelOf(s,n).emoji} ${noteEsc(noteLabelOf(s,n).text)}` : n).join('، ')
     : `${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}` });
-  studentPhoneEntries(s).forEach(e => fields.push({ icon:'📞', key: e.label, val: e.val, phone: true, idx: e.idx }));
+  const PH_BAD = { 'تليفون الأب': 'father', 'تليفون الأم': 'mother', 'تليفون المخدوم': 'student' };
+  studentPhoneEntries(s).forEach(e => fields.push({ icon:'📞', key: e.label, val: e.val, phone: true, idx: e.idx, bad: bk.has(PH_BAD[e.label]) }));
   // سجل الحضور: كل أيام حضور الفصل اللي اتسجلت قبل كده (حتى لو الولد ماحضرش) عشان نقدر نسجله في يوم قديم
   if (profHistFor !== id) { profHistFor = id; profHistAll = false; }
   const cls0 = s.classSection || '';
@@ -6424,8 +6484,9 @@ window.openProfile = (id) => {
       ${isAdm && relevantAll.length > 8 ? `<button onclick="toggleProfHistAll()" style="margin-top:10px;width:100%;font-family:'Cairo',sans-serif;cursor:pointer;font-size:12px;font-weight:700;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:8px">${profHistAll ? 'عرض أقل ▲' : `عرض كل الأيام (${relevantAll.length}) ▼`}</button>` : ''}
     </div>` : '';
 
-  document.getElementById('prof-details').innerHTML = (fields.length
-    ? `<div style="padding:16px">${fields.map(f => `<div class="prof-row">
+  const badBanner = bk.size ? `<div style="padding:16px 16px 0"><div class="bad-banner">🚩 بيانات خاطئة: ${badLabelsOf(s).join('، ')}</div></div>` : '';
+  document.getElementById('prof-details').innerHTML = badBanner + (fields.length
+    ? `<div style="padding:16px">${fields.map(f => `<div class="prof-row${f.bad ? ' bad' : ''}">
         <div style="font-size:18px;flex-shrink:0">${f.icon}</div>
         <div style="flex:1">
           <div class="prof-key">${f.key}</div>
@@ -9830,6 +9891,146 @@ window.closeEditModal = () => {
 };
 
 window.closeEditOutside = (e) => { if (e.target.id === 'edit-modal') closeEditModal(); };
+
+// ===== بيانات خاطئة: علامة حمرا على المخدوم + أي خادم يصلّح الخانات الغلط بس من الحضور =====
+const BAD_FIELDS = [
+  { k:'name',      label:'الاسم',           icon:'👤' },
+  { k:'dob',       label:'تاريخ الميلاد',   icon:'🎂' },
+  { k:'address',   label:'العنوان',         icon:'📍' },
+  { k:'father',    label:'تليفون الأب',     icon:'📞' },
+  { k:'mother',    label:'تليفون الأم',     icon:'📞' },
+  { k:'student',   label:'تليفون المخدوم',  icon:'📞' },
+  { k:'school',    label:'المدرسة',         icon:'🏫' },
+  { k:'confessor', label:'أب الاعتراف',     icon:'✝️' }
+];
+function badKeysOf(s) { return (s && Array.isArray(s.badFields) ? s.badFields : []).filter(k => BAD_FIELDS.some(f => f.k === k)); }
+function badLabelsOf(s) { return badKeysOf(s).map(k => BAD_FIELDS.find(f => f.k === k).label); }
+function badValueOf(s, k) {
+  return ({ name: s.name, dob: s.dob, address: s.address, father: s.fatherPhone, mother: s.motherPhone, student: s.studentPhone, school: s.school, confessor: s.confessor }[k]) || '';
+}
+function refreshAfterBadChange(id) {
+  renderStudentsList(); renderTodayList(); updateStats();
+  try { onManualSearch(); } catch (e) {}
+  if (currentProfileId === id && document.getElementById('profile-modal').style.display === 'block') openProfile(id);
+}
+// بيكتب التعديل + قايمة الخانات الغلط، وبينسخهم لباقي النسخ المربوطة (زي تعديل الملف)
+async function persistBadData(id, patch, keys) {
+  const prev = allStudents.find(s => s.id === id);
+  const data = { ...patch, badFields: keys };
+  await updateDoc(doc(db, 'students', id), { ...data, updatedAt: serverTimestamp() }); bumpStudentsRev();
+  const idx = allStudents.findIndex(s => s.id === id);
+  if (idx !== -1) allStudents[idx] = { ...allStudents[idx], ...data };
+  if (prev && prev.linkId) { await syncLinkedCopies(id, prev.linkId, data); bumpStudentsRev(); }
+}
+
+// 1) تحديد الخانات الغلط (من ملف المخدوم 🚩)
+window.openBadFlag = () => {
+  const s = allStudents.find(x => x.id === currentProfileId); if (!s) return;
+  const cur = new Set(badKeysOf(s));
+  document.getElementById('bad-flag-sub').textContent = s.name;
+  document.getElementById('bad-flag-list').innerHTML = BAD_FIELDS.map(f => `<label class="bad-opt"><input type="checkbox" value="${f.k}"${cur.has(f.k) ? ' checked' : ''}> ${f.icon} ${f.label}</label>`).join('');
+  document.getElementById('bad-flag-modal').style.display = 'block';
+};
+window.closeBadFlag = () => { document.getElementById('bad-flag-modal').style.display = 'none'; };
+async function applyBadFlag(keys) {
+  const id = currentProfileId, s = allStudents.find(x => x.id === id); if (!s) return;
+  try {
+    await persistBadData(id, {}, keys);
+    closeBadFlag();
+    refreshAfterBadChange(id);
+    showToast(keys.length ? '🚩 اتسجلت بيانات خاطئة: ' + keys.map(k => BAD_FIELDS.find(f => f.k === k).label).join('، ') : '✓ العلامة اتشالت', 'success');
+    logActivity(keys.length ? 'بيانات خاطئة' : 'شيل علامة بيانات خاطئة', s.name + (keys.length ? ' — ' + keys.map(k => BAD_FIELDS.find(f => f.k === k).label).join('، ') : ''));
+  } catch (e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
+}
+window.saveBadFlag = () => applyBadFlag([...document.querySelectorAll('#bad-flag-list input:checked')].map(i => i.value));
+window.clearBadFlag = () => applyBadFlag([]);
+
+// 2) تصحيح الخانات الغلط بس (من اسم المخدوم المعلّم بالأحمر في الحضور)
+let badFixId = null;
+function renderBadFix() {
+  const s = allStudents.find(x => x.id === badFixId); if (!s) return;
+  document.getElementById('bad-fix-name').textContent = s.name;
+  document.getElementById('bad-fix-list').innerHTML = badKeysOf(s).map(k => {
+    const f = BAD_FIELDS.find(x => x.k === k), id = 'bad-fix-' + k;
+    const inp = k === 'dob' ? `<input type="date" id="${id}" class="field-input" style="margin-bottom:14px">`
+      : k === 'address' ? `<textarea id="${id}" class="field-input" rows="2" style="min-height:64px;resize:vertical;font-family:Cairo,sans-serif;line-height:1.6;margin-bottom:14px"></textarea>`
+      : (k === 'father' || k === 'mother' || k === 'student') ? `<input type="tel" id="${id}" class="field-input" dir="ltr" style="margin-bottom:14px">`
+      : `<input type="text" id="${id}" class="field-input" style="margin-bottom:14px">`;
+    return `<label class="field-label">${f.icon} ${f.label}</label>${inp}`;
+  }).join('');
+  badKeysOf(s).forEach(k => { document.getElementById('bad-fix-' + k).value = badValueOf(s, k); });
+  document.getElementById('bad-fix-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+window.openBadFix = (id) => {
+  const s = allStudents.find(x => x.id === id); if (!s) return;
+  if (!badKeysOf(s).length) { openProfile(id); return; }
+  badFixId = id; renderBadFix();
+};
+window.closeBadFix = () => {
+  document.getElementById('bad-fix-modal').style.display = 'none';
+  if (document.getElementById('profile-modal').style.display !== 'block') document.body.style.overflow = '';
+  badFixId = null;
+};
+window.openBadFixProfile = () => { const id = badFixId; closeBadFix(); if (id) openProfile(id); };
+window.clearBadFix = async () => {
+  const id = badFixId, s = allStudents.find(x => x.id === id); if (!s) return;
+  try {
+    await persistBadData(id, {}, []);
+    closeBadFix(); refreshAfterBadChange(id);
+    showToast('✓ العلامة اتشالت', 'success');
+    logActivity('شيل علامة بيانات خاطئة', s.name);
+  } catch (e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
+};
+window.saveBadFix = async () => {
+  const id = badFixId, s = allStudents.find(x => x.id === id); if (!s) return;
+  const keys = badKeysOf(s);
+  const raw = k => document.getElementById('bad-fix-' + k).value.trim();
+  const up = {}, fixed = new Set();
+  let father = s.fatherPhone || '', mother = s.motherPhone || '', student = s.studentPhone || '';
+  for (const k of keys) {
+    if (k === 'name') {
+      const v = canonicalizeName(raw(k));
+      if (!v) { showToast('اكتب اسم المخدوم', 'error'); return; }
+      if (v !== (s.name || '')) {
+        if (normalizeArabic(v) !== normalizeArabic(s.name)) {
+          const dup = allStudents.find(x => x.id !== id && x.classSection !== PARENTS_CLASS_ID && normalizeArabic(x.name) === normalizeArabic(v) && !(s.linkId && x.linkId === s.linkId));
+          if (dup) { showToast(dupMsg(dup), 'error'); return; }
+          const dupSrv = await findNameOnServer(v, id, s.linkId);
+          if (dupSrv) { showToast(dupMsg(dupSrv), 'error'); return; }
+        }
+        up.name = v; fixed.add(k);
+      }
+    } else if (k === 'dob' || k === 'address') {
+      const v = raw(k);
+      if (!v) { showToast(k === 'dob' ? 'لازم تكتب تاريخ الميلاد' : 'لازم تكتب العنوان', 'error'); return; }
+      if (v !== (s[k] || '')) { up[k] = v; fixed.add(k); }
+    } else if (k === 'father' || k === 'mother' || k === 'student') {
+      const v = cleanPhone(raw(k));
+      if (v && !PHONE_RE.test(v)) { showToast('رقم ' + BAD_FIELDS.find(f => f.k === k).label + ' مش صحيح', 'error'); return; }
+      const old = k === 'father' ? father : k === 'mother' ? mother : student;
+      if (v !== old) { if (k === 'father') father = v; else if (k === 'mother') mother = v; else student = v; fixed.add(k); }
+    } else { // school / confessor
+      const v = raw(k);
+      if (v !== (s[k] || '')) { up[k] = v; fixed.add(k); }
+    }
+  }
+  if (!fixed.size) { showToast('مغيّرتش حاجة — لو البيانات سليمة دوس "✓ سليمة"', 'info'); return; }
+  if (['father', 'mother', 'student'].some(k => fixed.has(k))) {
+    const old = hasRolePhones(s) ? (s.otherPhones || []) : (s.phones || []);
+    const others = old.filter(o => o && o !== father && o !== mother && o !== student);
+    if (!father && !mother && !student && !others.length) { showToast('لازم رقم تليفون واحد على الأقل', 'error'); return; }
+    Object.assign(up, buildPhoneFields(father, mother, student, others, s));
+  }
+  const remaining = keys.filter(k => !fixed.has(k));
+  try {
+    await persistBadData(id, up, remaining);
+    refreshAfterBadChange(id);
+    logActivity('تصحيح بيانات خاطئة', (up.name || s.name) + ' — ' + [...fixed].map(k => BAD_FIELDS.find(f => f.k === k).label).join('، '));
+    if (remaining.length) { showToast('✓ اتصلّح — فاضل: ' + remaining.map(k => BAD_FIELDS.find(f => f.k === k).label).join('، '), 'success'); renderBadFix(); }
+    else { closeBadFix(); showToast('✓ اتصلّحت كل البيانات الخاطئة', 'success'); }
+  } catch (e) { console.error(e); showToast('حصل خطأ أثناء الحفظ', 'error'); }
+};
 
 window.saveEditStudent = async () => {
   const id   = document.getElementById('edit-id').value;
