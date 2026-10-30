@@ -591,6 +591,15 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
       <input type="password" id="login-pass" class="field-input" placeholder="••••••••" dir="ltr">
       <button class="btn-primary" id="login-btn" onclick="doLogin()">دخول</button>
       <button id="bio-login-btn" onclick="doBioLogin()" style="display:none;width:100%;margin-top:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'Cairo',sans-serif;font-size:15px;font-weight:700;padding:12px;cursor:pointer">🖐 دخول بالبصمة</button>
+      <button type="button" id="forgot-link-btn" onclick="showForgotPassword()" style="display:block;width:100%;margin-top:12px;background:none;border:none;color:var(--text-dim,var(--text));opacity:.85;font-family:'Cairo',sans-serif;font-size:13.5px;font-weight:700;cursor:pointer;padding:6px;text-decoration:underline">نسيت كلمة المرور؟</button>
+    </div>
+    <div id="auth-forgot-form" style="display:none">
+      <p style="font-size:13.5px;line-height:1.8;opacity:.85;margin:0 0 12px">اكتب الإيميل اللي سجلت بيه، وهنبعتلك لينك تختار بيه كلمة مرور جديدة.</p>
+      <label class="field-label">البريد الإلكتروني</label>
+      <input type="email" id="forgot-email" class="field-input" placeholder="example@gmail.com" dir="ltr" autocomplete="username">
+      <button class="btn-primary" id="forgot-btn" onclick="doForgotPassword()">ابعتلي اللينك</button>
+      <button type="button" onclick="switchAuthTab('login')" style="display:block;width:100%;margin-top:10px;background:none;border:none;color:var(--text);font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;cursor:pointer;padding:8px">رجوع لتسجيل الدخول</button>
+      <div id="forgot-msg" style="font-size:13px;line-height:1.7;text-align:center;margin-top:10px;display:none"></div>
     </div>
     <div id="auth-register-form" style="display:none">
       <label class="field-label">الفصل</label>
@@ -1966,7 +1975,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, EmailAuthProvider, reauthenticateWithCredential }
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc as _addDoc, getDocs, getDocsFromCache, getDocFromCache, deleteDoc as _deleteDoc, doc, getDoc, setDoc as _setDoc, updateDoc as _updateDoc, query, where, orderBy, limit, onSnapshot, waitForPendingWrites, serverTimestamp, Timestamp, writeBatch as _writeBatch, increment, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -3226,6 +3235,7 @@ window.toggleBioFromSettings = async () => {
 
 // ===== AUTH =====
 window.switchAuthTab = (which) => {
+  { const _f = document.getElementById('auth-forgot-form'); if (_f) _f.style.display = 'none'; }
   document.getElementById('auth-tab-login').classList.toggle('active', which === 'login');
   document.getElementById('auth-tab-register').classList.toggle('active', which === 'register');
   document.getElementById('auth-login-form').style.display    = which === 'login'    ? 'block' : 'none';
@@ -3270,6 +3280,43 @@ window.onRegClassChange = () => {
     ? `<option value="">— اختار اسمك —</option>` + names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('')
     : `<option value="">مفيش أسماء متاحة للفصل ده، كلم الأدمن</option>`;
   nameSel.innerHTML = html;
+};
+
+// ===== نسيت كلمة المرور: بيبعت إيميل Firebase الرسمي (نفس "Reset password" في الكونسول) =====
+window.showForgotPassword = () => {
+  const typed = document.getElementById('login-email').value.trim();
+  document.getElementById('auth-login-form').style.display = 'none';
+  document.getElementById('auth-register-form').style.display = 'none';
+  document.getElementById('login-error').style.display = 'none';
+  const fe = document.getElementById('forgot-email');
+  if (typed) fe.value = typed;
+  document.getElementById('forgot-msg').style.display = 'none';
+  document.getElementById('forgot-btn').disabled = false;
+  document.getElementById('forgot-btn').textContent = 'ابعتلي اللينك';
+  document.getElementById('auth-forgot-form').style.display = 'block';
+  fe.focus();
+};
+window.doForgotPassword = async () => {
+  const btn = document.getElementById('forgot-btn');
+  const msg = document.getElementById('forgot-msg');
+  const email = document.getElementById('forgot-email').value.trim();
+  const show = (text, ok) => { msg.textContent = text; msg.style.color = ok ? 'var(--success, #4ade80)' : 'var(--danger)'; msg.style.display = 'block'; };
+  if (!email) { show('اكتب الإيميل الأول', false); return; }
+  btn.disabled = true; btn.textContent = 'جاري الإرسال…'; msg.style.display = 'none';
+  try {
+    auth.languageCode = 'ar';
+    try { await sendPasswordResetEmail(auth, email); }
+    catch (e) { if (e && e.code !== 'auth/user-not-found') throw e; } // الإيميل غير المسجل بيبان كأنه نجح (عشان محدش يعرف مين عنده حساب)
+    show('اتبعتت الرسالة. لو الإيميل ده مسجل عندنا هتوصلك رسالة فيها لينك لكلمة مرور جديدة، ولو مالقتهاش دوّر في الـSpam.', true);
+    btn.textContent = 'ابعتها تاني';
+  } catch (e) {
+    const code = e && e.code;
+    show(code === 'auth/invalid-email' ? 'الإيميل مكتوب غلط' :
+         code === 'auth/too-many-requests' ? 'حاولت كتير، استنى شوية وجرّب تاني' :
+         code === 'auth/network-request-failed' ? 'مفيش إنترنت، جرّب تاني' : 'حصلت مشكلة، حاول تاني', false);
+    btn.textContent = 'ابعتلي اللينك';
+  }
+  btn.disabled = false;
 };
 
 window.doLogin = async () => {
