@@ -863,6 +863,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
     <!-- PARENTS TAB (فصل أولياء الأمور) -->
     <div id="tab-parents" style="display:none">
       <button class="btn-primary" onclick="openParentModal()" style="margin-bottom:14px">➕ إضافة ولي أمر</button>
+      <button class="btn-primary" id="parents-import-btn" onclick="openImportModal(true)" style="display:none;margin-bottom:14px;background:var(--surface2);color:var(--text);border:1px solid var(--border)">📥 رفع شيت أولياء الأمور (Excel)</button>
       <div class="list-header">
         <span class="section-title">أولياء الأمور (<span id="par-count">0</span>)</span>
       </div>
@@ -1818,13 +1819,13 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
   <div class="modal-box">
     <div class="modal-header">
       <div style="flex:1;min-width:0">
-        <div style="font-size:16px;font-weight:900">📥 رفع شيت (مخدومين / حضور)</div>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">ارفع أي شيت — بيتعرف لوحده: بيانات مخدومين (الاسم، الميلاد، الموبايل، النوع…) أو حضور (الاسم + أعمدة تواريخ)</div>
+        <div id="import-title" style="font-size:16px;font-weight:900">📥 رفع شيت (مخدومين / حضور)</div>
+        <div id="import-sub" style="font-size:12px;color:var(--text-dim);margin-top:2px">ارفع أي شيت — بيتعرف لوحده: بيانات مخدومين (الاسم، الميلاد، الموبايل، النوع…) أو حضور (الاسم + أعمدة تواريخ)</div>
       </div>
       <button class="modal-close" onclick="closeImportModal()">✕</button>
     </div>
     <div style="padding:18px">
-      <label class="field-label">الفصل اللي هيتضاف له المخدومين (لو الشيت مفيهوش عمود "الفصل")</label>
+      <label class="field-label" id="import-class-label">الفصل اللي هيتضاف له المخدومين (لو الشيت مفيهوش عمود "الفصل")</label>
       <select class="field-select" id="import-class" style="margin-bottom:14px"></select>
       <label class="field-label">ملف الإكسيل (.xlsx / .xls / .csv)</label>
       <input type="file" id="import-file" class="field-input" accept=".xlsx,.xls,.csv" multiple onchange="handleImportFile(event)">
@@ -4001,6 +4002,8 @@ window.addStudent = async () => {
 
 // ===== IMPORT STUDENTS FROM EXCEL =====
 let importRows = [], importUpd = [];
+// وضع أولياء الأمور: بيتفعّل لما الرفع يتفتح من تاب أولياء الأمور — كل الصفوف بتتحفظ في فصل أولياء الأمور بالحقول بتاعتهم (الاسم / الميلاد / العنوان / phones[])
+let importParentsMode = false;
 const impNorm = v => String(v == null ? '' : v).replace(/[ـً-ٟ]/g, '').replace(/\s+/g, ' ').trim();
 const impDigits = s => String(s == null ? '' : s).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 const IMP_MONTHS = { 'يناير':1, 'فبراير':2, 'مارس':3, 'ابريل':4, 'مايو':5, 'يونيو':6, 'يوليو':7, 'اغسطس':8, 'سبتمبر':9, 'اكتوبر':10, 'نوفمبر':11, 'ديسمبر':12 };
@@ -4035,15 +4038,29 @@ function importGender(v) {
   if (/^(بنت|انثي|انثى|female|f)$/.test(t)) return 'female';
   return '';
 }
-window.openImportModal = async () => {
+window.openImportModal = async (parents) => {
   if (currentRole !== 'admin') { showToast('رفع الشيت للأدمن بس', 'error'); return; }
+  importParentsMode = parents === true;
+  document.getElementById('import-title').textContent = importParentsMode ? '📥 رفع شيت أولياء الأمور' : '📥 رفع شيت (مخدومين / حضور)';
+  document.getElementById('import-sub').textContent = importParentsMode
+    ? 'ارفع شيت الأولياء — بيتعرف لوحده: الاسم، التليفونات (ممكن أكتر من رقم)، العنوان، تاريخ الميلاد، وأعمدة التواريخ لو فيه حضور'
+    : 'ارفع أي شيت — بيتعرف لوحده: بيانات مخدومين (الاسم، الميلاد، الموبايل، النوع…) أو حضور (الاسم + أعمدة تواريخ)';
+  document.getElementById('import-class-label').textContent = importParentsMode
+    ? 'الفصل: أولياء الأمور'
+    : 'الفصل اللي هيتضاف له المخدومين (لو الشيت مفيهوش عمود "الفصل")';
   await ensureAllClassesForAdmin();
   const allowed = getAllowedAssignedClasses();
   const sel = document.getElementById('import-class');
-  sel.innerHTML = classSelectOptionsHTML(true);
-  const cands = allowed.length ? allowed : allClasses.map(c => c.id);
-  sel.value = cands.includes(currentClassTab) ? currentClassTab : (cands[0] || '');
-  if (allowed.length) [...sel.options].forEach(o => { if (o.value && !allowed.includes(o.value)) o.disabled = true; });
+  if (importParentsMode) {
+    sel.innerHTML = `<option value="${PARENTS_CLASS_ID}">👨‍👩‍👧 أولياء الأمور</option>`;
+    sel.value = PARENTS_CLASS_ID; sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    sel.innerHTML = classSelectOptionsHTML(true);
+    const cands = allowed.length ? allowed : allClasses.map(c => c.id);
+    sel.value = cands.includes(currentClassTab) ? currentClassTab : (cands[0] || '');
+    if (allowed.length) [...sel.options].forEach(o => { if (o.value && !allowed.includes(o.value)) o.disabled = true; });
+  }
   document.getElementById('import-file').value = '';
   document.getElementById('import-preview').innerHTML = '';
   document.getElementById('import-confirm-btn').style.display = 'none';
@@ -4061,7 +4078,8 @@ window.closeImportModal = () => {
 let importAtt = [];
 const impEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
 const IMP_NAME_RE = /^(الاسم|اسم|اسم المخدوم|اسم الطفل|اسم الطالب|الاسم بالكامل|المخدوم)$/;
-const IMP_SKIP_RE = /^(مستر|الاجمالي|اجمالي|المجموع|مجموع)(\s|\/|$)/;
+const IMP_NAME_PAR_RE = /^(الاسم|اسم|اسم ولي الامر|ولي الامر|اسم الوالد|اسم الاب|الاسم بالكامل|اسم الام)$/;
+const IMP_SKIP_RE =/^(مستر|الاجمالي|اجمالي|المجموع|مجموع)(\s|\/|$)/;
 const IMP_NO = /^(0|false|غ|غايب|غياب|absent|a|لا|no|-|—|×)$/;
 const IMP_VERSE_LBL = /^(ايه|الايه|تسميع|التسميع|سماع|السماع)$/;
 const IMP_ATT_LBL = /^(حضور|الحضور|حاضر)$/;
@@ -4099,12 +4117,14 @@ function impMark(v) {
 }
 // بيحلل شيت واحد: صف العناوين، أعمدة البيانات، أعمدة التواريخ (حضور/آية)، ونوعه
 function impAnalyzeSheet(aoa) {
-  const hi = aoa.findIndex((r, i) => i < 30 && (r || []).some(c => IMP_NAME_RE.test(normalizeArabic(c))));
+  const nameRe = importParentsMode ? IMP_NAME_PAR_RE : IMP_NAME_RE;
+  const hi = aoa.findIndex((r, i) => i < 30 && (r || []).some(c => nameRe.test(normalizeArabic(c))));
   if (hi < 0) return null;
   const col = {};
+  const extraPh = []; // أعمدة تليفونات زيادة (تليفون 2، موبايل تاني…) — لأولياء الأمور بس
   (aoa[hi] || []).forEach((c, i) => {
     const h = normalizeArabic(c); if (!h) return;
-    if (col.name == null && IMP_NAME_RE.test(h)) col.name = i;
+    if (col.name == null && nameRe.test(h)) col.name = i;
     else if (/^(تاريخ الميلاد|تاريخ ميلاد|الميلاد)$/.test(h)) col.dob = i;
     else if (/^((تليفون|رقم|موبايل) )?(الاب|ولي الامر) ?(او|و|\/|-) ?(الام|الوالده)$/.test(h)) col.parent = i;
     else if (/^(تليفون الاب|رقم الاب|موبايل الاب|تليفون ولي الامر|موبايل ولي الامر|رقم ولي الامر)$/.test(h)) col.father = i;
@@ -4116,12 +4136,14 @@ function impAnalyzeSheet(aoa) {
     else if (/^(المدرسه|مدرسه|اسم المدرسه|مدرسة المخدوم)$/.test(h)) col.school = i;
     else if (/^(اب الاعتراف|ابو الاعتراف|اب اعتراف|ابونا الاعتراف|الاب الروحي|كاهن الاعتراف|اب الاعتراف الروحي)$/.test(h)) col.confessor = i;
     else if (/^(الفصل|فصل|الصف|السنه)$/.test(h)) col.cls = i;
+    else if (importParentsMode && /(تليفون|تلفون|موبايل|هاتف|واتس|رقم)/.test(h)) extraPh.push(i);
   });
+  if (extraPh.length) col.extraPh = extraPh;
   const nameOf = r => (r && r[col.name] != null ? String(r[col.name]).trim() : '');
   const sub = aoa[hi + 1], useSub = !!sub && !nameOf(sub); // صف تحت العناوين من غير اسم = عناوين فرعية (حضور / آية)
   const scan = [aoa[hi], aoa[hi - 1]].concat(useSub ? [sub] : []);
   const width = Math.max(0, ...aoa.slice(Math.max(0, hi - 1), hi + 2).map(r => (r || []).length));
-  const profile = new Set(Object.values(col));
+  const profile = new Set([...Object.values(col).filter(v => typeof v === 'number'), ...extraPh]);
   const attCols = [], verseCols = [];
   let last = null, shifted = false;
   for (let c = 0; c < width; c++) {
@@ -4136,7 +4158,7 @@ function impAnalyzeSheet(aoa) {
       (lab === 'verse' ? verseCols : attCols).push({ c, key: lab === 'verse' ? impWeekKey(dt.y, dt.m, dt.d) : toLocalDateKey(new Date(dt.y, dt.m - 1, dt.d, 12)) });
     } else last = null;
   }
-  const hasProfile = ['dob','phone','father','mother','others','gender','address','confessor','school','parent','cls'].some(k => col[k] != null);
+  const hasProfile = ['dob','phone','father','mother','others','gender','address','confessor','school','parent','cls','extraPh'].some(k => col[k] != null);
   const kind = attCols.length ? (hasProfile ? 'both' : 'att') : (verseCols.length && !hasProfile ? 'verseonly' : 'students');
   return { hi, col, attCols, verseCols, kind, shifted };
 }
@@ -4148,6 +4170,14 @@ const impIsMom = v => /(ماما|الام|والده|mother)/.test(normalizeArab
 // والخلية الفاضية في الشيت مبتمسحش حاجة، واللي متطابق مبيتكتبش. بيرجّع {} لو مفيش أي تغيير
 function impUpdatePatch(u, defCls) {
   const ex = u.ex, up = {};
+  if (importParentsMode) { // ولي أمر موجود: الميلاد والعنوان من الشيت بيحلوا محل القديم (الفاضي مبيمسحش)، والأرقام بتتضاف على القديمة من غير تكرار
+    if (u.dob && u.dob !== (ex.dob || '')) up.dob = u.dob;
+    if (u.address && u.address !== (ex.address || '')) up.address = u.address;
+    const oldPh = (Array.isArray(ex.phones) ? ex.phones : []).filter(Boolean);
+    const newPh = [...new Set([...oldPh, u.student, u.father, u.mother, ...(u.others || [])].filter(Boolean))];
+    if (JSON.stringify(newPh) !== JSON.stringify(oldPh)) up.phones = newPh;
+    return up;
+  }
   const cls = u.cls || defCls;
   if (cls && cls !== (ex.classSection || '')) up.classSection = cls;
   if (u.dob && u.dob !== (ex.dob || '')) up.dob = u.dob;
@@ -4186,6 +4216,7 @@ window.handleImportFile = async (e) => {
     // المقارنة بالاسم بتتم جوه نفس الفصل بس: نفس الاسم في فصل تاني مش بيتحسب تكرار ولا بيتلمس
     const ck = (c, k) => (c || '') + '\u0001' + k;
     const rowCls = (r, sh) => {
+      if (importParentsMode) return PARENTS_CLASS_ID; // شيت الأولياء: كله في فصل أولياء الأمور بغض النظر عن أي عمود فصل
       const cv = sh.col.cls == null ? null : r[sh.col.cls];
       if (cv != null && cv !== '') { const id = classMap.get(normalizeArabic(cv)); if (id && (!allowed.length || allowed.includes(id))) return id; }
       return cls || '';
@@ -4229,9 +4260,10 @@ window.handleImportFile = async (e) => {
         const pv = g('parent'), pp = importPhones(pv), pMom = impIsMom(pv);
         const fp = pMom ? fp0 : impMergeP(fp0, pp), mp = pMom ? impMergeP(mp0, pp) : mp0;
         const others = [...sp.extra, ...fp.extra, ...mp.extra, ...(op.main ? [op.main] : []), ...op.extra];
-        const bad = sp.bad || fp.bad || mp.bad || op.bad;
+        let bad = sp.bad || fp.bad || mp.bad || op.bad;
+        if (importParentsMode) (sh.col.extraPh || []).forEach(ci => { const xp = importPhones(r[ci]); if (xp.main) others.push(xp.main); others.push(...xp.extra); if (xp.bad) bad = true; });
         let rc = '';
-        const cv = g('cls');
+        const cv = importParentsMode ? null : g('cls');
         if (cv != null && cv !== '') { const id = classMap.get(normalizeArabic(cv)); if (id && (!allowed.length || allowed.includes(id))) rc = id; }
         const rec = { dob: importDob(g('dob')), gender: importGender(g('gender')), address: String(g('address') == null ? '' : g('address')).trim(), confessor: String(g('confessor') == null ? '' : g('confessor')).trim(), school: String(g('school') == null ? '' : g('school')).trim(), father: fp.main, mother: mp.main, student: sp.main, others, cls: rc };
         if (seen.has(ckey)) { skippedDup.push(name); continue; }
@@ -4244,7 +4276,7 @@ window.handleImportFile = async (e) => {
           continue;
         }
         if (bad) badPhones++;
-        if (!(rec.student || rec.father || rec.mother)) noPhone++;
+        if (!(rec.student || rec.father || rec.mother || (importParentsMode && rec.others.length))) noPhone++;
         if (!rec.dob) noDob++;
         const ref = doc(collection(db, 'students'));
         keyToId.set(ckey, ref.id);
@@ -4297,7 +4329,7 @@ window.handleImportFile = async (e) => {
     const nStud = rows.filter(r => !r.attOnly).length;
     const cntAtt = importAtt.filter(a => !attOnlyIds.has(a.sid)).length;
     box.innerHTML = out.join('<br>') + '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0">'
-      + `✅ مخدومين جدد هيتضافوا: <b>${nStud}</b>`
+      + `✅ ${importParentsMode ? 'أولياء أمور جدد' : 'مخدومين جدد'} هيتضافوا: <b>${nStud}</b>`
       + (importUpd.length ? `<br>✏️ متسجلين قبل كده وبياناتهم هتتعدّل بالشيت (من غير تكرار): <b>${impUpdCount(importUpd, cls)}</b> من ${importUpd.length}` : '')
       + (skippedDup.length ? `<br>♻️ متسجلين قبل كده: <b>${skippedDup.length}</b><br><span style="font-size:12px;color:var(--text-dim)">${skippedDup.slice(0, 12).map(impEsc).join(' · ')}</span>` : '')
       + (importAtt.length || dupAtt ? `<br>📅 حضور هيتسجل: <b>${importAtt.length}</b>${dupAtt ? ` · ♻️ متسجل قبل كده: <b>${dupAtt}</b>` : ''}` : '')
@@ -4306,7 +4338,7 @@ window.handleImportFile = async (e) => {
       + (badPhones ? `<br>⚠️ صفوف فيها رقم غلط اتتجاهل: <b>${badPhones}</b>` : '')
       + (noPhone ? `<br>⚠️ صفوف من غير أي رقم صالح: <b>${noPhone}</b>` : '')
       + (noDob ? `<br>⚠️ صفوف من غير تاريخ ميلاد: <b>${noDob}</b>` : '')
-      + (!cls ? '<br>⚠️ مفيش فصل متحدد — اللي من غير عمود فصل هيتضافوا "لسه متقسمش"' : '');
+      + (!cls && !importParentsMode ? '<br>⚠️ مفيش فصل متحدد — اللي من غير عمود فصل هيتضافوا "لسه متقسمش"' : '');
     document.getElementById('import-upd-wrap').style.display = importUpd.length ? 'block' : 'none';
     document.getElementById('import-addnew-wrap').style.display = attOnlyNames.length ? 'block' : 'none';
     importAttOnly = attOnlyIds;
@@ -4344,7 +4376,16 @@ window.confirmImport = async () => {
     rows.forEach(r => clsOfId.set(r.ref.id, r.cls || cls));
     upd.forEach(u => clsOfId.set(u.id, impUpdatePatch(u, cls).classSection || u.ex.classSection || ''));
     const writes = []; // كل كتابة = دالة بتاخد batch
-    rows.forEach(r => writes.push(b => b.set(r.ref, {
+    rows.forEach(r => writes.push(b => b.set(r.ref, importParentsMode ? {
+      // ولي أمر: نفس شكل المستند اللي بيتحفظ من ملف ولي الأمر (الاسم / الميلاد / العنوان / phones[])
+      name: r.name,
+      dob: r.dob,
+      address: r.address || '',
+      phones: [...new Set([r.student, r.father, r.mother, ...(r.others || [])].filter(Boolean))],
+      classSection: PARENTS_CLASS_ID,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    } : {
       name: r.name,
       dob: r.dob,
       address: r.address || '',
@@ -4381,8 +4422,10 @@ window.confirmImport = async () => {
     importRows = []; importUpd = []; importAtt = [];
     closeImportModal();
     await loadStudents();
-    showToast(`تم الاستيراد ✓ — ${nS} مخدوم · ${att.length} حضور`, 'success');
-    logActivity('استيراد من إكسيل', `${nS} مخدوم · ${att.length} حضور — ${cls ? classLabel(cls) : 'من غير فصل'}`);
+    if (importParentsMode) { renderParentsList(); updateStats(); renderTodayList(); }
+    const who = importParentsMode ? 'ولي أمر' : 'مخدوم';
+    showToast(`تم الاستيراد ✓ — ${nS} ${who} · ${att.length} حضور`, 'success');
+    logActivity('استيراد من إكسيل', `${nS} ${who} · ${att.length} حضور — ${cls ? classLabel(cls) : 'من غير فصل'}`);
   } catch (err) {
     console.error(err);
     showToast('حصل خطأ أثناء الاستيراد — مفيش صلاحية أو النت فاصل', 'error');
@@ -4660,6 +4703,7 @@ const parentPhones = p => (Array.isArray(p.phones) ? p.phones : []).filter(Boole
 window.renderParentsList = () => {
   const cont = document.getElementById('parents-list');
   if (!cont) return;
+  const impBtn = document.getElementById('parents-import-btn'); if (impBtn) impBtn.style.display = currentRole === 'admin' ? '' : 'none'; // رفع الشيت للأدمن بس
   const all = parentsOnly();
   const raw = (document.getElementById('parents-search-input')?.value || '').trim();
   const q = normalizeArabic(raw);
