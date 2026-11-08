@@ -852,6 +852,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
           <input type="tel" id="new-phone-student" class="field-input" placeholder="تليفون المخدوم" dir="ltr" style="margin-bottom:0">
         </div>
         <button class="btn-primary" onclick="addStudent()">➕ إضافة</button>
+        <button class="btn-primary" onclick="addStudent(true)" style="margin-top:10px;background:rgba(46,204,113,0.12);color:var(--success);border:1px solid rgba(46,204,113,0.35)">✅ إضافة + تسجيل حضور النهارده</button>
       </div>
       <div class="list-header">
         <span class="section-title">المخدومين (<span id="stu-count">0</span>)</span>
@@ -4000,7 +4001,8 @@ window.removeDuplicateStudents = async () => {
   setTimeout(() => location.reload(), 1500);
 };
 
-window.addStudent = async () => {
+window.addStudent = async (markToday) => {
+  markToday = markToday === true; // الزرار التاني في الفورم: يضيف المخدوم ويسجّل له حضور النهارده
   const name = canonicalizeName(document.getElementById('new-name').value);
   const dob = document.getElementById('new-dob').value || '';
   const address = document.getElementById('new-address').value.trim();
@@ -4031,13 +4033,17 @@ window.addStudent = async () => {
   };
   // لو الخادم مقيد بفصول معينة، أي مخدوم جديد بيضيفه يتحط أوتوماتيك في الفصل الحالي اللى شافه في الواجهة عشان يبقى ضمن الفصول المسموح له
   if (currentRole !== 'admin' && allowed.length) data.classSection = targetClass;
-  await addDoc(collection(db,'students'), data); bumpStudentsRev();
+  const newRef = await addDoc(collection(db,'students'), data); bumpStudentsRev();
   ['new-name','new-dob','new-address','new-map','new-confessor','new-school','new-gender','new-phone-father','new-phone-mother','new-phone-student']
     .forEach(id => { document.getElementById(id).value = ''; });
   newGenderManuallySet = false;
   showToast('تمت الإضافة ✓', 'success');
   await loadStudents();
   logActivity('إضافة مخدوم', name);
+  if (markToday && newRef?.id) {
+    const okMark = await markPresent(newRef.id);
+    if (okMark) { showToast(`✅ ${name} — تمت الإضافة وتسجيل الحضور`, 'success'); navigator.vibrate?.([60,30,60]); logActivity('تسجيل حضور', name); }
+  }
   toggleAddStudentForm();
 };
 
