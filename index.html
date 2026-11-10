@@ -2698,7 +2698,7 @@ function startClassesListener() {
     if (!allClasses.length && currentRole === 'admin' && !classesSeedChecked) { classesSeedChecked = true; seedDefaultClassesIfEmpty(); }
     if (allClasses.length && currentRole === 'admin') ensureParentsClass();
     syncClassGroups();
-    if (todayVersesUnsub && verseListenKey && liveVerseKeys().join(',') !== verseListenKey) restartTodayListeners();
+    if ((todayVersesUnsub && verseListenKey && liveVerseKeys().join(',') !== verseListenKey) || (todayAttendanceUnsub && attListenKey && liveAttKeys().join(',') !== attListenKey)) restartTodayListeners();
     if (!currentClassTab && allClasses.length) currentClassTab = localStorage.getItem('hdour_attendanceClassTab') && allClasses.some(c=>c.id===localStorage.getItem('hdour_attendanceClassTab')) ? localStorage.getItem('hdour_attendanceClassTab') : allClasses[0].id;
     const sk = readScopeClasses().join(',');
     if (sk !== lastReadScopeKey) {
@@ -3008,6 +3008,28 @@ const verseKey = (classId) => {
 const verseNowKey = () => [verseKeyFor(4), verseKeyFor(5)].sort()[0]; // أبكر مفتاح من الاتنين — أي مفتاح >= ده تابع للفترة الجارية
 const verseOpen = () => true;
 const VERSE_CLOSED_MSG = 'تسجيل الآية مقفول';
+
+// حضور الفصول اللي ليها يوم حضور (خميس/جمعة): الحضور بيفضل ظاهر لحد يوم التلات اللي بعده،
+// وأي حضور بيتاخد في الفترة دي (من يوم الحضور لحد التلات) بيتسجل على تاريخ يوم الحضور نفسه. الأربع (وخميس لفصل الجمعة) = أسبوع جديد فاضي.
+// الفصل من غير يوم حضور محدد بيفضل زي الأول: بتاريخ النهارده.
+const ATT_KEEP_UNTIL_DOW = 2; // 2 = التلات
+function attSessionKeyForDay(sd) {
+  const d = new Date(), dow = d.getDay();
+  const since = (dow - sd + 7) % 7;
+  const open = since <= (ATT_KEEP_UNTIL_DOW - sd + 7) % 7;
+  d.setDate(d.getDate() + (open ? -since : (sd - dow + 7) % 7));
+  return { key: toLocalDateKey(d), open };
+}
+const attKey = (classId) => { const sd = attendanceDayRule(classId); return sd ? attSessionKeyForDay(sd).key : todayKey(); };
+const attWindowOpen = (classId) => { const sd = attendanceDayRule(classId); return !sd || attSessionKeyForDay(sd).open; };
+function liveAttKeys() {
+  const sc = readScopeClasses();
+  const ids = sc.length ? sc : allClasses.map(c => c.id);
+  const keys = new Set(ids.map(attKey));
+  if (!keys.size) keys.add(todayKey());
+  return [...keys].sort();
+}
+const attNowKey = () => liveAttKeys()[0]; // أبكر مفتاح حضور جاري — أي تاريخ >= ده بيجي من البث اللحظي
 
 // ===== الدخول بالبصمة (WebAuthn كبوابة محلية على الجهاز) =====
 // ملحوظة: مفاتيحنا مسمّاة 'bc_*' عشان الدومين teto550.github.io مشترك بين كل تطبيقاتك
@@ -5338,12 +5360,15 @@ const ATT_TTL = 2 * 60 * 1000;
 const attIsStale = () => !todayAttendanceUnsub && (Date.now() - todayAttSyncAt) > ATT_TTL;
 async function refreshTodayAttendanceIfStale() {
   if (!attIsStale()) return;
-  const today = todayKey();
-  const snap = await countedGetDocs(todayQuery('attendance', today), 'attendance (اليوم - تجديد للفلاتر)');
-  const prev = allAttendance[today] || {}, fresh = {};
-  snap.docs.forEach(d => { fresh[d.data().studentId] = d.id; });
-  for (const id in prev) if (outsideAllowed(id) && !fresh[id]) fresh[id] = prev[id];
-  if (Object.keys(fresh).length) allAttendance[today] = fresh; else delete allAttendance[today];
+  const keys = liveAttKeys();
+  const snap = await countedGetDocs(todayQuery('attendance', keys), 'attendance (اليوم - تجديد للفلاتر)');
+  const freshBy = {}; keys.forEach(k => { freshBy[k] = {}; });
+  snap.docs.forEach(d => { const v = d.data(); (freshBy[v.date] ||= {})[v.studentId] = d.id; });
+  keys.forEach(k => {
+    const prev = allAttendance[k] || {}, fresh = freshBy[k];
+    for (const id in prev) if (outsideAllowed(id) && !fresh[id]) fresh[id] = prev[id];
+    if (Object.keys(fresh).length) allAttendance[k] = fresh; else delete allAttendance[k];
+  });
   todayAttSyncAt = Date.now();
 }
 const filterWeeks = () => Math.max(parseInt(absenceFilter)||0, parseInt(attendanceFilter)||0, parseInt(waAbsenceFilter)||0, parseInt(waAttendanceFilter)||0) + 2;
@@ -5366,7 +5391,7 @@ async function _ensureRecentAttendance(weeks) {
   { const k = attScope().join(','); if (recentAttScope !== null && recentAttScope !== k) recentAttWeeks = 0; recentAttScope = k; }
   if (recentAttWeeks >= weeks) { await refreshTodayAttendanceIfStale(); return; }
   const d = new Date(); d.setDate(d.getDate() - weeks*7);
-  const fromKey = toLocalDateKey(d), nowKey = todayKey();
+  const fromKey = toLocalDateKey(d), nowKey = attNowKey(), liveKeys = liveAttKeys();
   // الأسابيع اللي فاتت مبتتغيّرش، فبنخزّنها على الجهاز ونقرا من آخر جلسة اتزامنت بس (جلسة النهارده تقريبًا)
   // بدل ما نقرا كل الأسابيع من فايرستور في كل فتحة. وبنعمل تحميل كامل تاني كل 7 أيام للأمان.
   const scopeKey0 = attScope().join(',');
@@ -5388,7 +5413,7 @@ async function _ensureRecentAttendance(weeks) {
   snap.docs.forEach(x => { const v = x.data(); if (!data[v.date]) data[v.date] = {}; data[v.date][v.studentId] = x.id; });
   for (const k in data) {
     if (k < fromKey) continue; // بنضيف للذاكرة الفترة المطلوبة بس زي الأول بالظبط (عدّاد الحضور في الفلتر بيعتمد عليها)
-    if (k === nowKey && todayAttendanceUnsub) continue; // البث اللحظي أحدث من القراءة دي
+    if (todayAttendanceUnsub && liveKeys.includes(k)) continue; // البث اللحظي أحدث من القراءة دي
     allAttendance[k] = { ...data[k] }; // استبدال كامل (مش دمج) عشان أي حضور اتشال ميفضلش ظاهر
   }
   todayAttSyncAt = Date.now();
@@ -5427,7 +5452,7 @@ window.toggleProfHistAll = () => { profHistAll = !profHistAll; if (currentProfil
 // تسجيل حضور في يوم قديم من ملف المخدوم
 window.profAddAtt = async (date) => {
   const id = currentProfileId; if (!id || currentRole !== 'admin') return;
-  if (date === todayKey()) { await markPresent(id); if (studentHist[id]) { studentHist[id].att[date] = todayAttendance[id]; } openProfile(id); onManualSearch(); return; }
+  if (date === attKey(clsOf(id))) { await markPresent(id); if (studentHist[id]) { studentHist[id].att[date] = todayAttendance[id]; } openProfile(id); onManualSearch(); return; }
   const H = studentHist[id]; if (!H || H.att[date]) return;
   { const rule = attendanceDayRule(clsOf(id)); if (rule && keyWeekday(date) !== rule) { showToast(`حضور الفصل ده بيتسجل يوم ${dayNameAr(rule)} بس`, 'error'); return; } }
   const s = allStudents.find(x => x.id === id);
@@ -5448,7 +5473,7 @@ window.profAddAtt = async (date) => {
 };
 window.profRemoveAtt = async (date) => {
   const id = currentProfileId; if (!id || currentRole !== 'admin') return;
-  if (date === todayKey()) { await removeAttendance(id); if (!todayAttendance[id] && studentHist[id]) delete studentHist[id].att[date]; openProfile(id); return; }
+  if (date === attKey(clsOf(id))) { await removeAttendance(id); if (!todayAttendance[id] && studentHist[id]) delete studentHist[id].att[date]; openProfile(id); return; }
   const H = studentHist[id]; const docId = H?.att[date]; if (!docId) return;
   const s = allStudents.find(x => x.id === id);
   const p = date.split('-');
@@ -5479,7 +5504,8 @@ const clsOf = id => (allStudents.find(x => x.id === id)?.classSection) || '';
 // الخادم المقيّد بفصول بيسمع حضور وآيات فصوله بس (مش كل الفصول) عشان الـ reads متزيدش مع زيادة الفصول
 function todayQuery(col, today) {
   const al = readScopeClasses();
-  const f = [where('date','==', today)];
+  const ks = Array.isArray(today) ? today : [today];
+  const f = [ks.length > 1 ? where('date','in', ks) : where('date','==', ks[0])];
   if (al.length) f.push(where('classSection','in', al));
   return query(collection(db,col), ...f);
 }
@@ -5532,18 +5558,24 @@ function stopTodayListeners() {
 let attListenKey = null;
 function listenTodayAttendance() {
   if (todayAttendanceUnsub) { todayAttendanceUnsub(); todayAttendanceUnsub = null; }
-  const today = todayKey();
-  attListenKey = today;
+  const keys = liveAttKeys();
+  attListenKey = keys.join(',');
   todayAttendanceUnsub = onSnapshot(
-    todayQuery('attendance', today),
+    todayQuery('attendance', keys),
     snap => {
       countSnapshotReads('attendance (اليوم - live)', snap);
       const prevA = todayAttendance, prevAT = todayAttendanceTime;
       todayAttendance = {}; todayAttendanceTime = {};
-      snap.docs.forEach(d => { todayAttendance[d.data().studentId] = d.id; todayAttendanceTime[d.data().studentId] = tsToMillis(d.data().timestamp); });
-      for (const id in prevA) if (outsideAllowed(id) && !todayAttendance[id]) { todayAttendance[id] = prevA[id]; todayAttendanceTime[id] = prevAT[id]; }
-      if (!allAttendance[today]) allAttendance[today] = {};
-      allAttendance[today] = { ...todayAttendance };
+      keys.forEach(k => { allAttendance[k] = {}; });
+      snap.docs.forEach(d => {
+        const v = d.data();
+        todayAttendance[v.studentId] = d.id; todayAttendanceTime[v.studentId] = tsToMillis(v.timestamp);
+        (allAttendance[v.date] ||= {})[v.studentId] = d.id;
+      });
+      for (const id in prevA) if (outsideAllowed(id) && !todayAttendance[id]) {
+        todayAttendance[id] = prevA[id]; todayAttendanceTime[id] = prevAT[id];
+        (allAttendance[attKey(clsOf(id))] ||= {})[id] = prevA[id];
+      }
       updateStats();
       renderTodayList();
       if (typeof onManualSearch === 'function') onManualSearch();
@@ -5678,7 +5710,7 @@ async function _ensureRecentVerses(weeks) {
 
 // لو الموقع فاضل مفتوح عدّى سبت: بنصفّر قايمة التسميع ونسمع على أسبوع التسميع الجديد
 setInterval(() => {
-  if (todayAttendanceUnsub && attListenKey && todayKey() !== attListenKey) {
+  if (todayAttendanceUnsub && attListenKey && liveAttKeys().join(',') !== attListenKey) {
     todayAttendance = {}; todayAttendanceTime = {};
     listenTodayAttendance();
     updateStats(); renderTodayList();
@@ -5707,9 +5739,9 @@ const attendanceDayRule = (classId) => { const c = classId && classId !== SERVAN
 const dayNameAr = (sd) => sd === 5 ? 'الجمعة' : 'الخميس';
 async function markPresent(studentId) {
   if (todayAttendance[studentId]) return false;
-  { const rule = attendanceDayRule(clsOf(studentId)); if (rule && new Date().getDay() !== rule) { showToast(`حضور الفصل ده بيتسجل يوم ${dayNameAr(rule)} بس`, 'error'); return false; } }
+  { const cid = clsOf(studentId), rule = attendanceDayRule(cid); if (rule && !attWindowOpen(cid)) { showToast(`حضور الفصل ده بيتسجل من يوم ${dayNameAr(rule)} لحد يوم التلات اللي بعده`, 'error'); return false; } }
   const ref = doc(collection(db,'attendance'));
-  const day = todayKey();
+  const day = attKey(clsOf(studentId));
   // الكتابة بتتسجّل محليًا فورًا وبتتبعت لما النت يرجع — مش بنستنى رد السيرفر عشان التسجيل يشتغل أوفلاين
   setDoc(ref, { studentId, date:day, classSection: clsOf(studentId), timestamp:serverTimestamp() }).catch(e => {
     console.error('attendance write failed:', e);
@@ -5722,8 +5754,7 @@ async function markPresent(studentId) {
   });
   todayAttendance[studentId] = ref.id;
   todayAttendanceTime[studentId] = Date.now();
-  if (!allAttendance[todayKey()]) allAttendance[todayKey()] = {};
-  allAttendance[todayKey()][studentId] = ref.id;
+  (allAttendance[day] ||= {})[studentId] = ref.id;
   updateStats(); renderTodayList();
   return true;
 }
@@ -5775,12 +5806,12 @@ window.removeVerse = async (studentId) => {
 
 window.removeAttendance = async (studentId) => {
   const s = allStudents.find(x => x.id === studentId);
-  if (!confirm(`هتشيل حضور "${s?.name}" من النهارده؟`)) return;
+  if (!confirm(`هتشيل حضور "${s?.name}"؟`)) return;
   const docId = todayAttendance[studentId];
   if (docId) deleteDoc(doc(db,'attendance',docId)).catch(e => console.error('attendance delete failed:', e)); // من غير await عشان يشتغل أوفلاين
   delete todayAttendance[studentId];
   delete todayAttendanceTime[studentId];
-  if (allAttendance[todayKey()]) delete allAttendance[todayKey()][studentId];
+  { const k = attKey(clsOf(studentId)); if (allAttendance[k]) delete allAttendance[k][studentId]; }
   updateStats(); renderTodayList();
   onManualSearch();
   showToast('تم حذف الحضور', 'success');
