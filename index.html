@@ -3662,8 +3662,60 @@ function watchOwnPendingStatus(user) {
 }
 
 // ===== HEARTBEAT (أونلاين/أوفلاين) =====
-function startHeartbeat() { /* اتلغى: مفيش متابعة أونلاين لحظية عشان نوفر الـ reads */ }
-function stopHeartbeat() { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+
+// ===== قياس وقت الاستخدام (للوحة التحكم) =====
+// مستند يومي لكل مستخدم: usage/{uid}_{YYYY-MM-DD} فيه seconds (وقت الظهور على الشاشة) و acts و opens.
+// بيتحدّث بعد 15 ثانية من الفتح وبعدين كل 3 دقايق وهو ظاهر، وعند الخروج للخلفية — كتابات قليلة وبدون أي قراءة.
+let usageTimer = null, usageFirst = null, usageVisStart = 0, usageAcc = 0, usageActs = 0, usageOpens = 0, usageOpened = false, usageBound = false;
+function usageDay() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function usageTick() {
+  if (!usageVisStart) return;
+  const n = Date.now(), d = n - usageVisStart; usageVisStart = n;
+  if (d > 0 && d <= 5 * 60 * 1000) usageAcc += d; // فرق أكبر من 5 دقايق = الجهاز كان نايم، مش بيتحسب
+}
+async function usageFlush() {
+  try {
+    usageTick();
+    if (!currentUid) return;
+    const sec = Math.round(usageAcc / 1000), a = usageActs, o = usageOpens;
+    if (!sec && !a && !o) return;
+    usageAcc -= sec * 1000; usageActs = 0; usageOpens = 0;
+    const day = usageDay();
+    await _setDoc(doc(db, 'usage', currentUid + '_' + day), {
+      uid: currentUid, name: currentName || '', day,
+      seconds: increment(sec), acts: increment(a), opens: increment(o), last: serverTimestamp()
+    }, { merge: true });
+  } catch (e) { /* القياس مش مهم لدرجة يوقف التطبيق */ }
+}
+function startUsage() {
+  try {
+    if (usageTimer) return;
+    if (!usageOpened) { usageOpened = true; usageOpens = 1; }
+    if (document.visibilityState === 'visible') usageVisStart = Date.now();
+    usageFirst = setTimeout(usageFlush, 15000);
+    usageTimer = setInterval(() => { if (document.visibilityState === 'visible') usageFlush(); }, 3 * 60 * 1000);
+    if (!usageBound) {
+      usageBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (!usageTimer) return;
+        if (document.visibilityState === 'hidden') { usageFlush(); usageVisStart = 0; }
+        else usageVisStart = Date.now();
+      });
+      window.addEventListener('pagehide', () => { if (usageTimer) usageFlush(); });
+    }
+  } catch (e) {}
+}
+function stopUsage() {
+  try {
+    if (!usageTimer) return;
+    usageFlush();
+    clearInterval(usageTimer); usageTimer = null;
+    clearTimeout(usageFirst); usageFirst = null; usageVisStart = 0;
+  } catch (e) {}
+}
+
+function startHeartbeat() { startUsage(); }
+function stopHeartbeat() { clearInterval(heartbeatTimer); heartbeatTimer = null; stopUsage(); }
 
 // ===== الأدمن الأساسي (ثابت من ADMIN_EMAILS) =====
 function isPrimaryAdmin(email) {
@@ -3751,6 +3803,7 @@ async function forceLogout() {
 // ===== سجل الأنشطة =====
 async function logActivity(action, detail = '') {
   if (!currentUid) return;
+  usageActs++;
   try {
     await addDoc(collection(db,'activityLog'), {
       uid: currentUid, name: currentName, action, detail, timestamp: serverTimestamp()

@@ -155,6 +155,17 @@ service cloud.firestore {
                  .hasOnly(['studentsRev', 'studentsDelRev', 'classFieldMig']));
     }
 
+    // ===== usage (وقت الاستخدام اليومي لكل مستخدم — للوحة التحكم) =====
+    // مستند واحد لكل مستخدم في اليوم: {uid}_{YYYY-MM-DD}. المستخدم يكتب مستنده هو بس، والأدمن بس يقرا.
+    match /usage/{id} {
+      allow read: if isAdmin();
+      allow create, update: if isApproved()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.day is string
+        && id == request.auth.uid + '_' + request.resource.data.day;
+      allow delete: if isAdmin();
+    }
+
     // أي حاجة تانية: ممنوعة
     match /{document=**} {
       allow read, write: if false;
