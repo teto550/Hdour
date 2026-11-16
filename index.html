@@ -5357,7 +5357,7 @@ window.startWaQueue = () => {
   const msgTpl = document.getElementById('wa-message').value.trim();
   if (!msgTpl) { showToast('اكتب نص الرسالة الأول', 'error'); return; }
   const list = waRecipientsSource().filter(s => waChecked.has(s.id) && waHasPhone(s));
-  if (!list.length) { showToast('اختر مخدوم واحد على الأقل عنده رقم تليفون', 'error'); return; }
+  if (!list.length) { showToast(inParents() ? 'اختر ولي أمر واحد على الأقل عنده رقم تليفون' : 'اختر مخدوم واحد على الأقل عنده رقم تليفون', 'error'); return; }
   waQueue = list;
   waQueueIndex = 0;
   const box = document.getElementById('wa-queue-box');
@@ -5422,13 +5422,13 @@ function buildVcfContent(list) {
 
 window.exportWaContactsVcf = async () => {
   const list = waRecipientsSource().filter(s => waChecked.has(s.id) && waHasPhone(s));
-  if (!list.length) { showToast('اختر مخدوم واحد على الأقل عنده رقم تليفون', 'error'); return; }
+  if (!list.length) { showToast(inParents() ? 'اختر ولي أمر واحد على الأقل عنده رقم تليفون' : 'اختر مخدوم واحد على الأقل عنده رقم تليفون', 'error'); return; }
   const vcf = buildVcfContent(list);
   const blob = new Blob([vcf], { type: 'text/vcard;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `مخدومين_${list.length}.vcf`;
+  a.download = `${inParents() ? 'أولياء_الأمور' : 'مخدومين'}_${list.length}.vcf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
