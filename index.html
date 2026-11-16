@@ -106,7 +106,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 #main-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap;}
 #main-tabs::-webkit-scrollbar{display:none;}
 #main-tabs .tab{flex:0 0 auto;white-space:nowrap;}
-/* فصل "أولياء الأمور": تابين بس (الحضور + أولياء الأمور) — body.parents-mode بيتحدد من applyParentsMode() */
+/* فصل "أولياء الأمور": الحضور + أولياء الأمور + الافتقاد + الرسائل (من غير المخدومين ولا السماع) — body.parents-mode بيتحدد من applyParentsMode() */
 [data-pc="show"]{display:none!important;}
 body.parents-mode .admin-card[data-pc="show"]{display:flex!important;}
 body.parents-mode .tab[data-pc="show"]{display:inline-block!important;}
@@ -753,8 +753,8 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         <button class="admin-card" onclick="switchTab('attendance')"><span class="ac-emoji">✅</span>الحضور</button>
         <button class="admin-card" data-pc="show" onclick="switchTab('parents')"><span class="ac-emoji">👨‍👩‍👧</span>أولياء الأمور</button>
         <button class="admin-card" data-pc="hide" onclick="switchTab('students')"><span class="ac-emoji">🧒</span>المخدومين</button>
-        <button class="admin-card" data-pc="hide" onclick="switchTab('filters')"><span class="ac-emoji">📞</span>الافتقاد</button>
-        <button class="admin-card" data-pc="hide" onclick="switchTab('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
+        <button class="admin-card" onclick="switchTab('filters')"><span class="ac-emoji">📞</span>الافتقاد</button>
+        <button class="admin-card" onclick="switchTab('messages')"><span class="ac-emoji">📨</span>الرسائل</button>
         <button class="admin-card" id="home-card-monitor" style="display:none" onclick="switchTab('monitor')"><span class="ac-emoji">📊</span>متابعة</button>
         <button class="admin-card" id="home-card-classservants" style="display:none" onclick="switchTab('classservants')"><span class="ac-emoji">🧑‍🏫</span>خدام الفصل</button>
         <button class="admin-card" id="home-card-allclassservants" style="display:none" onclick="switchTab('allclassservants')"><span class="ac-emoji">🏫</span>خدام الفصول</button>
@@ -767,8 +767,8 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
       <button class="tab active" id="tab-btn-attendance" data-tab="attendance" onclick="switchTab('attendance')">الحضور</button>
       <button class="tab" data-pc="show" data-tab="parents" onclick="switchTab('parents')">👨‍👩‍👧 أولياء الأمور</button>
       <button class="tab" data-pc="hide" data-tab="students" onclick="switchTab('students')">المخدومين</button>
-      <button class="tab" data-pc="hide" data-tab="filters" onclick="switchTab('filters')">افتقاد</button>
-      <button class="tab" data-pc="hide" data-tab="messages" onclick="switchTab('messages')">📨 رسائل</button>
+      <button class="tab" data-tab="filters" onclick="switchTab('filters')">افتقاد</button>
+      <button class="tab" data-tab="messages" onclick="switchTab('messages')">📨 رسائل</button>
       <button class="tab" id="tab-btn-monitor" style="display:none" data-tab="monitor" onclick="switchTab('monitor')">متابعة</button>
       <button class="tab" id="tab-btn-classservants" style="display:none" data-tab="classservants" onclick="switchTab('classservants')">👥 خدام الفصل</button>
       <button class="tab" id="tab-btn-allclassservants" style="display:none" data-tab="allclassservants" onclick="switchTab('allclassservants')">🏫 خدام الفصول</button>
@@ -915,7 +915,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         </details>
       </div>
 
-      <div class="filter-bar" style="margin-bottom:10px">
+      <div class="filter-bar" data-pc="hide" style="margin-bottom:10px">
         <details class="filter-acc">
           <summary class="filter-acc-header">
             <span class="section-title">👨‍👩‍👧‍👦 الإخوات</span>
@@ -967,7 +967,7 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         </details>
       </div>
 
-      <div class="filter-bar" style="margin-bottom:10px">
+      <div class="filter-bar" data-pc="hide" style="margin-bottom:10px">
         <details class="filter-acc">
           <summary class="filter-acc-header">
             <span class="section-title">📖 التسميع</span>
@@ -1019,8 +1019,8 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
       <div class="filter-bar" style="margin-bottom:16px">
         <p class="section-title" style="margin-bottom:10px">✏️ نص الرسالة</p>
         <textarea id="wa-message" class="field-input" rows="5" style="resize:vertical;font-family:'Cairo',sans-serif;margin-bottom:10px" placeholder="اكتب رسالتك هنا…"></textarea>
-        <button type="button" onclick="insertWaNamePlaceholder()" style="background:rgba(79,142,247,0.12);border:1px solid rgba(79,142,247,0.3);border-radius:8px;color:var(--accent);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer">➕ ضع اسم المخدوم هنا</button>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:10px">هيتم استبدال <b>{اسم_المخدوم}</b> باسم كل مخدوم تلقائيًا (أول اسم بس) عند الإرسال.</div>
+        <button type="button" id="wa-name-btn" onclick="insertWaNamePlaceholder()" style="background:rgba(79,142,247,0.12);border:1px solid rgba(79,142,247,0.3);border-radius:8px;color:var(--accent);font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer">➕ ضع اسم المخدوم هنا</button>
+        <div id="wa-name-note" style="font-size:12px;color:var(--text-dim);margin-top:10px">هيتم استبدال <b>{اسم_المخدوم}</b> باسم كل مخدوم تلقائيًا (أول اسم بس) عند الإرسال.</div>
       </div>
 
       <div class="filter-bar" style="margin-bottom:16px">
@@ -1095,13 +1095,13 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
         </details>
       </div>
 
-      <div class="filter-row" id="wa-siblings-chips" style="margin-bottom:12px">
+      <div class="filter-row" id="wa-siblings-chips" data-pc="hide" style="margin-bottom:12px">
         <button class="filter-chip active" onclick="setWaSiblingsFilter('all',this)">👥 الكل</button>
         <button class="filter-chip" onclick="setWaSiblingsFilter('siblings',this)">👨‍👩‍👧‍👦 الإخوات بس</button>
         <button class="filter-chip" onclick="setWaSiblingsFilter('nonSiblings',this)">بدون إخوات</button>
       </div>
 
-      <div class="filter-row" id="wa-gender-chips" style="margin-bottom:12px">
+      <div class="filter-row" id="wa-gender-chips" data-pc="hide" style="margin-bottom:12px">
         <button class="filter-chip active" onclick="setWaGenderFilter('all',this)">⚥ الكل</button>
         <button class="filter-chip" onclick="setWaGenderFilter('male',this)">🧑 ولاد بس</button>
         <button class="filter-chip" onclick="setWaGenderFilter('female',this)">👧 بنات بس</button>
@@ -1686,6 +1686,25 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
       <label class="field-label">أرقام التليفون <span style="font-weight:400">(ممكن أكتر من رقم)</span></label>
       <div id="par-phones"></div>
       <button type="button" onclick="addParentPhoneRow('')" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:Cairo,sans-serif;font-size:13px;font-weight:700;padding:9px 14px;cursor:pointer;margin-bottom:16px">➕ رقم تاني</button>
+      <label class="field-label">ملحوظات الافتقاد</label>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="par-note-traveling" style="width:18px;height:18px;accent-color:var(--accent)"> 🧳 مسافر
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="par-note-friday" style="width:18px;height:18px;accent-color:var(--accent)"> 📅 بيحضر يوم الجمعة
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="par-note-otherchurch" style="width:18px;height:18px;accent-color:var(--accent)"> ⛪ بيحضر في كنيسة تانية
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="par-note-sick" style="width:18px;height:18px;accent-color:var(--accent)"> 🤒 مريض
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="par-note-other" onchange="toggleParNoteOther(true)" style="width:18px;height:18px;accent-color:var(--accent)"> ✏️ أخرى
+        </label>
+        <input type="text" id="par-note-other-text" class="field-input" maxlength="200" placeholder="اكتب ملحوظة الافتقاد" style="display:none;margin-bottom:0">
+      </div>
       <div style="display:flex;gap:10px;margin-top:6px">
         <button class="btn-primary" onclick="saveParent()" style="flex:1">💾 حفظ</button>
         <button onclick="closeParentModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);font-family:Cairo,sans-serif;font-size:15px;font-weight:700;padding:13px 18px;cursor:pointer">إلغاء</button>
@@ -2590,10 +2609,25 @@ const SERVANTS_CLASS_ID = '__servants__';
 const PARENTS_CLASS_ID = 'parents';
 const inParents = () => currentClassTab === PARENTS_CLASS_ID;
 const notParents = list => list.filter(s => s.classSection !== PARENTS_CLASS_ID);
-// بيبدّل شكل الواجهة لوضع أولياء الأمور (يخفي المخدومين/الافتقاد/الرسائل/الصوت/السماع/الهدايا) — الإخفاء نفسه بـ CSS على body.parents-mode
+// بيبدّل شكل الواجهة لوضع أولياء الأمور (يخفي المخدومين/الصوت/السماع/الهدايا ويفضّل الحضور + أولياء الأمور + الافتقاد + الرسائل) — الإخفاء نفسه بـ CSS على body.parents-mode
 function applyParentsMode() {
   const on = inParents();
   document.body.classList.toggle('parents-mode', on);
+  if (on) {
+    // الفلاتر المخفية في فصل الأولياء (التسميع / الإخوات / ولاد-بنات) لازم ترجع "الكل" عشان ميفضلش فلتر شغال من غير ما يبان
+    try {
+      const reset = (boxId, valId) => { const bs = document.querySelectorAll('#' + boxId + ' .filter-chip'); bs.forEach((b, i) => b.classList.toggle('active', i === 0)); const v = valId && document.getElementById(valId); if (v) v.textContent = 'الكل'; };
+      verseFilter = 'all'; filterSiblings = 'all'; waSiblingsFilter = 'all'; waGenderFilter = 'all';
+      reset('verse-chips', 'verse-value'); reset('filter-siblings-chips', 'fsiblings-value'); reset('wa-siblings-chips'); reset('wa-gender-chips');
+    } catch (e) { /* المتغيرات لسه متعرّفتش — مش مشكلة */ }
+    const nb = document.getElementById('wa-name-btn'), nn = document.getElementById('wa-name-note');
+    if (nb) nb.textContent = '➕ ضع اسم ولي الأمر هنا';
+    if (nn) nn.innerHTML = 'هيتم استبدال <b>{اسم_ولي_الأمر}</b> باسم كل ولي أمر تلقائيًا (أول اسم بس) عند الإرسال.';
+  } else {
+    const nb = document.getElementById('wa-name-btn'), nn = document.getElementById('wa-name-note');
+    if (nb) nb.textContent = '➕ ضع اسم المخدوم هنا';
+    if (nn) nn.innerHTML = 'هيتم استبدال <b>{اسم_المخدوم}</b> باسم كل مخدوم تلقائيًا (أول اسم بس) عند الإرسال.';
+  }
   if (on && (todayListFilter === 'attendance' || todayListFilter === 'verse')) {
     todayListFilter = 'all';
     document.querySelectorAll('#today-filter-all,#today-filter-attendance,#today-filter-verse,#today-filter-birthday').forEach(b => b.classList.toggle('active', b.id === 'today-filter-all'));
@@ -2604,7 +2638,7 @@ function applyParentsMode() {
 // لما الفصل يتبدل من الشريط فوق: لو التاب المفتوح مش من تابات الفصل الجديد نرجّع للحضور
 function guardParentsTab() {
   const vis = id => document.getElementById(id)?.style.display === 'block';
-  if (inParents() && (vis('tab-students') || vis('tab-filters') || vis('tab-messages'))) switchTab('attendance');
+  if (inParents() && vis('tab-students')) switchTab('attendance');
   else if (!inParents() && vis('tab-parents')) switchTab('attendance');
 }
 // أول مرة الأدمن يفتح البرنامج: بنعمل فصل "أولياء الأمور" لو مش موجود (مرة واحدة بس — لو الأدمن حذفه بعد كده مش بيتعمل تاني)
@@ -4866,6 +4900,13 @@ window.addParentPhoneRow = (val = '') => {
   box.appendChild(row);
 };
 
+window.toggleParNoteOther = (focus) => {
+  const on = document.getElementById('par-note-other').checked;
+  const inp = document.getElementById('par-note-other-text');
+  inp.style.display = on ? 'block' : 'none';
+  if (on && focus) inp.focus();
+};
+
 // فتح ملف ولي أمر (id) للعرض والتعديل — أو فورم إضافة جديد لو من غير id
 window.openParentModal = (id) => {
   const p = id ? allStudents.find(x => x.id === id) : null;
@@ -4877,6 +4918,10 @@ window.openParentModal = (id) => {
   document.getElementById('par-phones').innerHTML = '';
   const phones = p ? parentPhones(p) : [];
   (phones.length ? phones : ['']).forEach(ph => addParentPhoneRow(ph));
+  { const notes = (p && Array.isArray(p.visitNotes)) ? p.visitNotes : [];
+    [['traveling','traveling'],['friday','friday'],['otherchurch','otherChurch'],['sick','sick'],['other','other']].forEach(([idPart, key]) => { document.getElementById('par-note-' + idPart).checked = notes.includes(key); });
+    document.getElementById('par-note-other-text').value = p ? (p.visitNoteOther || '') : '';
+    toggleParNoteOther(false); }
   document.getElementById('par-avatar').textContent = p ? ((p.name || '؟').trim()[0] || '؟') : '➕';
   document.getElementById('par-modal-title').textContent = p ? 'ملف ولي الأمر' : 'إضافة ولي أمر جديد';
   document.getElementById('par-modal-sub').textContent = p ? 'تقدر تعدّل أي بيانات وتدوس حفظ' : '';
@@ -4905,7 +4950,13 @@ window.saveParent = async () => {
   const phones = [...new Set(rawPhones)];
   const dup = parentsOnly().find(p => p.id !== id && normalizeArabic(p.name) === normalizeArabic(name));
   if (dup) { showToast(`"${dup.name}" مسجل قبل كده في أولياء الأمور`, 'error'); return; }
-  const data = { name, dob, address, phones };
+  const visitNotes = [];
+  [['traveling','traveling'],['friday','friday'],['otherchurch','otherChurch'],['sick','sick']].forEach(([idPart, key]) => { if (document.getElementById('par-note-' + idPart).checked) visitNotes.push(key); });
+  const otherOn = document.getElementById('par-note-other').checked;
+  const visitNoteOther = otherOn ? document.getElementById('par-note-other-text').value.trim() : '';
+  if (otherOn && !visitNoteOther) { showToast('اكتب ملحوظة الافتقاد في خانة "أخرى"', 'error'); return; }
+  if (otherOn) visitNotes.push('other');
+  const data = { name, dob, address, phones, visitNotes, visitNoteOther };
   parentSaving = true;
   try {
     if (id) {
@@ -4922,6 +4973,7 @@ window.saveParent = async () => {
     }
     closeParentModal();
     renderParentsList(); updateStuCount(); updateStats(); renderTodayList();
+    if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
     showToast(id ? 'تم حفظ التعديلات ✓' : 'تمت إضافة ولي الأمر ✓', 'success');
   } catch (e) {
     console.error(e);
@@ -4939,6 +4991,7 @@ window.deleteParent = async (id) => {
   delete todayAttendance[id]; delete todayAttendanceTime[id];
   closeParentModal();
   renderParentsList(); updateStuCount(); updateStats(); renderTodayList();
+  if (document.getElementById('tab-filters')?.style.display === 'block') renderFilterList();
   showToast('تم حذف ولي الأمر', 'success');
   logActivity('حذف ولي أمر', p.name);
 };
@@ -5008,7 +5061,7 @@ window.insertWaNamePlaceholder = () => {
   const ta = document.getElementById('wa-message');
   const start = ta.selectionStart ?? ta.value.length;
   const end   = ta.selectionEnd   ?? ta.value.length;
-  const token = '{اسم_المخدوم}';
+  const token = inParents() ? '{اسم_ولي_الأمر}' : '{اسم_المخدوم}';
   ta.value = ta.value.slice(0, start) + token + ta.value.slice(end);
   ta.focus();
   ta.selectionStart = ta.selectionEnd = start + token.length;
@@ -5086,7 +5139,7 @@ function waFirstName(s) {
 
 function buildWaMessageFor(s) {
   const tpl = document.getElementById('wa-message').value || '';
-  return tpl.split('{اسم_المخدوم}').join(waFirstName(s));
+  return tpl.split('{اسم_المخدوم}').join(waFirstName(s)).split('{اسم_ولي_الأمر}').join(waFirstName(s));
 }
 
 function waHasPhone(s) { return !!getWaPhone(s); }
@@ -5201,7 +5254,7 @@ function renderWaRecipientsList() {
   }
   const list = waRecipientsSource();
   if (!list.length) {
-    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div>لا يوجد مخدومين</div>`;
+    cont.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div>${inParents() ? 'لا يوجد أولياء أمور' : 'لا يوجد مخدومين'}</div>`;
   } else {
     cont.innerHTML = list.map(s => {
       const phone   = getWaPhone(s);
@@ -6223,12 +6276,16 @@ window.exportFilterExcel = async () => {
     const sessOf = classSessionLookup();
     const fmt = d => { const q = d.split('-'); return `${q[2]}/${q[1]}/${q[0]}`; };
     const nAbs = absenceFilter !== 'all' ? parseInt(absenceFilter) : 0;
-    const head = ['الاسم', nAbs ? `أيام الغياب (آخر ${nAbs})` : 'أيام الغياب', 'عدد مرات الحضور', 'من أصل (جلسات)', 'تليفون الأب', 'تليفون الأم', 'تليفون المخدوم', 'أرقام أخرى'];
+    const par = inParents(); // أولياء الأمور: التليفونات في مصفوفة phones مش خانات أب/أم/مخدوم
+    const head = par
+      ? ['الاسم', nAbs ? `أيام الغياب (آخر ${nAbs})` : 'أيام الغياب', 'عدد مرات الحضور', 'من أصل (جلسات)', 'التليفونات', 'العنوان']
+      : ['الاسم', nAbs ? `أيام الغياب (آخر ${nAbs})` : 'أيام الغياب', 'عدد مرات الحضور', 'من أصل (جلسات)', 'تليفون الأب', 'تليفون الأم', 'تليفون المخدوم', 'أرقام أخرى'];
     const rows = list.map(s => {
       const sess = sessOf(s.classSection);
       const absent = sess.filter(d => !allAttendance[d]?.[s.id]);
       const shown = nAbs ? sess.slice(-nAbs).filter(d => !allAttendance[d]?.[s.id]) : absent;
       const attended = sess.length - absent.length;
+      if (par) return [s.name || '', shown.map(fmt).join('، '), attended, sess.length, parentPhones(s).join(' / '), s.address || ''];
       return [
         s.name || '',
         shown.map(fmt).join('، '),
@@ -6241,13 +6298,13 @@ window.exportFilterExcel = async () => {
       ];
     });
     const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
-    styleSimpleSheet(ws, head.length, rows.length, [26, 40, 12, 12, 16, 16, 16, 22]);
+    styleSimpleSheet(ws, head.length, rows.length, par ? [26, 40, 12, 12, 30, 34] : [26, 40, 12, 12, 16, 16, 16, 22]);
     // أرقام التليفونات تفضل نص عشان الصفر اللي في الأول ميتشالش
-    for (let r = 1; r <= rows.length; r++) for (let c = 4; c <= 7; c++) { const a = XLSX.utils.encode_cell({ r, c }); if (ws[a]) { ws[a].t = 's'; ws[a].z = '@'; } }
+    for (let r = 1; r <= rows.length; r++) for (let c = 4; c <= (par ? 4 : 7); c++) { const a = XLSX.utils.encode_cell({ r, c }); if (ws[a]) { ws[a].t = 's'; ws[a].z = '@'; } }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'افتقاد');
     XLSX.writeFile(wb, `افتقاد-${todayKey()}.xlsx`, { cellStyles: true });
-    showToast(`تم تصدير ${rows.length} مخدوم ✓`, 'success');
+    showToast(`تم تصدير ${rows.length} ${par ? 'ولي أمر' : 'مخدوم'} ✓`, 'success');
   } catch (e) {
     console.error(e);
     showToast('حصل خطأ أثناء التصدير', 'error');
@@ -6324,7 +6381,7 @@ function renderFilterList() {
     const c = ka.localeCompare(kb, 'ar');
     return c !== 0 ? c : a.name.localeCompare(b.name, 'ar');
   });
-  document.getElementById('filter-count').textContent = `${list.length} مخدوم`;
+  document.getElementById('filter-count').textContent = `${list.length} ${inParents() ? 'ولي أمر' : 'مخدوم'}`;
   window._lastFilterList = list;
   { const eb = document.getElementById('filter-export-btn'); if (eb) eb.style.display = list.length ? '' : 'none'; }
   if (!list.length && verseFilter !== 'all' && !verseRetriedFull) {
@@ -6364,15 +6421,18 @@ function renderFilterList() {
           : '').join('')}</div>`
       : `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px"><span style="font-size:10px;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--text-dim);border-radius:5px;padding:2px 6px">${NOTE_LABELS.noReason.emoji} ${NOTE_LABELS.noReason.text}</span></div>`;
     const multi = isMultiClassStudent(s);
+    const isPar = s.classSection === PARENTS_CLASS_ID; // ولي الأمر ملفه مودال لوحده (مش بروفايل المخدوم)
     return `<div class="student-item${multi?' multi-class':''}">
       ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info">
-        <div class="s-name">${s.name}${multi?multiClassTagHTML(s):''}</div>
+        <div class="s-name">${isPar ? parEsc(s.name) : s.name}${multi?multiClassTagHTML(s):''}</div>
         <div class="s-sub">${dob ? '🎂 '+dob+' · ' : ''}حضر ${attCount} مرة</div>
         ${notesHTML}
       </div>
-      <button class="action-btn" onclick="openProfile('${s.id}')">👤 ملف</button>
-      <button class="action-btn" onclick="openEditModal('${s.id}')">✏️ تعديل</button>
+      ${isPar
+        ? `<button class="action-btn" onclick="openParentModal('${s.id}')">📂 فتح</button>`
+        : `<button class="action-btn" onclick="openProfile('${s.id}')">👤 ملف</button>
+      <button class="action-btn" onclick="openEditModal('${s.id}')">✏️ تعديل</button>`}
     </div>`;
   }).join('');
 }
