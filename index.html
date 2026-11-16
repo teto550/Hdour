@@ -5068,8 +5068,10 @@ window.insertWaNamePlaceholder = () => {
 };
 
 // ===== SAVED MESSAGE TEMPLATES (memory) =====
+// الرسائل المحفوظة لكل فصل لوحده (classSection) — القديمة اللي من غير فصل (عامة) بتفضل ظاهرة في كل الفصول لحد ما تتحذف
+const waTplForClass = () => waTemplates.filter(t => !t.classSection || t.classSection === currentClassTab);
 async function loadWaTemplates() {
-  if (waTemplatesLoaded) return;
+  if (waTemplatesLoaded) { renderWaTemplatesList(); return; }
   try {
     const snap = await countedGetDocs(query(collection(db,'messageTemplates'), orderBy('name')), 'messageTemplates');
     waTemplates = snap.docs.map(d => ({ id:d.id, ...d.data() }));
@@ -5083,13 +5085,14 @@ async function loadWaTemplates() {
 function renderWaTemplatesList() {
   const cont = document.getElementById('wa-templates-list');
   if (!cont) return;
-  if (!waTemplates.length) {
-    cont.innerHTML = `<div class="tpl-empty">مفيش رسائل محفوظة لسه</div>`;
+  const tpls = waTplForClass();
+  if (!tpls.length) {
+    cont.innerHTML = `<div class="tpl-empty">مفيش رسائل محفوظة للفصل ده لسه</div>`;
     return;
   }
-  cont.innerHTML = `<div class="tpl-row">` + waTemplates.map(t => `
+  cont.innerHTML = `<div class="tpl-row">` + tpls.map(t => `
     <div class="tpl-chip" onclick="useWaTemplate('${t.id}')">
-      <span class="tpl-chip-name">${t.name}</span>
+      <span class="tpl-chip-name">${t.name}${t.classSection ? '' : ' <small style="opacity:.6">(عامة)</small>'}</span>
       <button type="button" class="tpl-chip-del" onclick="event.stopPropagation();deleteWaTemplate('${t.id}')">✕</button>
     </div>`).join('') + `</div>`;
 }
@@ -5100,8 +5103,8 @@ window.saveCurrentWaMessage = async () => {
   const name = prompt('اكتب اسم للرسالة دي (علشان تلاقيها بسرعة):');
   if (!name || !name.trim()) return;
   try {
-    const ref = await addDoc(collection(db,'messageTemplates'), { name: name.trim(), text, timestamp: serverTimestamp() });
-    waTemplates.push({ id: ref.id, name: name.trim(), text });
+    const ref = await addDoc(collection(db,'messageTemplates'), { name: name.trim(), text, classSection: currentClassTab || '', timestamp: serverTimestamp() });
+    waTemplates.push({ id: ref.id, name: name.trim(), text, classSection: currentClassTab || '' });
     waTemplates.sort((a,b) => a.name.localeCompare(b.name,'ar'));
     renderWaTemplatesList();
     showToast('اتحفظت الرسالة ✓', 'success');
