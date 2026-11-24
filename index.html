@@ -2017,13 +2017,17 @@ html.light .class-badge.class-a,html.light .mon-role.sup{background:rgba(var(--a
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendEmailVerification, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc as _addDoc, getDocs, getDocsFromCache, getDocFromCache, deleteDoc as _deleteDoc, doc, getDoc, setDoc as _setDoc, updateDoc as _updateDoc, query, where, orderBy, limit, onSnapshot, waitForPendingWrites, serverTimestamp, Timestamp, writeBatch as _writeBatch, increment, arrayUnion, arrayRemove }
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, addDoc as _addDoc, getDocs, getDocsFromCache, getDocFromCache, deleteDoc as _deleteDoc, doc, getDoc, setDoc as _setDoc, updateDoc as _updateDoc, query, where, orderBy, limit, onSnapshot, waitForPendingWrites, serverTimestamp, Timestamp, writeBatch as _writeBatch, increment, arrayUnion, arrayRemove, deleteField }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js";
 
 // ✏️ حط هنا إيميل (أو أكتر من إيميل) الأدمن بتاعك — ده اللي هيتسجل تلقائياً كأدمن ويقدر يشوف تبويب "متابعة"
 const ADMIN_EMAILS = ['devidemele@gmail.com'];
+// تأمين النصوص اللي جاية من المستخدمين قبل ما تتعرض في الصفحة (منع XSS):
+// eh = للنص العادي جوه HTML ، ja = لما الاسم يتحط كـ parameter جوه onclick="fn('...')"
+const eh = t => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const ja = t => eh(String(t == null ? '' : t).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/[\r\n]+/g,' '));
 
 // ===== FIREBASE CONFIG (Hdour) =====
 const firebaseConfig = {
@@ -2656,6 +2660,9 @@ async function ensureParentsClass() {
     await setDoc(metaRef, { parentsClassSeeded: true }, { merge:true });
   } catch(e) { console.warn('parents class seed failed:', e); }
 }
+// سجل الأنشطة: الأدمن ومسؤولين الفصول بس (المسؤول العادي بيشوف أنشطة خدام فصوله، ومسؤول فصل الخدام بيشوف الكل)
+function canSeeActivity() { return canManageServants() || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).length > 0); }
+function actLimitClasses() { return canManageServants() ? null : normalizeAssignedClasses(currentSupervisorClass).filter(c => c !== SERVANTS_CLASS_ID); }
 function canManageServants() { return currentRole === 'admin' || (currentRole === 'supervisor' && normalizeAssignedClasses(currentSupervisorClass).includes(SERVANTS_CLASS_ID)); }
 function classLabel(sec) { if (!sec) return 'بدون فصل'; if (sec === SERVANTS_CLASS_ID) return 'الخدام'; const c = classById(sec); return c ? c.name : sec; }
 function classEmoji(sec) { if (!sec) return '؟'; if (sec === SERVANTS_CLASS_ID) return '👥'; const c = classById(sec); return c ? (c.emoji || '📘') : '❔'; }
@@ -2672,7 +2679,7 @@ function classBadgeHTML(sec, forceLabel) {
 // افاتار المخدوم: لو عنده صورة (s.photo) بيوريها، ولو لأ بيرجع لحرف الاسم زي ما كان بالظبط
 function studentAvatarHTML(s, cls) {
   if (s.photo) return `<div class="${cls}" style="background-image:url('${s.photo}');background-size:cover;background-position:center"></div>`;
-  return `<div class="${cls}">${(s.name||'؟').trim()[0]||'؟'}</div>`;
+  return `<div class="${cls}">${eh((s.name||'؟').trim()[0]||'؟')}</div>`;
 }
 // شرايط فصول (chips) عامة — بتتبني من allClasses مباشرة، فبتشتغل مع أي عدد فصول
 function classChipsHTML(activeId, onClickFn, opts = {}) {
@@ -2751,12 +2758,10 @@ function onClassesUpdated() {
   if (document.getElementById('tab-pick-class')?.style.display === 'block') renderClassPicker();
   { const t = document.getElementById('class-home-title'); if (t && document.getElementById('tab-home')?.style.display === 'block') t.textContent = classEmoji(currentClassTab) + ' ' + classLabel(currentClassTab); }
   renderClassChips();
-  renderProfClassChips();
   renderRegClassOptions();
   const editSel = document.getElementById('edit-class');
   if (editSel) { const cur = editSel.value; editSel.innerHTML = classSelectOptionsHTML(true); editSel.value = cur; }
   if (currentRole === 'admin') {
-    renderClassesAdminList();
     if (document.getElementById('tab-admin-classes')?.style.display === 'block') renderAdminClassCards();
     // بنقرا مجموعة الخدام تاني بس لو تبويب "متابعة" مفتوح فعلاً دلوقتي — مش عند كل تحديث للفصول
     if (document.getElementById('tab-monitor')?.style.display === 'block') { renderMonitorClassChips(); loadServantsOnce(); }
@@ -2803,31 +2808,11 @@ function renderClassChips() {
   cont.style.display = show ? '' : 'none';
   cont.innerHTML = show ? classChipsHTML(effectiveClassFilter(), 'setClassFilter', { classes: grp, includeNone: true }) : '';
 }
-function renderProfClassChips(activeId) {
-  const cont = document.getElementById('prof-class-chips');
-  if (!cont) return;
-  const active = activeId !== undefined ? activeId : (allStudents.find(x => x.id === currentProfileId)?.classSection || '');
-  let html = `<button class="filter-chip ${!active?'active':''}" onclick="setStudentClassFromProfile('')">بدون فصل</button>`;
-  html += allClasses.map(c => `<button class="filter-chip ${active===c.id?'active':''}" onclick="setStudentClassFromProfile('${c.id}')">${c.emoji||'📘'} ${c.name}</button>`).join('');
-  cont.innerHTML = html;
-}
 function renderRegClassOptions() {
   const sel = document.getElementById('reg-class');
   if (sel && allClasses.length) sel.innerHTML = classSelectOptionsHTML(false);
 }
 // ===== إدارة الفصول (أدمن فقط) — إضافة/تعديل/حذف فصول من جوه التطبيق نفسه =====
-function renderClassesAdminList() {
-  const cont = document.getElementById('classes-admin-list');
-  if (!cont) return;
-  if (!allClasses.length) { cont.innerHTML = `<div class="empty-state" style="padding:10px">لا يوجد فصول بعد</div>`; return; }
-  cont.innerHTML = allClasses.map(c => `
-    <div class="tpl-chip">
-      <span class="tpl-chip-name">${c.emoji||'📘'} ${c.name} <small style="opacity:.6">(${attendanceDayRule(c.id) ? (attendanceDayRule(c.id) === 5 ? 'جمعة' : 'خميس') : 'اليوم مش محدد'})</small></span>
-      <button class="tpl-chip-del" onclick="toggleClassDay('${c.id}')" title="تغيير يوم الحضور" style="margin-left:4px">🔁</button>
-      <button class="tpl-chip-del" onclick="editClassPrompt('${c.id}')" title="تعديل" style="margin-left:4px">✏️</button>
-      <button class="tpl-chip-del" onclick="deleteClass('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')" title="حذف">✕</button>
-    </div>`).join('');
-}
 window.addClassPrompt = async () => {
   const name = (prompt('اسم الفصل الجديد؟ (مثلاً: فصل ج)') || '').trim();
   if (!name) return;
@@ -2838,13 +2823,6 @@ window.addClassPrompt = async () => {
     await addDoc(collection(db,'classes'), { name, emoji, serviceDay, order: allClasses.length, createdAt: serverTimestamp() });
     showToast(`تم إضافة "${name}" ✓`, 'success');
   } catch(e) { console.error(e); showToast('حصل خطأ أثناء الإضافة', 'error'); }
-};
-window.toggleClassDay = async (id) => {
-  const c = classById(id); if (!c) return;
-  const cur = attendanceDayRule(id), nxt = cur === 5 ? 4 : 5;
-  if (!confirm(`حضور "${c.name}" يبقى يوم ${dayNameAr(nxt)} بس؟\nمحدش هيقدر يسجل حضور للفصل ده غير يوم ${dayNameAr(nxt)}، والتسميع بيتسجل في أي يوم على آخر يوم حضور.`)) return;
-  try { await updateDoc(doc(db,'classes',id), { serviceDay: nxt }); showToast(`تم — حضور "${c.name}" يوم ${dayNameAr(nxt)} ✓`, 'success'); }
-  catch(e) { console.error(e); showToast('حصل خطأ أثناء التعديل', 'error'); }
 };
 window.editClassPrompt = async (id) => {
   const c = classById(id); if (!c) return;
@@ -2872,7 +2850,7 @@ window.toggleSettingsMenu = (e) => {
   const dd = document.getElementById('settings-dropdown');
   const opening = dd.style.display === 'none';
   document.getElementById('settings-dropdown-notif').style.display = opening ? 'flex' : 'none';
-  document.getElementById('settings-dropdown-activity').style.display = opening && canManageServants() ? 'flex' : 'none';
+  document.getElementById('settings-dropdown-activity').style.display = opening && canSeeActivity() ? 'flex' : 'none';
   updateNotifBtn();
   dd.style.display = opening ? 'block' : 'none';
   if (opening) document.addEventListener('click', closeSettingsMenuOutside);
@@ -2977,7 +2955,7 @@ function renderSettingsPeopleList() {
     }
     return `<div class="servant-item" style="flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--border)">
       <div class="s-info">
-        <div class="s-name">${s.name||'—'}${s.role==='admin'?' 👑':s.role==='supervisor'?' 🗝️':''}</div>
+        <div class="s-name">${eh(s.name||'—')}${s.role==='admin'?' 👑':s.role==='supervisor'?' 🗝️':''}</div>
         <div class="s-sub">${assigned.length ? formatAssignedClasses(s.assignedClass) : (s.role === 'admin' ? 'كل الفصول' : 'من غير فصل ⚠️ (مش هيشوف مخدومين)')}</div>
       </div>
       ${adminBtn}
@@ -3422,9 +3400,9 @@ window.doRegister = async () => {
   const name = document.getElementById('reg-name-select').value.trim();
   const email = document.getElementById('reg-email').value.trim();
   const pass  = document.getElementById('reg-pass').value;
-  const phone = document.getElementById('reg-phone').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim().replace(/[<>]/g, '');
   const dob = document.getElementById('reg-dob').value;
-  const address = document.getElementById('reg-address').value.trim();
+  const address = document.getElementById('reg-address').value.trim().replace(/[<>]/g, '');
   err.style.display = 'none';
   if (!regClass)    { err.textContent = 'اختار فصلك الأول';       err.style.display = 'block'; return; }
   if (!name)        { err.textContent = 'اختار اسمك من القايمة';  err.style.display = 'block'; return; }
@@ -3707,19 +3685,24 @@ function usageTick() {
   const n = Date.now(), d = n - usageVisStart; usageVisStart = n;
   if (d > 0 && d <= 5 * 60 * 1000) usageAcc += d; // فرق أكبر من 5 دقايق = الجهاز كان نايم، مش بيتحسب
 }
+let usageFlushing = false;
 async function usageFlush() {
+  if (usageFlushing) return;
+  usageFlushing = true;
   try {
     usageTick();
     if (!currentUid) return;
     const sec = Math.round(usageAcc / 1000), a = usageActs, o = usageOpens;
     if (!sec && !a && !o) return;
-    usageAcc -= sec * 1000; usageActs = 0; usageOpens = 0;
     const day = usageDay();
     await _setDoc(doc(db, 'usage', currentUid + '_' + day), {
       uid: currentUid, name: currentName || '', day,
       seconds: increment(sec), acts: increment(a), opens: increment(o), last: serverTimestamp()
     }, { merge: true });
+    // بنطرح اللي اتحفظ بس بعد ما الحفظ ينجح — لو النت فصل الوقت بيفضل متجمّع ويتبعت في المرة الجاية
+    usageAcc -= sec * 1000; usageActs -= a; usageOpens -= o;
   } catch (e) { /* القياس مش مهم لدرجة يوقف التطبيق */ }
+  finally { usageFlushing = false; }
 }
 function startUsage() {
   try {
@@ -4017,6 +4000,7 @@ async function loadStudents(force = false) {
   }
   if (currentRole === 'admin' && !classFieldMig && rev !== null && !scope.length) migrateClassField();
   studentsLoaded = true;
+  if (currentRole === 'admin') setTimeout(nidxSync, 4000);
   // تبويب "المخدومين" بيعرض مخدومين الفصل الحالي بس (وفلتر الفصول للتلات فصول بيبي/كي جي)،
   // والشاشات التانية (الحضور، الرسائل، التصدير) بتتقفل على فصل الخادم عن طريق classScope / ownClassStudents
   updateStuCount();
@@ -4036,12 +4020,67 @@ async function migrateClassField() {
   } catch(e) { console.error('class field migration failed:', e); }
 }
 
-// فحص تكرار الاسم على السيرفر (بيغطي كل الفصول حتى لو الخادم مقيّد بفصله)
-async function findNameOnServer(name, exceptId, linkId) {
+// ===== فهرس أسماء المخدومين (nameIndex) — عشان فحص تكرار الاسم يشتغل للخدام كمان =====
+// الخادم مش مسموحله يقرا مخدومين الفصول التانية، فبنحتفظ بمستند لكل اسم (بعد توحيد الكتابة: أحمد = احمد)
+// فيه: ids.{studentId} = { c: الفصل, l: linkId, n: الاسم }. الخادم يقدر يفتح مستند اسم واحد بس (get) — مش يعرض القايمة كلها.
+// الأدمن بيظبط الفهرس كله أوتوماتيك من قايمة المخدومين الكاملة اللي عنده (بيكتب الفروقات بس).
+const NIDX_LS = 'hdour_nidx_v1';
+function nidxKey(n) { return 'n_' + (normalizeArabic(n).replace(/\//g, '∕').slice(0, 300) || '_'); }
+function nidxEntry(x) { return { c: x.classSection || '', l: x.linkId || '', n: x.name || '' }; }
+async function nidxPut(x) { // بعد إضافة/تعديل مخدوم
+  if (!x || !x.id || !x.name || x.classSection === PARENTS_CLASS_ID) return;
+  try { await setDoc(doc(db, 'nameIndex', nidxKey(x.name)), { ids: { [x.id]: nidxEntry(x) } }, { merge: true }); } catch (e) { console.warn('nameIndex put:', e); }
+}
+async function nidxDrop(id, name) { // بعد حذف مخدوم أو تغيير اسمه (بنشيله من الاسم القديم)
+  if (!id || !name) return;
+  try { await updateDoc(doc(db, 'nameIndex', nidxKey(name)), { ['ids.' + id]: deleteField() }); } catch (e) { /* المستند ممكن مايكونش موجود */ }
+}
+// الأدمن: بيبني الفهرس من كل المخدومين ويكتب الاختلافات بس (أول مرة على جهاز جديد بيقرا الفهرس الحالي مرة واحدة)
+let nidxSyncBusy = false;
+async function nidxSync() {
+  if (currentRole !== 'admin' || nidxSyncBusy || !navigator.onLine) return;
+  nidxSyncBusy = true;
   try {
-    const snap = await countedGetDocs(query(collection(db,'students'), where('name','==',name)), 'students (فحص تكرار الاسم)');
-    const hit = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(x => x.id !== exceptId && x.classSection !== PARENTS_CLASS_ID && !(linkId && x.linkId === linkId));
-    return hit || null;
+    const want = {};
+    allStudents.forEach(x => {
+      if (!x.id || !x.name || x.classSection === PARENTS_CLASS_ID) return;
+      const k = nidxKey(x.name); (want[k] = want[k] || {})[x.id] = nidxEntry(x);
+    });
+    let have = null;
+    try { have = JSON.parse(localStorage.getItem(NIDX_LS) || 'null'); } catch (e) {}
+    if (!have) {
+      have = {};
+      (await countedGetDocs(collection(db, 'nameIndex'), 'nameIndex (مزامنة أول مرة)')).docs.forEach(d => { have[d.id] = d.data().ids || {}; });
+    }
+    const same = (a, b) => { a = a || {}; b = b || {}; const ka = Object.keys(a), kb = Object.keys(b);
+      return ka.length === kb.length && ka.every(id => b[id] && a[id].c === b[id].c && a[id].l === b[id].l && a[id].n === b[id].n); };
+    const ops = [];
+    Object.keys(want).forEach(k => { if (!same(want[k], have[k])) ops.push(b => b.set(doc(db, 'nameIndex', k), { ids: want[k] })); });
+    Object.keys(have).forEach(k => { if (!want[k]) ops.push(b => b.delete(doc(db, 'nameIndex', k))); });
+    for (let i = 0; i < ops.length; i += 400) { const b = writeBatch(db); ops.slice(i, i + 400).forEach(f => f(b)); await b.commit(); }
+    try { localStorage.setItem(NIDX_LS, JSON.stringify(want)); } catch (e) {}
+  } catch (e) { console.warn('nameIndex sync:', e); }
+  finally { nidxSyncBusy = false; }
+}
+
+// فحص تكرار الاسم على السيرفر (بيغطي كل الفصول حتى لو الخادم مقيّد بفصله)
+// الأدمن عنده كل المخدومين محمّلين أصلًا (الفحص المحلي كفاية + استعلام احتياطي)، والخادم بيفتح مستند الاسم من الفهرس
+async function findNameOnServer(name, exceptId, linkId) {
+  const okHit = x => x && x.id !== exceptId && x.classSection !== PARENTS_CLASS_ID && !(linkId && x.linkId === linkId);
+  try {
+    if (currentRole === 'admin') {
+      const snap = await countedGetDocs(query(collection(db,'students'), where('name','==',name)), 'students (فحص تكرار الاسم)');
+      return snap.docs.map(d => ({ id: d.id, ...d.data() })).find(okHit) || null;
+    }
+    const d = await getDoc(doc(db, 'nameIndex', nidxKey(name)));
+    countReads('nameIndex (فحص تكرار الاسم)', 1);
+    if (!d.exists()) return null;
+    const ids = d.data().ids || {};
+    for (const id of Object.keys(ids)) {
+      const e = ids[id] || {}, x = { id, name: e.n || name, classSection: e.c || '', linkId: e.l || '' };
+      if (okHit(x)) return x;
+    }
+    return null;
   } catch(e) { console.error('dup check failed:', e); return null; }
 }
 const dupMsg = d => `الاسم "${d.name}" مسجل قبل كده${d.classSection ? ' (' + classLabel(d.classSection) + ')' : ''} — مينفعش تكرار الاسم`;
@@ -4143,6 +4182,7 @@ window.addStudent = async (markToday) => {
   // لو الخادم مقيد بفصول معينة، أي مخدوم جديد بيضيفه يتحط أوتوماتيك في الفصل الحالي اللى شافه في الواجهة عشان يبقى ضمن الفصول المسموح له
   if (currentRole !== 'admin' && allowed.length) data.classSection = targetClass;
   const newRef = await addDoc(collection(db,'students'), data); bumpStudentsRev();
+  if (newRef?.id) nidxPut({ id: newRef.id, ...data });
   ['new-name','new-dob','new-address','new-map','new-confessor','new-school','new-gender','new-phone-father','new-phone-mother','new-phone-student']
     .forEach(id => { document.getElementById(id).value = ''; });
   newGenderManuallySet = false;
@@ -4596,6 +4636,7 @@ window.deleteStudent = async (id, name) => {
   if (!confirm(`هتحذف "${name}"؟`)) return;
   try { await deleteDoc(doc(db,'students',id)); } catch(e) { console.error(e); showToast('مقدرتش أحذف — مفيش صلاحية', 'error'); return; }
   bumpStudentsRev(true);
+  nidxDrop(id, (allStudents.find(s => s.id === id) || {}).name || name);
   allStudents = allStudents.filter(s => s.id !== id);
   delete todayAttendance[id];
   updateStats(); renderTodayList(); renderStudentsList();
@@ -4811,12 +4852,12 @@ function renderStudentsList() {
         const genderIcon = s.gender === 'male' ? '🧑' : (s.gender === 'female' ? '👧' : '');
         return `<div class="sib-row${multi?' multi-class':''}">
           <div class="s-info">
-            <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}</div>
+            <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${eh(s.name)}</div>
             <div class="s-sub" style="margin-top:3px">${classBadgeHTML(s.classSection)}</div>
           </div>
           <button class="action-btn" onclick="openProfile('${s.id}')">👤</button>
           <button class="action-btn" onclick="openEditModal('${s.id}')">✏️</button>
-          ${canDeleteStudent() ? `<button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>` : ''}
+          ${canDeleteStudent() ? `<button class="del-btn" onclick="deleteStudent('${s.id}','${ja(s.name)}')">🗑</button>` : ''}
         </div>`;
       }).join('');
       return `<div class="student-item sib-group${g.some(isMultiClassStudent)?' multi-class':''}"><div class="sib-head">👨‍👩‍👧‍👦 ${g.length} إخوات</div>${rows}</div>`;
@@ -4834,7 +4875,7 @@ function renderStudentsList() {
     return `<div class="student-item${bad?' bad-data':''}${multi?' multi-class':''}">
       <div onclick="openPhotoSheet('${s.id}')" style="cursor:pointer;display:flex">${studentAvatarHTML(s,'s-avatar')}</div>
       <div class="s-info">
-        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${s.name}${multi?multiClassTagHTML(s):''}</div>
+        <div class="s-name">${genderIcon ? genderIcon + ' ' : ''}${eh(s.name)}${multi?multiClassTagHTML(s):''}</div>
         ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${dob ? `<div class="s-sub">🎂 ${dob}</div>` : ''}
         <div class="s-sub" style="margin-top:3px">${classBadge}</div>
@@ -4843,7 +4884,7 @@ function renderStudentsList() {
       </div>
       <button class="action-btn" onclick="openProfile('${s.id}')">👤</button>
       <button class="action-btn" onclick="openEditModal('${s.id}')">✏️</button>
-      ${canDeleteStudent() ? `<button class="del-btn" onclick="deleteStudent('${s.id}','${s.name}')">🗑</button>` : ''}
+      ${canDeleteStudent() ? `<button class="del-btn" onclick="deleteStudent('${s.id}','${ja(s.name)}')">🗑</button>` : ''}
     </div>`;
   }).join('');
 }
@@ -5073,8 +5114,19 @@ const waTplForClass = () => waTemplates.filter(t => !t.classSection || t.classSe
 async function loadWaTemplates() {
   if (waTemplatesLoaded) { renderWaTemplatesList(); return; }
   try {
-    const snap = await countedGetDocs(query(collection(db,'messageTemplates'), orderBy('name')), 'messageTemplates');
-    waTemplates = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    // الأدمن بيجيب الكل. الخادم/المسؤول بيجيب رسائل فصوله + العامة بس (قواعد فايرستور بتمنع غير كده)
+    let docs = [];
+    if (currentRole === 'admin') {
+      docs = (await countedGetDocs(query(collection(db,'messageTemplates'), orderBy('name')), 'messageTemplates')).docs;
+      // الرسائل القديمة اللي اتسجلت قبل فصل الرسائل مالهاش حقل classSection خالص — بنحطلها '' (عامة) عشان الخدام يقدروا يشوفوها
+      docs.filter(d => !('classSection' in d.data())).forEach(d => { updateDoc(doc(db,'messageTemplates',d.id), { classSection: '' }).catch(() => {}); });
+    } else {
+      const mine = [...new Set([...getAllowedAssignedClasses(), ''])];
+      for (let i = 0; i < mine.length; i += 30) {
+        docs.push(...(await countedGetDocs(query(collection(db,'messageTemplates'), where('classSection','in', mine.slice(i, i + 30))), 'messageTemplates (فصولي)')).docs);
+      }
+    }
+    waTemplates = docs.map(d => ({ id:d.id, ...d.data() })).sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''), 'ar'));
     waTemplatesLoaded = true;
   } catch(e) {
     console.error(e);
@@ -5124,6 +5176,7 @@ window.useWaTemplate = (id) => {
 window.deleteWaTemplate = async (id) => {
   const t = waTemplates.find(x => x.id === id);
   if (!t) return;
+  if (!t.classSection && currentRole !== 'admin') { showToast('الرسائل العامة الأدمن بس اللي يقدر يحذفها', 'error'); return; }
   if (!confirm(`تحذف الرسالة المحفوظة "${t.name}"؟`)) return;
   try {
     await deleteDoc(doc(db,'messageTemplates',id));
@@ -5267,7 +5320,7 @@ function renderWaRecipientsList() {
       return `<div class="wa-recipient-row ${!phone?'no-phone':''}${multi?' multi-class':''}">
         <input type="checkbox" ${checked?'checked':''} ${!phone?'disabled':''} onchange="toggleWaRecipient('${s.id}', this.checked)">
         <div class="s-info">
-          <div class="s-name">${s.name}${multi?multiClassTagHTML(s):''}</div>
+          <div class="s-name">${eh(s.name)}${multi?multiClassTagHTML(s):''}</div>
           <div class="s-sub">${phone ? phone : 'لا يوجد رقم تليفون'}</div>
         </div>
         <button type="button" title="${added ? 'اتضاف للجروب — دوس تشيل العلامة' : 'اعلّمه كمتضاف للجروب'}"
@@ -6017,7 +6070,7 @@ function renderTodayList() {
     return `<div class="student-item ${present?'present':''}${hasVerse&&!present?' verse-only':''}${bad?' bad-data':''}${multi?' multi-class':''}">
       ${studentAvatarHTML(s,'s-avatar')}
       <div class="s-info"${isBday ? ' style="flex:0 1 auto"' : ''}>
-        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${s.name}${multi?multiClassTagHTML(s):''}</div>
+        <div class="s-name${bad?' bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''}>${eh(s.name)}${multi?multiClassTagHTML(s):''}</div>
         ${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}
         ${isBday ? `<div class="s-sub" style="color:#f1c40f">🎂 ${birthdayDay(s)}/${birthdayMonth(s)}${s.dob ? ' — ' + (new Date().getFullYear() - parseInt(String(s.dob).split('-')[0], 10)) + ' سنة' : ''}</div>` : ''}
         ${hasVerse ? `<div class="s-sub" style="color:#a07de0">📖 ${verseEntry.verse}</div>` : ''}
@@ -6090,7 +6143,7 @@ window.onManualSearch = () => {
     if (!s.classSection) {
       return `<div class="result-item" style="cursor:default;flex-wrap:wrap">
         ${studentAvatarHTML(s,'result-avatar')}
-        <div style="flex:1;font-size:14px;font-weight:700;min-width:100%">${s.name} <span style="color:var(--text-dim);font-weight:600;font-size:11px">— هو في فصل إيه؟</span></div>
+        <div style="flex:1;font-size:14px;font-weight:700;min-width:100%">${eh(s.name)} <span style="color:var(--text-dim);font-weight:600;font-size:11px">— هو في فصل إيه؟</span></div>
         ${classPickButtonsHTML(s.id, pickClasses)}
       </div>`;
     }
@@ -6103,7 +6156,7 @@ window.onManualSearch = () => {
     const multi = isMultiClassStudent(s);
     return `<div class="result-item${bad?' bad-data':''}${multi?' multi-class':''}" style="cursor:default">
       ${studentAvatarHTML(s,'result-avatar')}
-      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${s.name} ${classBadge}${multi?multiClassTagHTML(s):''}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
+      <div style="flex:1"><div class="${bad?'bad-click':''}"${bad?` onclick="openBadFix('${s.id}')" title="بيانات خاطئة — اضغط للتصحيح"`:''} style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:6px">${eh(s.name)} ${classBadge}${multi?multiClassTagHTML(s):''}</div>${bad ? `<div class="bad-tag">🚩 ${badLabelsOf(s).join('، ')}</div>` : ''}${phoneHitHTML(s, queryDigits(q))}</div>
       <div class="check-box att-box${isPresent?' checked':''}" onclick="event.stopPropagation();${isPresent?`removeAttendance('${s.id}')`:`manualMarkAndClear('${s.id}')`}">${isPresent?'✓':''}</div>
       ${par ? '' : `<div class="check-box verse-box${hasVerse?' checked':''}" title="${hasVerse?verseText:'تسجيل آية'}" onclick="event.stopPropagation();${hasVerse?`removeVerse('${s.id}')`:`manualVerseAndClear('${s.id}')`}">${hasVerse?'✓':'📖'}</div>`}
     </div>`;
@@ -6446,7 +6499,7 @@ let currentProfileId = null;
 function renderProfAvatar(s) {
   const el = document.getElementById('prof-avatar');
   el.style.backgroundImage = s.photo ? `url('${s.photo}')` : '';
-  el.innerHTML = (s.photo ? '' : `<span>${(s.name||'؟').trim()[0]||'؟'}</span>`) + `<div class="avatar-cam-badge">📷</div>`;
+  el.innerHTML = (s.photo ? '' : `<span>${eh((s.name||'؟').trim()[0]||'؟')}</span>`) + `<div class="avatar-cam-badge">📷</div>`;
 }
 window.triggerProfilePhotoPick = () => openPhotoSheet(currentProfileId);
 // ===== صورة المخدومة: عرض / تصوير / معرض / تعديل (قص-تكبير-لف) / حذف =====
@@ -6714,7 +6767,6 @@ window.openProfile = (id) => {
   const profNameEl = document.getElementById('prof-name');
   profNameEl.textContent = s.name;
   if (isMultiClassStudent(s)) profNameEl.insertAdjacentHTML('beforeend', ' ' + multiClassTagHTML(s));
-  renderProfClassChips(s.classSection || '');
   const H = (studentHist[id] && Date.now() - studentHist[id].ts < 300000) ? studentHist[id] : null;
   const dates   = H ? Object.keys(H.att).sort() : [];
   let count = 0, lastDate = null;
@@ -6810,26 +6862,6 @@ window.closeProfile = () => {
   document.body.style.overflow = '';
 };
 
-// تغيير فصل الولد من صفحة الملف مباشرة (فصل أ / فصل ب / بدون فصل)
-window.setStudentClassFromProfile = async (section) => {
-  const id = currentProfileId;
-  if (!id) return;
-  try {
-    await updateDoc(doc(db,'students',id), { classSection: section, updatedAt: serverTimestamp() }); bumpStudentsRev();
-    const idx = allStudents.findIndex(x => x.id === id);
-    if (idx !== -1) allStudents[idx].classSection = section;
-    renderProfClassChips(section);
-    renderStudentsList();
-    onManualSearch();
-    updateStats();
-    renderTodayList();
-    const s = allStudents[idx];
-    showToast(`✓ ${s?.name || ''} — ${classLabel(section)}`, 'success');
-    logActivity('تعديل الفصل', `${s?.name || ''} — ${classLabel(section)}`);
-  } catch(e) {
-    showToast('حصل خطأ أثناء الحفظ', 'error');
-  }
-};
 
 window.editFromProfile = () => {
   if (!currentProfileId) return;
@@ -7055,7 +7087,7 @@ async function processVoiceName(altTexts) {
       const done = alreadyDone(s);
       return `<div class="result-item" style="cursor:default">
         ${studentAvatarHTML(s,'result-avatar')}
-        <div style="flex:1;font-size:14px;font-weight:700">${s.name}</div>
+        <div style="flex:1;font-size:14px;font-weight:700">${eh(s.name)}</div>
         ${done
           ? `<span class="present-badge">✓ ${isVerseMode?'سمع':'حاضر'}</span>`
           : `<button onclick="voicePickStudent('${s.id}')" style="background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.3);border-radius:8px;color:var(--success);font-family:Cairo,sans-serif;font-size:12px;font-weight:700;padding:8px 12px;cursor:pointer">✓ ده</button>`}
@@ -8062,7 +8094,7 @@ function renderSmList() {
     const has = smHasPhone(x);
     return `<div class="wa-recipient-row ${!has ? 'no-phone' : ''}">
       <input type="checkbox" ${smChecked.has(x.id) ? 'checked' : ''} ${!has ? 'disabled' : ''} onchange="smToggle('${x.id}', this.checked)">
-      <div class="s-info"><div class="s-name">${x.name || '—'}</div><div class="s-sub">${has ? x.phone : 'لا يوجد رقم تليفون'}</div></div>
+      <div class="s-info"><div class="s-name">${eh(x.name || '—')}</div><div class="s-sub">${has ? eh(x.phone) : 'لا يوجد رقم تليفون'}</div></div>
     </div>`;
   }).join('') : `<div class="empty-state"><div class="empty-icon">📋</div>مفيش خدام بالفلاتر دي</div>`;
   smUpdateCount(list);
@@ -8141,7 +8173,7 @@ function servAttDocId(date, activity, servantId) { return `${date}_${activity}_$
 function servantAvatarHTML(s) {
   const first = normalizeAssignedClasses(s.assignedClass)[0];
   const p = first ? classPalette(first) : { bg:'rgba(79,142,247,0.15)', text:'#4f8ef7' };
-  return `<div class="mon-avatar" style="background:${p.bg};color:${p.text}">${(s.name||'؟').trim()[0]||'؟'}</div>`;
+  return `<div class="mon-avatar" style="background:${p.bg};color:${p.text}">${eh((s.name||'؟').trim()[0]||'؟')}</div>`;
 }
 function servantClassBadges(s) {
   const ids = normalizeAssignedClasses(s.assignedClass);
@@ -8192,10 +8224,10 @@ async function renderServAttList() {
     cont.innerHTML = summary + servants.map(s => {
       const present = presentIds.has(s.id);
       return `
-      <div class="servant-item mon-row ${present ? 'present' : ''}" onclick="toggleServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')">
+      <div class="servant-item mon-row ${present ? 'present' : ''}" onclick="toggleServantAttendance('${s.id}','${ja(s.name||'')}','${date}')">
         ${servantAvatarHTML(s)}
         <div class="s-info">
-          <div class="mon-name">${s.name||'—'}${servantRoleChip(s)}</div>
+          <div class="mon-name">${eh(s.name||'—')}${servantRoleChip(s)}</div>
           <div class="mon-badges">${servantClassBadges(s)}</div>
         </div>
         <div class="serv-att-check ${present ? 'checked' : ''}"></div>
@@ -8330,7 +8362,7 @@ async function renderClassServAttList() {
     const presentIds = new Set(snap.docs.map(d => d.data().servantId));
     cont.innerHTML = groups.map(g => (allMode ? `<div class="section-title" style="margin:14px 0 8px">${esc(classEmoji(g.cid))} ${esc(classLabel(g.cid))} (${g.list.length})</div>` : '') +
       g.list.map(s => `
-      <div class="servant-item" onclick="toggleClassServantAttendance('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${date}')" style="cursor:pointer">
+      <div class="servant-item" onclick="toggleClassServantAttendance('${s.id}','${ja(s.name||'')}','${date}')" style="cursor:pointer">
         <div class="s-info">
           <div class="s-name">${esc(s.name)||'—'}</div>
         </div>
@@ -8461,11 +8493,11 @@ function renderSupPending() {
   const q = n => String(n||'').replace(/'/g, "\\'");
   cont.innerHTML = mine.map(s => `
     <div class="servant-item" style="flex-wrap:wrap">
-      <div class="s-avatar">${(s.name||'؟').trim()[0]||'؟'}</div>
+      <div class="s-avatar">${eh((s.name||'؟').trim()[0]||'؟')}</div>
       <div class="s-info">
-        <div class="s-name">${s.name||'—'} ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
-        <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}${s.phone ? ' · '+s.phone : ''}</div>
-        ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
+        <div class="s-name">${eh(s.name||'—')} ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
+        <div class="s-sub" dir="ltr" style="text-align:right">${eh(s.email||'')}${s.phone ? ' · '+eh(s.phone) : ''}</div>
+        ${s.address ? `<div class="s-sub">📍 ${eh(s.address)}</div>` : ''}
       </div>
       <button class="export-btn" onclick="approveServant('${s.id}','${q(s.name)}','${servantRoleIds(s).join(',')}')">✓ قبول</button>
       <button class="del-btn" onclick="rejectServant('${s.id}','${q(s.name)}','${servantRoleIds(s).join(',')}')">✕ رفض</button>
@@ -8511,14 +8543,14 @@ function renderPendingList(list) {
   if (!list.length) { cont.innerHTML = `<div class="empty-state">لا يوجد طلبات انضمام جديدة</div>`; return; }
   cont.innerHTML = list.map(s => `
     <div class="servant-item" style="flex-wrap:wrap">
-      <div class="s-avatar">${(s.name||'؟').trim()[0]||'؟'}</div>
+      <div class="s-avatar">${eh((s.name||'؟').trim()[0]||'؟')}</div>
       <div class="s-info">
-        <div class="s-name">${s.name||'—'} ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
-        <div class="s-sub" dir="ltr" style="text-align:right">${s.email||''}${s.phone ? ' · '+s.phone : ''}</div>
-        ${s.address ? `<div class="s-sub">📍 ${s.address}</div>` : ''}
+        <div class="s-name">${eh(s.name||'—')} ${s.assignedClass ? classBadgeHTML(s.assignedClass) : ''}</div>
+        <div class="s-sub" dir="ltr" style="text-align:right">${eh(s.email||'')}${s.phone ? ' · '+eh(s.phone) : ''}</div>
+        ${s.address ? `<div class="s-sub">📍 ${eh(s.address)}</div>` : ''}
       </div>
-      <button class="export-btn" onclick="approveServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${servantRoleIds(s).join(',')}')">✓ قبول</button>
-      <button class="del-btn" onclick="rejectServant('${s.id}','${(s.name||'').replace(/'/g,"\\'")}','${servantRoleIds(s).join(',')}')">✕ رفض</button>
+      <button class="export-btn" onclick="approveServant('${s.id}','${ja(s.name||'')}','${servantRoleIds(s).join(',')}')">✓ قبول</button>
+      <button class="del-btn" onclick="rejectServant('${s.id}','${ja(s.name||'')}','${servantRoleIds(s).join(',')}')">✕ رفض</button>
     </div>`).join('');
 }
 
@@ -8538,7 +8570,7 @@ function renderServantsList(list) {
     const isSup = x.sup.size > 0;
     return `
       <div class="servant-item mon-row" style="opacity:.85" onclick="openPendingProfile(decodeURIComponent('${pEnc(x.name)}'))">
-        <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${(x.name||'؟').trim()[0]||'؟'}</div>
+        <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${eh((x.name||'؟').trim()[0]||'؟')}</div>
         <div class="s-info">
           <div class="mon-name">${dEsc(x.name)}${isSup ? '<span class="mon-role sup">🗝️ مسؤول فصل</span>' : ''}<span class="mon-role" style="background:rgba(255,255,255,0.06);color:var(--text-dim);border:1px solid var(--border)">⏳ لسه مسجلش</span></div>
           <div class="mon-badges">${x.classes.map(cid => classBadgeHTML(cid)).join('')}</div>
@@ -8561,7 +8593,7 @@ function renderServantsList(list) {
       <div class="servant-item mon-row" onclick="openServantProfile('${s.id}')">
         ${servantAvatarHTML(s)}
         <div class="s-info">
-          <div class="mon-name">${s.name||'—'}${servantRoleChip(s)}</div>
+          <div class="mon-name">${eh(s.name||'—')}${servantRoleChip(s)}</div>
           <div class="mon-badges">${servantClassBadges(s)}</div>
           <div class="mon-stats">
             <span class="mon-stat-chip ${s.sscCount?'has':''}">📖 مدارس أحد <b>${s.sscCount||0}</b></span>
@@ -8728,11 +8760,11 @@ window.openServantProfile = (id) => {
   renderServantProfileClassChips(s);
   const contactLines = [];
   contactLines.push(s.status === 'pending' ? '⏳ سجّل حساب وبانتظار موافقة الأدمن' : '✅ مسجل حساب');
-  if (s.email) contactLines.push(`📧 <span dir="ltr">${s.email}</span>`);
-  if (s.phone) contactLines.push(`📞 <span dir="ltr">${s.phone}</span>`);
-  if (s.address) contactLines.push(`📍 ${s.address}`);
-  if (currentRole === 'admin' && s.status !== 'pending') contactLines.push(`🎂 <input type="date" value="${s.dob || ''}" onchange="saveServantDob('${s.id}', this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Cairo,sans-serif;padding:4px 8px">`);
-  else if (s.dob) contactLines.push(`🎂 ${s.dob}`);
+  if (s.email) contactLines.push(`📧 <span dir="ltr">${eh(s.email)}</span>`);
+  if (s.phone) contactLines.push(`📞 <span dir="ltr">${eh(s.phone)}</span>`);
+  if (s.address) contactLines.push(`📍 ${eh(s.address)}`);
+  if (currentRole === 'admin' && s.status !== 'pending') contactLines.push(`🎂 <input type="date" value="${eh(s.dob || '')}" onchange="saveServantDob('${s.id}', this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:Cairo,sans-serif;padding:4px 8px">`);
+  else if (s.dob) contactLines.push(`🎂 ${eh(s.dob)}`);
   document.getElementById('sprof-contact').innerHTML = contactLines.join('<br>') || '';
   renderServantProfileActions(s);
   document.getElementById('servant-profile-modal').style.display = 'flex';
@@ -8918,7 +8950,7 @@ window.openDashModal = () => {
     <label class="dash-opt">
       <input type="checkbox" value="${s.id}" ${active.includes(s.id) ? 'checked' : ''}>
       <span class="dash-opt-txt">
-        <span class="dash-opt-name">${s.name}</span>
+        <span class="dash-opt-name">${eh(s.name)}</span>
         <div class="dash-opt-desc">${s.desc}</div>
       </span>
     </label>`).join('');
@@ -9095,10 +9127,10 @@ const ACT_LIMIT = 500;
 let actCache = {}; // dateKey -> { at, docs, hitLimit }
 window.openActivityModal = async () => {
   closeSettingsMenu();
-  if (!canManageServants()) return;
+  if (!canSeeActivity()) return;
   const di = document.getElementById('act-date'); if (di && !di.value) di.value = toLocalDateKey(new Date());
-  const sel = document.getElementById('act-class'), keep = sel.value || 'all';
-  sel.innerHTML = `<option value="all">🌐 كل الفصول</option>` + allClasses.map(c => `<option value="${impEsc(c.id)}">${impEsc(classLabel(c.id))}</option>`).join('');
+  const sel = document.getElementById('act-class'), keep = sel.value || 'all', lim = actLimitClasses();
+  sel.innerHTML = `<option value="all">🌐 ${lim ? 'كل فصولي' : 'كل الفصول'}</option>` + allClasses.filter(c => !lim || lim.includes(c.id)).map(c => `<option value="${impEsc(c.id)}">${impEsc(classLabel(c.id))}</option>`).join('');
   sel.value = [...sel.options].some(o => o.value === keep) ? keep : 'all';
   document.getElementById('activity-modal').style.display = 'flex';
   renderActivityList();
@@ -9122,7 +9154,8 @@ window.renderActivityList = async function(force) {
     if (document.getElementById('act-date').value !== v || (document.getElementById('act-class').value || 'all') !== cls) return; // المستخدم غيّر الاختيار وإحنا بنحمّل
     const byId = new Map(cachedServants.map(x => [x.id, x]));
     const classesOf = uid => { const sv = byId.get(uid); return sv && sv.role !== 'admin' ? normalizeAssignedClasses(sv.assignedClass) : []; };
-    const rows = c.docs.filter(a => cls === 'all' || classesOf(a.uid).includes(cls));
+    const lim = actLimitClasses();
+    const rows = c.docs.filter(a => cls === 'all' ? (!lim || classesOf(a.uid).some(x => lim.includes(x))) : classesOf(a.uid).includes(cls));
     const people = new Set(rows.map(a => a.uid)).size;
     sum.style.display = 'block';
     sum.textContent = `${rows.length} نشاط · ${people} خادم` + (cls === 'all' ? '' : ' — ' + classLabel(cls)) + (c.hitLimit ? ` (أحدث ${ACT_LIMIT} نشاط في اليوم)` : '');
@@ -9320,7 +9353,7 @@ function personRowHTML(p) {
     ${selectable
       ? `<input type="checkbox" ${peopleSel.has(p.key) ? 'checked' : ''} onclick="event.stopPropagation();togglePersonSel(this.closest('[data-key]').dataset.key)" style="width:19px;height:19px;accent-color:var(--accent);flex-shrink:0">`
       : `<span style="width:19px;flex-shrink:0"></span>`}
-    <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${(p.name || '؟').trim()[0] || '؟'}</div>
+    <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${eh((p.name || '؟').trim()[0] || '؟')}</div>
     <div class="s-info">
       <div class="mon-name">${dEsc(p.name)}${chips.join('')}</div>
       <div class="mon-badges">${badges}</div>
@@ -9600,7 +9633,7 @@ function rhPersonRow(p, cid) {
   const chip = p.isAdmin ? `<span class="mon-role admin">👑 أدمن</span>` : (cid ? rhRoleChip(p, cid) : '');
   const pend = p.kind === 'pend' ? `<span class="mon-role" style="background:rgba(255,255,255,0.06);color:var(--text-dim);border:1px solid var(--border)">⏳ لسه مسجلش</span>` : '';
   return `<div class="servant-item mon-row" style="gap:10px">
-    <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${(p.name || '؟').trim()[0] || '؟'}</div>
+    <div class="mon-avatar" style="background:${pal.bg};color:${pal.text}">${eh((p.name || '؟').trim()[0] || '؟')}</div>
     <div class="s-info"><div class="mon-name">${dEsc(p.name)}</div>${(chip || pend) ? `<div class="mon-badges" style="margin-top:2px">${chip}${pend}</div>` : ''}${badges ? `<div class="mon-badges">${badges}</div>` : ''}</div>
     ${p.isAdmin ? ((p.kind === 'reg' && !isPrimaryAdmin(cachedServants.find(x => x.id === p.id)?.email)) ? `<button type="button" class="del-btn" data-id="${p.id}" data-name="${dEsc(p.name)}" onclick="rhDemote(this.dataset.id,this.dataset.name)" style="flex:0 0 auto;white-space:nowrap">⬇️ شيل الأدمن</button>` : '') : `<button type="button" class="action-btn" data-key="${p.key}" onclick="openRhChange(this.dataset.key)" style="flex:0 0 auto;white-space:nowrap">🔄 تغيير الدور</button>`}
   </div>`;
@@ -10312,6 +10345,7 @@ window.clearBadFix = async () => {
 };
 window.saveBadFix = async () => {
   const id = badFixId, s = allStudents.find(x => x.id === id); if (!s) return;
+  const nidxOld = s.name || '';
   const keys = badKeysOf(s);
   const raw = k => document.getElementById('bad-fix-' + k).value.trim();
   const up = {}, fixed = new Set();
@@ -10353,6 +10387,7 @@ window.saveBadFix = async () => {
   const remaining = keys.filter(k => !fixed.has(k));
   try {
     await persistBadData(id, up, remaining);
+    if (up.name) { if (nidxKey(nidxOld) !== nidxKey(up.name)) nidxDrop(id, nidxOld); nidxPut({ ...s, ...up, id }); }
     refreshAfterBadChange(id);
     logActivity('تصحيح بيانات خاطئة', (up.name || s.name) + ' — ' + [...fixed].map(k => BAD_FIELDS.find(f => f.k === k).label).join('، '));
     if (remaining.length) { showToast('✓ اتصلّح — فاضل: ' + remaining.map(k => BAD_FIELDS.find(f => f.k === k).label).join('، '), 'success'); renderBadFix(); }
@@ -10406,6 +10441,8 @@ window.saveEditStudent = async () => {
     await updateDoc(doc(db,'students',id), { ...data, updatedAt: serverTimestamp() }); bumpStudentsRev();
     const idx = allStudents.findIndex(s => s.id === id);
     if (idx !== -1) allStudents[idx] = { ...allStudents[idx], ...data };
+    if (prev && prev.name && nidxKey(prev.name) !== nidxKey(name)) nidxDrop(id, prev.name);
+    nidxPut({ ...(prev || {}), ...data, id });
     if (prev && prev.linkId) { const shared = { ...data }; delete shared.classSection; await syncLinkedCopies(id, prev.linkId, shared); bumpStudentsRev(); }
     renderStudentsList();
     renderTodayList();

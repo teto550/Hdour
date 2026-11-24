@@ -135,13 +135,28 @@ service cloud.firestore {
     }
 
     // ===== messageTemplates =====
+    // كل فصل له رسائله: الخادم يقرا ويكتب رسائل فصوله بس (classSection)، والعامة (classSection فاضي) يقراها أي حد ويعدّلها الأدمن بس.
+    // الاستعلام لازم يحتوي where('classSection','in',[فصوله + ''])
     match /messageTemplates/{id} {
-      allow read, write: if isApproved();
+      allow read: if (isApproved() && resource.data.get('classSection', '') == '') || classOk(resource.data.get('classSection', ''));
+      allow create: if classOk(request.resource.data.get('classSection', ''));
+      allow update: if classOk(resource.data.get('classSection', ''))
+                    && classOk(request.resource.data.get('classSection', ''));
+      allow delete: if classOk(resource.data.get('classSection', ''));
     }
 
-    // ===== activityLog =====
+    // ===== nameIndex (فهرس أسماء المخدومين لفحص التكرار بين الفصول) =====
+    // مستند لكل اسم بعد توحيد الكتابة. الخادم يفتح مستند اسم واحد بس (get) — مش مسموح يعرض القايمة كلها (list للأدمن بس).
+    match /nameIndex/{key} {
+      allow get: if isApproved();
+      allow list: if isAdmin();
+      allow create, update: if isApproved();
+      allow delete: if isAdmin();
+    }
+
+    // ===== activityLog — القراءة للأدمن ومسؤولين الفصول بس =====
     match /activityLog/{id} {
-      allow read: if isApproved();
+      allow read: if isAdmin() || isSupervisor();
       allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAdmin();
     }
