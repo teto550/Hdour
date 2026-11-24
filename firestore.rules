@@ -135,14 +135,8 @@ service cloud.firestore {
     }
 
     // ===== messageTemplates =====
-    // كل فصل له رسائله: الخادم يقرا ويكتب رسائل فصوله بس (classSection)، والعامة (classSection فاضي) يقراها أي حد ويعدّلها الأدمن بس.
-    // الاستعلام لازم يحتوي where('classSection','in',[فصوله + ''])
     match /messageTemplates/{id} {
-      allow read: if (isApproved() && resource.data.get('classSection', '') == '') || classOk(resource.data.get('classSection', ''));
-      allow create: if classOk(request.resource.data.get('classSection', ''));
-      allow update: if classOk(resource.data.get('classSection', ''))
-                    && classOk(request.resource.data.get('classSection', ''));
-      allow delete: if classOk(resource.data.get('classSection', ''));
+      allow read, write: if isApproved();
     }
 
     // ===== nameIndex (فهرس أسماء المخدومين لفحص التكرار بين الفصول) =====

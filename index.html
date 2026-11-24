@@ -5114,19 +5114,8 @@ const waTplForClass = () => waTemplates.filter(t => !t.classSection || t.classSe
 async function loadWaTemplates() {
   if (waTemplatesLoaded) { renderWaTemplatesList(); return; }
   try {
-    // الأدمن بيجيب الكل. الخادم/المسؤول بيجيب رسائل فصوله + العامة بس (قواعد فايرستور بتمنع غير كده)
-    let docs = [];
-    if (currentRole === 'admin') {
-      docs = (await countedGetDocs(query(collection(db,'messageTemplates'), orderBy('name')), 'messageTemplates')).docs;
-      // الرسائل القديمة اللي اتسجلت قبل فصل الرسائل مالهاش حقل classSection خالص — بنحطلها '' (عامة) عشان الخدام يقدروا يشوفوها
-      docs.filter(d => !('classSection' in d.data())).forEach(d => { updateDoc(doc(db,'messageTemplates',d.id), { classSection: '' }).catch(() => {}); });
-    } else {
-      const mine = [...new Set([...getAllowedAssignedClasses(), ''])];
-      for (let i = 0; i < mine.length; i += 30) {
-        docs.push(...(await countedGetDocs(query(collection(db,'messageTemplates'), where('classSection','in', mine.slice(i, i + 30))), 'messageTemplates (فصولي)')).docs);
-      }
-    }
-    waTemplates = docs.map(d => ({ id:d.id, ...d.data() })).sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''), 'ar'));
+    const snap = await countedGetDocs(query(collection(db,'messageTemplates'), orderBy('name')), 'messageTemplates');
+    waTemplates = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     waTemplatesLoaded = true;
   } catch(e) {
     console.error(e);
@@ -5176,7 +5165,6 @@ window.useWaTemplate = (id) => {
 window.deleteWaTemplate = async (id) => {
   const t = waTemplates.find(x => x.id === id);
   if (!t) return;
-  if (!t.classSection && currentRole !== 'admin') { showToast('الرسائل العامة الأدمن بس اللي يقدر يحذفها', 'error'); return; }
   if (!confirm(`تحذف الرسالة المحفوظة "${t.name}"؟`)) return;
   try {
     await deleteDoc(doc(db,'messageTemplates',id));
