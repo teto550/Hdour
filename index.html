@@ -7445,9 +7445,27 @@ function buildServantsAttSheet(activity, byDate) {
 // فلتر الفترة بيتحط على الاستعلام نفسه (date >= من) عشان القراءات تتحسب على الفترة بس، مش السجل كله
 function exportRangeQuery(col) {
   const v = document.getElementById('export-range')?.value || '90';
-  if (v === 'all') return collection(db, col);
-  const d = new Date(); d.setDate(d.getDate() - parseInt(v, 10));
-  return query(collection(db, col), where('date', '>=', toLocalDateKey(d)));
+  // attendance/verses: قواعد Firestore بتشترط classSection في الاستعلام للخادم/المسؤول (مش للأدمن)، وإلا الاستعلام كله بيترفض
+  const scoped = (col === 'attendance' || col === 'verses') && currentRole !== 'admin';
+  const scope = scoped ? attScope() : [];
+  const cons = [];
+  if (v !== 'all') { const d = new Date(); d.setDate(d.getDate() - parseInt(v, 10)); cons.push(where('date', '>=', toLocalDateKey(d))); }
+  if (scoped && scope.length) cons.push(where('classSection', 'in', scope));
+  return cons.length ? query(collection(db, col), ...cons) : collection(db, col);
+}
+// قراءة التصدير: لو الـ index المركب (classSection + date) مش موجود نرجع لاستعلام بالفصل بس ونفلتر التاريخ هنا
+async function exportGetDocs(col, label) {
+  try { return await countedGetDocs(exportRangeQuery(col), label); }
+  catch (e) {
+    const scope = (currentRole !== 'admin' && (col === 'attendance' || col === 'verses')) ? attScope() : [];
+    if (!scope.length) throw e;
+    console.warn('تصدير: index مركب ناقص لـ ' + col + ' — قراءة بالفصل بس:', e && e.message);
+    const snap = await countedGetDocs(query(collection(db, col), where('classSection', 'in', scope)), label + ' (بدون index)');
+    const v = document.getElementById('export-range')?.value || '90';
+    if (v === 'all') return snap;
+    const d = new Date(); d.setDate(d.getDate() - parseInt(v, 10)); const from = toLocalDateKey(d);
+    return { docs: snap.docs.filter(x => (x.data().date || '') >= from) };
+  }
 }
 window.runExportExcel = async () => {
   await ensureAllClassesForAdmin();
@@ -7475,8 +7493,8 @@ window.runExportExcel = async () => {
     if (includeAtt || includeVerse) {
       const expAtt = {}, expVer = {};
       const proms = [];
-      if (includeAtt) proms.push(countedGetDocs(exportRangeQuery('attendance'), 'attendance (تصدير إكسل)').then(a => a.docs.forEach(x => { const d = x.data(); (expAtt[d.date] ||= {})[d.studentId] = x.id; })));
-      if (includeVerse) proms.push(countedGetDocs(exportRangeQuery('verses'), 'verses (تصدير إكسل)').then(v => v.docs.forEach(x => { const d = x.data(); (expVer[d.date] ||= {})[d.studentId] = { id:x.id, verse:d.verse||'' }; })));
+      if (includeAtt) proms.push(exportGetDocs('attendance', 'attendance (تصدير إكسل)').then(a => a.docs.forEach(x => { const d = x.data(); (expAtt[d.date] ||= {})[d.studentId] = x.id; })));
+      if (includeVerse) proms.push(exportGetDocs('verses', 'verses (تصدير إكسل)').then(v => v.docs.forEach(x => { const d = x.data(); (expVer[d.date] ||= {})[d.studentId] = { id:x.id, verse:d.verse||'' }; })));
       await Promise.all(proms);
       const sheetName = includeAtt && includeVerse ? 'حضور وتسميع' : (includeAtt ? 'حضور' : 'تسميع');
       XLSX.utils.book_append_sheet(wb, buildAttVerseSheet(expAtt, expVer, includeAtt, includeVerse), sheetName);
@@ -7512,7 +7530,7 @@ window.runExportExcel = async () => {
     }
   } catch(e) {
     console.error(e);
-    showToast('تعذّر تحميل السجل','error');
+    showToast((e && /permission/i.test(e.code + ' ' + e.message)) ? 'مفيش صلاحية لقراءة السجل ده — كلم الأدمن' : 'تعذّر تحميل السجل','error');
     return;
   }
 
